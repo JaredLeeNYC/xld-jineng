@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** complete
+**Status:** resolved
 
 - [x] Bun workspace 只包含 Web、API、配置、数据库和共享契约边界，不含任何 IoT 专属模块或命名。
 - [x] Web 在桌面与手机视口均能打开统一壳层，并显示技能矩阵系统品牌和占位首页。
@@ -14,3 +14,7 @@
 - [x] 本地开发入口能启动 Web、API 和任务隔离数据库，不依赖共享生产资源。
 - [x] `bun test` 与单一 `bun run check` 在干净环境通过。
 - [x] 云端部署模板沿用参考系统的 Nginx、systemd、Compose PostgreSQL和显式发布护栏，但使用本项目独立名称与路径。
+
+## Answer
+
+已在 `5176161` 与 `a37f6f0` 完成可运行底座、响应式管理端壳层、Elysia/OpenAPI API、PostgreSQL/Drizzle 迁移、hash 就绪校验、真实数据库合同测试和云端部署模板。固定基线双轴复审无剩余问题。
