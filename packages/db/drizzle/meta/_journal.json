@@ -8,6 +8,13 @@
       "when": 1784963948644,
       "tag": "0000_spicy_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784967063976,
+      "tag": "0001_panoramic_wendell_rand",
+      "breakpoints": true
     }
   ]
 }

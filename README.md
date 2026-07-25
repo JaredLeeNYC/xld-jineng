@@ -10,6 +10,8 @@
 docker compose up -d postgres
 bun install
 bun run db:migrate
+# 将 .env.example 中的 SEED_INITIAL_PASSWORD 换成临时密码后
+bun run db:seed
 bun run dev:server
 bun run dev:web
 ```
@@ -18,6 +20,8 @@ bun run dev:web
 - API 健康检查：<http://localhost:3000/api/health>
 - 数据库就绪检查：<http://localhost:3000/api/ready>
 - OpenAPI：<http://localhost:3000/openapi>
+
+`db:seed` 只创建不存在的演示账号，不会覆盖已有密码。五个首次改密账号为 `EMP001`、`MGR001`、`HR001`、`VIEW001` 和 `ADMIN001`。
 
 不同开发任务需要并行运行数据库时，可使用独立 Compose 项目名与端口覆盖文件，避免共享测试数据。
 

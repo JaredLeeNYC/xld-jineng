@@ -1,13 +1,38 @@
 import { parseServerConfig } from "@jineng/skill-matrix-config";
 import { createDatabase } from "@jineng/skill-matrix-db";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createApp } from "./app";
+import { createAuthService } from "./auth-service";
 
 const config = parseServerConfig(process.env);
 const database = createDatabase(config);
+const authService = createAuthService({
+  repository: database.authRepository,
+  password: {
+    hash: (value) =>
+      Bun.password.hash(value, {
+        algorithm: "argon2id",
+        memoryCost: 65_536,
+        timeCost: 3,
+      }),
+    verify: (value, hash) => Bun.password.verify(value, hash),
+  },
+  digest: (value) => createHash("sha256").update(value).digest("hex"),
+  now: () => new Date(),
+  idSource: () => randomUUID(),
+  tokenSource: () => randomBytes(32).toString("base64url"),
+  dummyPasswordHash: await Bun.password.hash("invalid-account-password-placeholder", {
+    algorithm: "argon2id",
+    memoryCost: 65_536,
+    timeCost: 3,
+  }),
+});
 
 const app = createApp({
   appUrl: config.appUrl,
+  authService,
   readinessProbe: database.readinessProbe,
+  secureCookie: config.appUrl.startsWith("https://"),
 }).listen({
   hostname: config.host,
   port: config.port,

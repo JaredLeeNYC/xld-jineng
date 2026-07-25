@@ -26,6 +26,18 @@ if (
 ) {
   fail("OpenAPI 缺少 /api/ready 的 200/503 响应契约");
 }
+for (const [path, method, statuses] of [
+  ["/api/auth/login", "post", ["200", "401", "423"]],
+  ["/api/auth/session", "get", ["200", "401"]],
+  ["/api/auth/change-password", "post", ["200", "401", "409"]],
+  ["/api/auth/logout", "post", ["200"]],
+  ["/api/admin/accounts/{accountId}/reset-password", "post", ["200", "403"]],
+] as const) {
+  const responses = specification.paths?.[path]?.[method]?.responses;
+  if (!responses || statuses.some((status) => !responses[status])) {
+    fail(`OpenAPI 缺少 ${method.toUpperCase()} ${path} 的严格响应契约`);
+  }
+}
 
 const requiredDeploymentContent = new Map([
   [

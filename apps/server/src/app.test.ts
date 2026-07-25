@@ -77,6 +77,22 @@ describe("system HTTP API", () => {
     expect(specification.info.title).toBe("技能矩阵系统 API");
     expect(specification.paths["/api/health"]).toBeDefined();
     expect(specification.paths["/api/ready"]).toBeDefined();
+    expect(specification.paths["/api/auth/login"]).toBeDefined();
+    expect(specification.paths["/api/auth/change-password"]).toBeDefined();
+    expect(
+      (
+        specification.paths["/api/auth/login"] as {
+          post: { responses: Record<string, unknown> };
+        }
+      ).post.responses["401"],
+    ).toBeDefined();
+    expect(
+      (
+        specification.paths["/api/admin/accounts/{accountId}/reset-password"] as {
+          post: { responses: Record<string, unknown> };
+        }
+      ).post.responses["403"],
+    ).toBeDefined();
   });
 
   test("wraps an unknown API route in the standard error envelope", async () => {
