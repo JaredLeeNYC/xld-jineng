@@ -1,0 +1,61 @@
+graph TD
+    %% 主流程
+    Start([开始]) --> DefineStandards[1. 定义岗位技能标准<br>（部门→岗位→技能项，含等级/考核方式）]
+    DefineStandards --> ImportEmployees[2. 导入/维护员工信息<br>（含初始技能等级）]
+    ImportEmployees --> CreateTraining[3. 制定培训计划<br>（绑定教材与试题库）]
+    CreateTraining --> PublishTraining[发布培训计划并通知员工]
+    PublishTraining --> ExecuteTraining[4. 执行培训与签到]
+    ExecuteTraining --> Assess[5. 技能评定与评级<br>（笔试/实操/综合评审）]
+
+    Assess --> Result{评定结果}
+
+    %% 评定通过分支
+    Result -->|通过| CheckLevel{等级是否达标?}
+    CheckLevel -->|是| UpdatePass[更新技能状态为“有效”<br>记录有效期]
+    CheckLevel -->|否| UpgradeHR[升级至HR与生产经理共同决策]
+    UpgradeHR --> ApproveHR{审批结果}
+    ApproveHR -->|同意降级/培训| UpdatePass
+    ApproveHR -->|不同意| MarkFail
+
+    %% 评定不通过分支
+    Result -->|不通过| CheckRequired{是否为岗位必备技能?}
+    CheckRequired -->|是| UpgradeMgr[升级至部门经理审批]
+    UpgradeMgr --> ApproveMgr{审批结果}
+    ApproveMgr -->|同意培训/调岗| GenSuggestion[生成培训建议或调岗方案]
+    ApproveMgr -->|不同意| MarkFail
+    CheckRequired -->|否| MarkFail
+
+    MarkFail[标记为“不通过”<br>记录原因与整改建议] --> NotifyFail[通知员工及主管]
+
+    %% 汇聚点
+    UpdatePass --> Archive[6. 结果归档，更新员工技能档案]
+    GenSuggestion --> Archive
+    NotifyFail --> Archive
+
+    Archive --> UpdateMatrix[7. 更新技能矩阵视图<br>（热力图/表格，含多维度筛选）]
+    UpdateMatrix --> Analyze[8. 统计分析 & 预警<br>（达标率、覆盖率、到期提醒等）]
+
+    %% 并行超时处理（评估环节）
+    Assess -.-> Timeout{评估超时<br>（5个工作日）}
+    Timeout -->|超时| Escalate[升级至上一级管理者]
+    Escalate --> TimeoutHandler[管理者介入处理]
+    TimeoutHandler --> Assess
+
+    %% 反馈循环：技能差距触发再培训
+    Analyze --> Gap{Gap分析发现<br>技能差距?}
+    Gap -->|是| CreateTraining
+    Gap -->|否| End([结束])
+
+    %% 外部系统对接
+    Analyze -.-> PPS[对接PPS系统<br>（技能不达标触发改善流程）]
+
+    %% 风格定义（可选）
+    classDef process fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef decision fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    classDef archive fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef escalation fill:#fce4ec,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5;
+
+    class DefineStandards,ImportEmployees,CreateTraining,PublishTraining,ExecuteTraining,Assess,UpdatePass,GenSuggestion,Archive,UpdateMatrix,Analyze process;
+    class Result,CheckLevel,ApproveHR,CheckRequired,ApproveMgr,Gap decision;
+    class MarkFail,NotifyFail archive;
+    class Timeout,Escalate,TimeoutHandler escalation;
