@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.env.local
+coverage/
+packages/db/drizzle/meta/_journal.json.tmp
+*.log
