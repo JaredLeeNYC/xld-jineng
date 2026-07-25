@@ -19,12 +19,6 @@ const accounts = [
 ] as const;
 
 try {
-  const passwordHash = await Bun.password.hash(initialPassword, {
-    algorithm: "argon2id",
-    memoryCost: 65_536,
-    timeCost: 3,
-  });
-
   await client.query("begin");
   const department = await client.query<{ id: string }>(
     `insert into departments (code, name)
@@ -37,6 +31,11 @@ try {
   );
 
   for (const [employeeNumber, displayName, role] of accounts) {
+    const passwordHash = await Bun.password.hash(initialPassword, {
+      algorithm: "argon2id",
+      memoryCost: 65_536,
+      timeCost: 3,
+    });
     const employee = await client.query<{ id: string }>(
       `insert into employees (
          employee_number, display_name, department_id

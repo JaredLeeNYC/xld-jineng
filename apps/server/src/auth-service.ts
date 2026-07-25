@@ -1,5 +1,11 @@
 import { hasPermission, type FixedRole, type Permission } from "@jineng/skill-matrix-shared";
-import type { AuthFailure, AuthHttpService, SessionView } from "./auth-contract";
+import type {
+  AccountSummary,
+  AuthFailure,
+  AuthHttpService,
+  EmployeeProfile,
+  SessionView,
+} from "./auth-contract";
 
 export type AuthAccount = {
   id: string;
@@ -35,6 +41,9 @@ export type SecurityEventInput = {
 
 export type AuthRepository = {
   findAccountByEmployeeNumber: (employeeNumber: string) => Promise<AuthAccount | undefined>;
+  findAccountById: (accountId: string) => Promise<AuthAccount | undefined>;
+  findEmployeeProfile: (employeeId: string) => Promise<EmployeeProfile | undefined>;
+  listAccounts: () => Promise<AccountSummary[]>;
   findLoginThrottle: (
     identifierHash: string,
   ) => Promise<{ failures: number; lockedUntil?: Date } | undefined>;
@@ -44,11 +53,13 @@ export type AuthRepository = {
     now: Date;
     lockAfter: number;
     lockUntil: Date;
+    event: SecurityEventInput;
   }) => Promise<{ failures: number; lockedUntil?: Date }>;
   completeLogin: (input: {
     accountId: string;
     identifierHash: string;
     session: StoredSession;
+    event: SecurityEventInput;
   }) => Promise<void>;
   findSessionByTokenHash: (
     tokenHash: string,
@@ -57,14 +68,17 @@ export type AuthRepository = {
     accountId: string;
     passwordHash: string;
     session: StoredSession;
-  }) => Promise<AuthAccount>;
+    expectedSessionVersion: number;
+    event: SecurityEventInput;
+  }) => Promise<AuthAccount | undefined>;
   revokeSession: (tokenHash: string, revokedAt: Date) => Promise<void>;
   resetPassword: (input: {
     accountId: string;
     passwordHash: string;
     revokedAt: Date;
+    identifierHash: string;
+    event: SecurityEventInput;
   }) => Promise<AuthAccount | undefined>;
-  clearLoginThrottle: (identifierHash: string) => Promise<void>;
   recordSecurityEvent: (input: SecurityEventInput) => Promise<void>;
 };
 
@@ -81,6 +95,7 @@ type AuthServiceDependencies = {
   idSource: () => string;
   tokenSource: () => string;
   dummyPasswordHash: string;
+  onAuditFailure?: (error: unknown, event: SecurityEventInput) => void;
 };
 
 type ActionSuccess<T> = { ok: true; data: T };
@@ -118,7 +133,19 @@ export const createAuthService = ({
   idSource,
   tokenSource,
   dummyPasswordHash,
+  onAuditFailure = (error, event) => {
+    console.error("security event write failed", { error, eventType: event.type });
+  },
 }: AuthServiceDependencies) => {
+  const recordSecurityEventSafely = async (event: SecurityEventInput) => {
+    try {
+      await repository.recordSecurityEvent(event);
+    } catch (error) {
+      // An auxiliary audit failure must not turn a settled authorization result into a 500.
+      onAuditFailure(error, event);
+    }
+  };
+
   const createSession = (account: AuthAccount) => {
     const createdAt = now();
     const id = idSource();
@@ -160,7 +187,7 @@ export const createAuthService = ({
       const identifierHash = digest(employeeNumber);
       const throttle = await repository.findLoginThrottle(identifierHash);
       if (throttle?.lockedUntil && throttle.lockedUntil > now()) {
-        await repository.recordSecurityEvent({
+        await recordSecurityEventSafely({
           type: "login_locked",
           identifierHash,
           ...context,
@@ -180,12 +207,12 @@ export const createAuthService = ({
           now: now(),
           lockAfter: 5,
           lockUntil: new Date(now().getTime() + 15 * 60 * 1000),
-        });
-        await repository.recordSecurityEvent({
-          type: "login_failed",
-          ...(account ? { accountId: account.id } : {}),
-          identifierHash,
-          ...context,
+          event: {
+            type: "login_failed",
+            ...(account ? { accountId: account.id } : {}),
+            identifierHash,
+            ...context,
+          },
         });
         return failureState.lockedUntil
           ? authFailure("ACCOUNT_TEMPORARILY_LOCKED", "登录失败次数过多，请稍后再试", 423)
@@ -197,12 +224,12 @@ export const createAuthService = ({
         accountId: account.id,
         identifierHash,
         session: stored,
-      });
-      await repository.recordSecurityEvent({
-        type: "login_succeeded",
-        accountId: account.id,
-        identifierHash,
-        ...context,
+        event: {
+          type: "login_succeeded",
+          accountId: account.id,
+          identifierHash,
+          ...context,
+        },
       });
       return {
         ok: true as const,
@@ -230,7 +257,7 @@ export const createAuthService = ({
         return authFailure("PASSWORD_CHANGE_REQUIRED", "首次登录必须先修改密码", 403);
       }
       if (!hasPermission(authenticated.account.role, permission)) {
-        await repository.recordSecurityEvent({
+        await recordSecurityEventSafely({
           type: "forbidden",
           accountId: authenticated.account.id,
           detail: { permission },
@@ -244,34 +271,40 @@ export const createAuthService = ({
       token: string | undefined,
       target: {
         employeeId: string;
-        departmentId?: string;
         access: "read" | "write";
       },
-    ): Promise<ActionResult<SessionView>> {
+    ): Promise<ActionResult<EmployeeProfile>> {
       const authenticated = await authenticate(token);
       if (!authenticated.ok) return authenticated;
       if (authenticated.account.mustChangePassword) {
-        return authFailure(
-          "PASSWORD_CHANGE_REQUIRED",
-          "首次登录必须先修改密码",
-          403,
-        );
+        return authFailure("PASSWORD_CHANGE_REQUIRED", "首次登录必须先修改密码", 403);
       }
 
       const account = authenticated.account;
+      const employee = await repository.findEmployeeProfile(target.employeeId);
+      if (!employee) {
+        await recordSecurityEventSafely({
+          type: "forbidden",
+          accountId: account.id,
+          detail: {
+            targetEmployeeId: target.employeeId,
+            access: target.access,
+            targetExists: false,
+          },
+        });
+        return authFailure("FORBIDDEN", "无权访问该员工数据", 403);
+      }
       const allowed =
-        (account.role === "employee" &&
-          target.employeeId === account.employeeId) ||
+        (account.role === "employee" && target.employeeId === account.employeeId) ||
         (account.role === "department_manager" &&
           Boolean(account.departmentId) &&
-          target.departmentId === account.departmentId) ||
+          employee.departmentId === account.departmentId) ||
         account.role === "hr_admin" ||
-        ((account.role === "executive_viewer" ||
-          account.role === "system_admin") &&
+        ((account.role === "executive_viewer" || account.role === "system_admin") &&
           target.access === "read");
 
       if (!allowed) {
-        await repository.recordSecurityEvent({
+        await recordSecurityEventSafely({
           type: "forbidden",
           accountId: account.id,
           detail: {
@@ -281,7 +314,25 @@ export const createAuthService = ({
         });
         return authFailure("FORBIDDEN", "无权访问该员工数据", 403);
       }
-      return { ok: true, data: sessionView(account) };
+      return { ok: true, data: employee };
+    },
+
+    async getEmployeeProfile(
+      token: string | undefined,
+      employeeId: string,
+    ): Promise<ActionResult<EmployeeProfile>> {
+      const authorized = await service.authorizeEmployeeAccess(token, {
+        employeeId,
+        access: "read",
+      });
+      if (!authorized.ok) return authorized;
+      return authorized;
+    },
+
+    async listAccounts(token: string | undefined): Promise<ActionResult<AccountSummary[]>> {
+      const authorized = await service.authorize(token, "system:manage");
+      if (!authorized.ok) return authorized;
+      return { ok: true, data: await repository.listAccounts() };
     },
 
     async changePassword(
@@ -290,6 +341,7 @@ export const createAuthService = ({
     ): Promise<ActionResult<{ session: SessionView; token: string; expiresAt: Date }>> {
       const authenticated = await authenticate(token);
       if (!authenticated.ok) return authenticated;
+      const expectedSessionVersion = authenticated.account.sessionVersion;
       const currentMatches = await password.verify(
         input.currentPassword,
         authenticated.account.passwordHash,
@@ -312,11 +364,15 @@ export const createAuthService = ({
         accountId: authenticated.account.id,
         passwordHash,
         session: stored,
+        expectedSessionVersion,
+        event: {
+          type: "password_changed",
+          accountId: authenticated.account.id,
+        },
       });
-      await repository.recordSecurityEvent({
-        type: "password_changed",
-        accountId: authenticated.account.id,
-      });
+      if (!updatedAccount) {
+        return authFailure("SESSION_CHANGED_RETRY", "会话已发生变化，请重新登录后再试", 409);
+      }
       return {
         ok: true,
         data: {
@@ -344,20 +400,24 @@ export const createAuthService = ({
       if (!passwordIsValid(temporaryPassword)) {
         return authFailure("WEAK_PASSWORD", "临时密码至少需要 12 位", 409);
       }
+      const targetAccount = await repository.findAccountById(accountId);
+      if (!targetAccount) {
+        return authFailure("ACCOUNT_NOT_FOUND", "账号不存在", 409);
+      }
       const updated = await repository.resetPassword({
         accountId,
         passwordHash: await password.hash(temporaryPassword),
         revokedAt: now(),
+        identifierHash: digest(targetAccount.employeeNumber),
+        event: {
+          type: "password_reset",
+          accountId,
+          detail: { actorAccountId: authorized.data.accountId },
+        },
       });
       if (!updated) {
         return authFailure("ACCOUNT_NOT_FOUND", "账号不存在", 409);
       }
-      await repository.clearLoginThrottle(digest(updated.employeeNumber));
-      await repository.recordSecurityEvent({
-        type: "password_reset",
-        accountId,
-        detail: { actorAccountId: authorized.data.accountId },
-      });
       return {
         ok: true,
         data: { accountId, mustChangePassword: true },
@@ -373,10 +433,9 @@ export const createAuthService = ({
       token: string | undefined,
       target: {
         employeeId: string;
-        departmentId?: string;
         access: "read" | "write";
       },
-    ) => Promise<ActionResult<SessionView>>;
+    ) => Promise<ActionResult<EmployeeProfile>>;
     changePassword: (
       token: string | undefined,
       input: { currentPassword: string; newPassword: string },

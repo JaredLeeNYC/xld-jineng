@@ -32,6 +32,15 @@ const adminAccount = (): AuthAccount => ({
 
 class MemoryAuthRepository implements AuthRepository {
   readonly accounts = new Map<string, AuthAccount>();
+  readonly employeeProfiles = new Map<
+    string,
+    {
+      employeeId: string;
+      employeeNumber: string;
+      displayName: string;
+      departmentId?: string;
+    }
+  >();
   readonly sessions = new Map<string, StoredSession>();
   readonly throttles = new Map<string, { failures: number; lockedUntil?: Date }>();
   readonly securityEvents: Array<{ type: string; accountId?: string }> = [];
@@ -39,11 +48,48 @@ class MemoryAuthRepository implements AuthRepository {
   constructor(accounts: AuthAccount[]) {
     for (const account of accounts) {
       this.accounts.set(account.employeeNumber, account);
+      this.employeeProfiles.set(account.employeeId, {
+        employeeId: account.employeeId,
+        employeeNumber: account.employeeNumber,
+        displayName: account.displayName,
+        ...(account.departmentId ? { departmentId: account.departmentId } : {}),
+      });
     }
+    this.employeeProfiles.set("employee-coworker", {
+      employeeId: "employee-coworker",
+      employeeNumber: "E0002",
+      displayName: "同部门员工",
+      departmentId: "department-1",
+    });
+    this.employeeProfiles.set("employee-other", {
+      employeeId: "employee-other",
+      employeeNumber: "E0003",
+      displayName: "其他部门员工",
+      departmentId: "department-2",
+    });
   }
 
   async findAccountByEmployeeNumber(employeeNumber: string) {
     return this.accounts.get(employeeNumber);
+  }
+
+  async findAccountById(accountId: string) {
+    return [...this.accounts.values()].find((account) => account.id === accountId);
+  }
+
+  async findEmployeeProfile(employeeId: string) {
+    return this.employeeProfiles.get(employeeId);
+  }
+
+  async listAccounts() {
+    return [...this.accounts.values()].map((account) => ({
+      accountId: account.id,
+      employeeNumber: account.employeeNumber,
+      displayName: account.displayName,
+      role: account.role,
+      active: account.active,
+      mustChangePassword: account.mustChangePassword,
+    }));
   }
 
   async findLoginThrottle(identifierHash: string) {
@@ -56,6 +102,7 @@ class MemoryAuthRepository implements AuthRepository {
     now: Date;
     lockAfter: number;
     lockUntil: Date;
+    event: { type: string; accountId?: string };
   }) {
     const current = this.throttles.get(input.identifierHash);
     const failures = (current?.failures ?? 0) + 1;
@@ -64,6 +111,7 @@ class MemoryAuthRepository implements AuthRepository {
       ...(failures >= input.lockAfter ? { lockedUntil: input.lockUntil } : {}),
     };
     this.throttles.set(input.identifierHash, state);
+    this.securityEvents.push(input.event);
     return state;
   }
 
@@ -71,9 +119,11 @@ class MemoryAuthRepository implements AuthRepository {
     accountId: string;
     identifierHash: string;
     session: StoredSession;
+    event: { type: string; accountId?: string };
   }) {
     this.throttles.delete(input.identifierHash);
     this.sessions.set(input.session.tokenHash, input.session);
+    this.securityEvents.push(input.event);
   }
 
   async findSessionByTokenHash(tokenHash: string) {
@@ -89,11 +139,14 @@ class MemoryAuthRepository implements AuthRepository {
     accountId: string;
     passwordHash: string;
     session: StoredSession;
+    expectedSessionVersion: number;
+    event: { type: string; accountId?: string };
   }) {
     const account = [...this.accounts.values()].find(
       (candidate) => candidate.id === input.accountId,
     );
     if (!account) throw new Error("missing account");
+    if (account.sessionVersion !== input.expectedSessionVersion) return undefined;
     account.passwordHash = input.passwordHash;
     account.mustChangePassword = false;
     account.sessionVersion += 1;
@@ -104,6 +157,7 @@ class MemoryAuthRepository implements AuthRepository {
     }
     input.session.sessionVersion = account.sessionVersion;
     this.sessions.set(input.session.tokenHash, input.session);
+    this.securityEvents.push(input.event);
     return account;
   }
 
@@ -112,7 +166,13 @@ class MemoryAuthRepository implements AuthRepository {
     if (session) session.revokedAt = revokedAt;
   }
 
-  async resetPassword(input: { accountId: string; passwordHash: string; revokedAt: Date }) {
+  async resetPassword(input: {
+    accountId: string;
+    passwordHash: string;
+    revokedAt: Date;
+    identifierHash: string;
+    event: { type: string; accountId?: string };
+  }) {
     const account = [...this.accounts.values()].find(
       (candidate) => candidate.id === input.accountId,
     );
@@ -125,11 +185,9 @@ class MemoryAuthRepository implements AuthRepository {
         session.revokedAt = input.revokedAt;
       }
     }
+    this.throttles.delete(input.identifierHash);
+    this.securityEvents.push(input.event);
     return account;
-  }
-
-  async clearLoginThrottle(identifierHash: string) {
-    this.throttles.delete(identifierHash);
   }
 
   async recordSecurityEvent(input: { type: string; accountId?: string }) {
@@ -306,10 +364,7 @@ describe("authentication service", () => {
     for (const account of accounts) {
       const login = await service.login({
         employeeNumber: account.employeeNumber,
-        password:
-          account.role === "system_admin"
-            ? "Admin-Password-123"
-            : "Initial-Password-123",
+        password: account.role === "system_admin" ? "Admin-Password-123" : "Initial-Password-123",
       });
       if (!login.ok) throw new Error("login failed");
       tokens.set(account.role, login.data.token);
@@ -318,57 +373,73 @@ describe("authentication service", () => {
     expect(
       await service.authorizeEmployeeAccess(tokens.get("employee"), {
         employeeId: "employee-1",
-        departmentId: "department-1",
         access: "read",
       }),
     ).toMatchObject({ ok: true });
     expect(
       await service.authorizeEmployeeAccess(tokens.get("employee"), {
         employeeId: "employee-other",
-        departmentId: "department-1",
         access: "read",
       }),
     ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
     expect(
-      await service.authorizeEmployeeAccess(
-        tokens.get("department_manager"),
-        {
-          employeeId: "employee-other",
-          departmentId: "department-1",
-          access: "write",
-        },
-      ),
+      await service.authorizeEmployeeAccess(tokens.get("department_manager"), {
+        employeeId: "employee-coworker",
+        access: "write",
+      }),
     ).toMatchObject({ ok: true });
     expect(
-      await service.authorizeEmployeeAccess(
-        tokens.get("department_manager"),
-        {
-          employeeId: "employee-other",
-          departmentId: "department-2",
-          access: "read",
-        },
-      ),
+      await service.authorizeEmployeeAccess(tokens.get("department_manager"), {
+        employeeId: "employee-other",
+        access: "read",
+      }),
     ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
     expect(
       await service.authorizeEmployeeAccess(tokens.get("hr_admin"), {
         employeeId: "employee-other",
-        departmentId: "department-2",
         access: "write",
       }),
     ).toMatchObject({ ok: true });
     expect(
       await service.authorizeEmployeeAccess(tokens.get("executive_viewer"), {
         employeeId: "employee-other",
-        departmentId: "department-2",
         access: "read",
       }),
     ).toMatchObject({ ok: true });
     expect(
       await service.authorizeEmployeeAccess(tokens.get("executive_viewer"), {
         employeeId: "employee-other",
-        departmentId: "department-2",
         access: "write",
       }),
     ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+  });
+
+  test("allows only one password rotation for the same session version", async () => {
+    const account = employeeAccount();
+    account.mustChangePassword = false;
+    const { service } = createFixture([account]);
+    const login = await service.login({
+      employeeNumber: "E0001",
+      password: "Initial-Password-123",
+    });
+    if (!login.ok) throw new Error("login failed");
+
+    const results = await Promise.all([
+      service.changePassword(login.data.token, {
+        currentPassword: "Initial-Password-123",
+        newPassword: "Concurrent-Password-111",
+      }),
+      service.changePassword(login.data.token, {
+        currentPassword: "Initial-Password-123",
+        newPassword: "Concurrent-Password-222",
+      }),
+    ]);
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok)).toEqual([
+      expect.objectContaining({
+        error: expect.objectContaining({ code: "SESSION_CHANGED_RETRY" }),
+      }),
+    ]);
   });
 });

@@ -9,6 +9,22 @@ export type SessionView = {
   mustChangePassword: boolean;
 };
 
+export type EmployeeProfile = {
+  employeeId: string;
+  employeeNumber: string;
+  displayName: string;
+  departmentId?: string;
+};
+
+export type AccountSummary = {
+  accountId: string;
+  employeeNumber: string;
+  displayName: string;
+  role: FixedRole;
+  active: boolean;
+  mustChangePassword: boolean;
+};
+
 export type AuthFailure = {
   ok: false;
   error: {
@@ -43,6 +59,11 @@ export type AuthHttpService = {
     },
   ) => Promise<AuthLoginResult>;
   getSession: (token: string | undefined) => Promise<AuthActionResult<SessionView>>;
+  getEmployeeProfile: (
+    token: string | undefined,
+    employeeId: string,
+  ) => Promise<AuthActionResult<EmployeeProfile>>;
+  listAccounts: (token: string | undefined) => Promise<AuthActionResult<AccountSummary[]>>;
   changePassword: (
     token: string | undefined,
     input: { currentPassword: string; newPassword: string },

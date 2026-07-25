@@ -1,0 +1,1 @@
+ALTER TABLE "employees" ADD CONSTRAINT "employees_number_canonical" CHECK ("employees"."employee_number" = upper(trim("employees"."employee_number")));

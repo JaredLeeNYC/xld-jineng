@@ -31,6 +31,8 @@ for (const [path, method, statuses] of [
   ["/api/auth/session", "get", ["200", "401"]],
   ["/api/auth/change-password", "post", ["200", "401", "409"]],
   ["/api/auth/logout", "post", ["200"]],
+  ["/api/employees/{employeeId}/profile", "get", ["200", "403"]],
+  ["/api/admin/accounts", "get", ["200", "403"]],
   ["/api/admin/accounts/{accountId}/reset-password", "post", ["200", "403"]],
 ] as const) {
   const responses = specification.paths?.[path]?.[method]?.responses;

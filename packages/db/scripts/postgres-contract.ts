@@ -83,6 +83,18 @@ try {
      values ('D001', '合同测试部门')
      returning id`,
   );
+  const otherDepartment = await contractPool.query<{ id: string }>(
+    `insert into departments (code, name)
+     values ('D002', '其他合同测试部门')
+     returning id`,
+  );
+  const otherEmployee = await contractPool.query<{ id: string }>(
+    `insert into employees (
+       employee_number, display_name, department_id
+     ) values ('E0099', '其他部门员工', $1)
+     returning id`,
+    [otherDepartment.rows[0]!.id],
+  );
   const roles = [
     ["E0001", "员工", "employee", true],
     ["M0001", "部门主管", "department_manager", false],
@@ -97,6 +109,7 @@ try {
     timeCost: 1,
   });
   const accountIds = new Map<string, string>();
+  const employeeIds = new Map<string, string>();
   for (const [employeeNumber, displayName, role, mustChangePassword] of roles) {
     const employee = await contractPool.query<{ id: string }>(
       `insert into employees (
@@ -105,6 +118,7 @@ try {
        returning id`,
       [employeeNumber, displayName, department.rows[0]!.id],
     );
+    employeeIds.set(role, employee.rows[0]!.id);
     const account = await contractPool.query<{ id: string }>(
       `insert into user_accounts (
          employee_id, password_hash, role, must_change_password
@@ -113,6 +127,25 @@ try {
       [employee.rows[0]!.id, passwordHash, role, mustChangePassword],
     );
     accountIds.set(role, account.rows[0]!.id);
+  }
+  for (const invalidEmployeeNumber of ["e0001", "E0001 "]) {
+    let invalidEmployeeNumberRejected = false;
+    try {
+      await contractPool.query(
+        `insert into employees (employee_number, display_name, department_id)
+         values ($1, '非规范工号', $2)`,
+        [invalidEmployeeNumber, department.rows[0]!.id],
+      );
+    } catch (error) {
+      invalidEmployeeNumberRejected =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        ["23505", "23514"].includes(String(error.code));
+    }
+    if (!invalidEmployeeNumberRejected) {
+      throw new Error(`数据库未阻止非规范工号：${JSON.stringify(invalidEmployeeNumber)}`);
+    }
   }
 
   const authService = createAuthService({
@@ -207,6 +240,65 @@ try {
     throw new Error("首次改密后旧会话仍然有效");
   }
 
+  const profileStatus = async (cookie: string, employeeId: string) =>
+    (
+      await app.handle(
+        new Request(`http://localhost/api/employees/${employeeId}/profile`, {
+          headers: { cookie },
+        }),
+      )
+    ).status;
+  const scopedChecks = [
+    ["employee own", await profileStatus(changedCookie, employeeIds.get("employee")!), 200],
+    [
+      "employee other",
+      await profileStatus(changedCookie, employeeIds.get("department_manager")!),
+      403,
+    ],
+    [
+      "manager same department",
+      await profileStatus(
+        roleLogins.get("department_manager")!.cookie!,
+        employeeIds.get("hr_admin")!,
+      ),
+      200,
+    ],
+    [
+      "manager other department",
+      await profileStatus(roleLogins.get("department_manager")!.cookie!, otherEmployee.rows[0]!.id),
+      403,
+    ],
+    [
+      "HR factory",
+      await profileStatus(roleLogins.get("hr_admin")!.cookie!, otherEmployee.rows[0]!.id),
+      200,
+    ],
+    [
+      "executive read-only",
+      await profileStatus(roleLogins.get("executive_viewer")!.cookie!, otherEmployee.rows[0]!.id),
+      200,
+    ],
+  ] as const;
+  for (const [label, actual, expected] of scopedChecks) {
+    if (actual !== expected) {
+      throw new Error(`${label} 范围检查失败：expected=${expected} actual=${actual}`);
+    }
+  }
+
+  const accountListResponse = await app.handle(
+    new Request("http://localhost/api/admin/accounts", {
+      headers: { cookie: roleLogins.get("system_admin")!.cookie! },
+    }),
+  );
+  const forbiddenAccountListResponse = await app.handle(
+    new Request("http://localhost/api/admin/accounts", {
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  if (accountListResponse.status !== 200 || forbiddenAccountListResponse.status !== 403) {
+    throw new Error("系统管理员账号列表权限检查失败");
+  }
+
   for (const role of ["employee", "department_manager", "hr_admin", "executive_viewer"]) {
     const cookie = role === "employee" ? changedCookie : roleLogins.get(role)!.cookie!;
     const response = await app.handle(
@@ -227,6 +319,50 @@ try {
     if (response.status !== 403) {
       throw new Error(`${role} 越权重置密码未被拒绝`);
     }
+  }
+
+  const managerCookie = roleLogins.get("department_manager")!.cookie!;
+  const concurrentChanges = await Promise.all(
+    ["Concurrent-Contract-Password-111", "Concurrent-Contract-Password-222"].map((newPassword) =>
+      app.handle(
+        new Request("http://localhost/api/auth/change-password", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: managerCookie,
+          },
+          body: JSON.stringify({
+            currentPassword: contractPassword,
+            newPassword,
+          }),
+        }),
+      ),
+    ),
+  );
+  const concurrentStatuses = concurrentChanges.map((response) => response.status);
+  if (
+    concurrentStatuses.filter((status) => status === 200).length !== 1 ||
+    concurrentStatuses.some((status) => ![200, 401, 409].includes(status))
+  ) {
+    throw new Error(`并发改密应仅有一个成功：${concurrentStatuses.join(",")}`);
+  }
+  const successfulConcurrentResponse = concurrentChanges.find(
+    (response) => response.status === 200,
+  )!;
+  const successfulConcurrentCookie = successfulConcurrentResponse.headers
+    .get("set-cookie")
+    ?.split(";")[0];
+  if (
+    !successfulConcurrentCookie ||
+    (
+      await app.handle(
+        new Request("http://localhost/api/auth/session", {
+          headers: { cookie: successfulConcurrentCookie },
+        }),
+      )
+    ).status !== 200
+  ) {
+    throw new Error("并发改密成功方返回的轮换会话无效");
   }
 
   const adminResetResponse = await app.handle(

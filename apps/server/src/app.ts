@@ -2,6 +2,7 @@ import { failure, success, type ReadinessProbe } from "@jineng/skill-matrix-shar
 import { cors } from "@elysiajs/cors";
 import { openapi } from "@elysiajs/openapi";
 import { Elysia, t } from "elysia";
+import { isIP } from "node:net";
 import type { AuthHttpService } from "./auth-contract";
 
 const healthResponse = t.Object({
@@ -61,6 +62,30 @@ const resetPasswordEnvelopeResponse = t.Object({
     accountId: t.String(),
     mustChangePassword: t.Literal(true),
   }),
+});
+
+const employeeProfileEnvelopeResponse = t.Object({
+  ok: t.Literal(true),
+  data: t.Object({
+    employeeId: t.String(),
+    employeeNumber: t.String(),
+    displayName: t.String(),
+    departmentId: t.Optional(t.String()),
+  }),
+});
+
+const accountSummaryResponse = t.Object({
+  accountId: t.String(),
+  employeeNumber: t.String(),
+  displayName: t.String(),
+  role: sessionDataResponse.properties.role,
+  active: t.Boolean(),
+  mustChangePassword: t.Boolean(),
+});
+
+const accountListEnvelopeResponse = t.Object({
+  ok: t.Literal(true),
+  data: t.Array(accountSummaryResponse),
 });
 
 type AppDependencies = {
@@ -141,7 +166,9 @@ export const createApp = ({
           return failure("AUTH_UNAVAILABLE", "登录服务暂不可用");
         }
 
-        const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+        const reportedIp = request.headers.get("x-real-ip")?.trim();
+        const ipAddress =
+          reportedIp && reportedIp.length <= 45 && isIP(reportedIp) ? reportedIp : undefined;
         const userAgent = request.headers.get("user-agent") ?? undefined;
         const context = {
           ...(ipAddress ? { ipAddress } : {}),
@@ -262,6 +289,66 @@ export const createApp = ({
         },
         response: {
           200: logoutEnvelopeResponse,
+          500: errorResponse,
+          503: errorResponse,
+        },
+      },
+    )
+    .get(
+      "/api/employees/:employeeId/profile",
+      async ({ params, request, set }) => {
+        if (!authService) {
+          set.status = 503;
+          return failure("AUTH_UNAVAILABLE", "登录服务暂不可用");
+        }
+        const result = await authService.getEmployeeProfile(
+          readSessionToken(request),
+          params.employeeId,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ employeeId: t.String({ format: "uuid" }) }),
+        detail: {
+          summary: "按角色范围读取员工档案",
+          tags: ["Employees"],
+        },
+        response: {
+          200: employeeProfileEnvelopeResponse,
+          401: errorResponse,
+          403: errorResponse,
+          500: errorResponse,
+          503: errorResponse,
+        },
+      },
+    )
+    .get(
+      "/api/admin/accounts",
+      async ({ request, set }) => {
+        if (!authService) {
+          set.status = 503;
+          return failure("AUTH_UNAVAILABLE", "登录服务暂不可用");
+        }
+        const result = await authService.listAccounts(readSessionToken(request));
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        detail: {
+          summary: "系统管理员读取账号列表",
+          tags: ["Auth"],
+        },
+        response: {
+          200: accountListEnvelopeResponse,
+          401: errorResponse,
+          403: errorResponse,
           500: errorResponse,
           503: errorResponse,
         },

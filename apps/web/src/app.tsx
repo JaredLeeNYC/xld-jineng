@@ -32,6 +32,15 @@ export type Session = {
   mustChangePassword: boolean;
 };
 
+type AccountSummary = {
+  accountId: string;
+  employeeNumber: string;
+  displayName: string;
+  role: FixedRole;
+  active: boolean;
+  mustChangePassword: boolean;
+};
+
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 
 const request = async <T,>(
@@ -173,9 +182,11 @@ function LoginPage({ onLoggedIn }: { onLoggedIn: (session: Session) => void }) {
 
 function PasswordChangePage({
   onChanged,
+  onLoggedOut,
   session,
 }: {
   onChanged: (session: Session) => void;
+  onLoggedOut: () => void;
   session: Session;
 }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -207,6 +218,11 @@ function PasswordChangePage({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const logout = async () => {
+    await request("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    onLoggedOut();
   };
 
   return (
@@ -256,6 +272,9 @@ function PasswordChangePage({
           <ShieldCheck size={18} />
           {submitting ? "正在保存…" : "保存并进入系统"}
         </button>
+        <button className="auth-secondary" onClick={logout} type="button">
+          退出当前账号
+        </button>
       </form>
     </main>
   );
@@ -304,6 +323,101 @@ function NavigationButton({ item }: { item: NavigationItem }) {
       <Icon size={19} />
       <span>{item.label}</span>
     </button>
+  );
+}
+
+function AdminResetPanel() {
+  const [accounts, setAccounts] = useState<AccountSummary[] | undefined>();
+  const [accountId, setAccountId] = useState("");
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    void request<AccountSummary[]>("/api/admin/accounts")
+      .then(({ result }) => {
+        if (!result.ok) {
+          setLoadError(result.error.message);
+          return;
+        }
+        setAccounts(result.data);
+        setAccountId(result.data[0]?.accountId ?? "");
+      })
+      .catch(() => setLoadError("暂时无法读取账号列表"));
+  }, []);
+
+  const reset = async (event: FormEvent) => {
+    event.preventDefault();
+    setMessage("");
+    setSubmitting(true);
+    try {
+      const { result } = await request<{ accountId: string }>(
+        `/api/admin/accounts/${accountId}/reset-password`,
+        {
+          method: "POST",
+          body: JSON.stringify({ temporaryPassword }),
+        },
+      );
+      if (!result.ok) {
+        setMessage(result.error.message);
+        return;
+      }
+      setTemporaryPassword("");
+      setMessage("临时密码已重置，该账号下次登录时必须修改密码。");
+    } catch {
+      setMessage("暂时无法连接服务器，请稍后再试");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="panel matrix-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>账号管理</h2>
+          <p>重置临时密码并立即使旧会话失效</p>
+        </div>
+      </div>
+      <form className="admin-reset-form" onSubmit={reset}>
+        {!accounts && !loadError && <p className="list-state">正在加载账号…</p>}
+        {loadError && (
+          <p className="form-error" role="alert">
+            {loadError}
+          </p>
+        )}
+        {accounts?.length === 0 && <p className="list-state">当前没有可管理的账号</p>}
+        {accounts && accounts.length > 0 && (
+          <label>
+            员工账号
+            <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+              {accounts.map((account) => (
+                <option value={account.accountId} key={account.accountId}>
+                  {account.employeeNumber} · {account.displayName} · {roleLabel[account.role]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label>
+          临时密码
+          <input
+            minLength={12}
+            maxLength={200}
+            required
+            type="password"
+            value={temporaryPassword}
+            onChange={(event) => setTemporaryPassword(event.target.value)}
+          />
+        </label>
+        <button className="primary-button" disabled={!accountId || submitting} type="submit">
+          <LockKeyhole size={17} />
+          {submitting ? "正在重置…" : "重置密码"}
+        </button>
+        {message && <p className="form-message">{message}</p>}
+      </form>
+    </section>
   );
 }
 
@@ -357,6 +471,14 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             <kbd>⌘ K</kbd>
           </div>
           <div className="account">
+            <button
+              className="icon-button mobile-logout"
+              onClick={logout}
+              type="button"
+              aria-label="退出登录"
+            >
+              <LogIn className="logout-icon" size={19} />
+            </button>
             <button className="icon-button" type="button" aria-label="通知">
               <Bell size={19} />
               <i />
@@ -438,7 +560,7 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
                   ))}
                 </div>
               </section>
-              <TodoPanel readOnly={session.role === "executive_viewer"} />
+              <TodoPanel mode={session.role === "executive_viewer" ? "viewer" : "management"} />
             </div>
           ) : session.role === "employee" ? (
             <div className="dashboard-grid">
@@ -460,26 +582,12 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
                   <p>建议优先完成“设备点检规范”培训，并申请焊接操作复评。</p>
                 </div>
               </section>
-              <TodoPanel readOnly={false} />
+              <TodoPanel mode="employee" />
             </div>
           ) : (
             <div className="dashboard-grid">
-              <section className="panel matrix-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>账号与安全</h2>
-                    <p>固定角色、首次改密和临时锁定</p>
-                  </div>
-                </div>
-                <div className="system-summary">
-                  <ShieldCheck size={30} />
-                  <div>
-                    <strong>所有服务运行正常</strong>
-                    <p>权限变更与密码重置将写入安全事件。</p>
-                  </div>
-                </div>
-              </section>
-              <TodoPanel readOnly={false} />
+              <AdminResetPanel />
+              <TodoPanel mode="system" />
             </div>
           )}
         </div>
@@ -488,47 +596,75 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
   );
 }
 
-function TodoPanel({ readOnly }: { readOnly: boolean }) {
+const todoContent = {
+  management: {
+    title: "我的待办",
+    subtitle: "需要你处理的工厂管理事项",
+    items: [
+      ["技能评定待确认", "王强等 4 人提交了评定"],
+      ["培训任务提醒", "2 项线下培训即将到期"],
+      ["档案完整性", "1 名员工缺少岗位信息"],
+    ],
+  },
+  viewer: {
+    title: "关注事项",
+    subtitle: "只读查看当前经营风险",
+    items: [
+      ["关键岗位缺口", "3 个岗位存在技能覆盖风险"],
+      ["培训完成趋势", "本月完成率较上月提升"],
+      ["证书到期提醒", "未来 30 天有 6 项到期"],
+    ],
+  },
+  employee: {
+    title: "我的待办",
+    subtitle: "只展示与你本人有关的培训与技能事项",
+    items: [
+      ["待完成培训", "设备点检规范 · 本周五前完成"],
+      ["评定结果已更新", "焊接操作技能已完成复评"],
+      ["技能到期提醒", "安全作业证将在 30 天后到期"],
+    ],
+  },
+  system: {
+    title: "安全待办",
+    subtitle: "账号与访问安全事项",
+    items: [
+      ["首次登录账号", "2 个账号仍需修改初始密码"],
+      ["临时锁定", "查看近期登录失败与锁定记录"],
+      ["安全审计", "密码重置与越权拒绝均已留痕"],
+    ],
+  },
+} as const;
+
+function TodoPanel({ mode }: { mode: keyof typeof todoContent }) {
+  const content = todoContent[mode];
   return (
     <section className="panel todo-panel">
       <div className="panel-heading">
         <div>
-          <h2>{readOnly ? "关注事项" : "我的待办"}</h2>
-          <p>{readOnly ? "只读查看当前经营风险" : "需要你处理的工作"}</p>
+          <h2>{content.title}</h2>
+          <p>{content.subtitle}</p>
         </div>
         <span className="count-pill">3</span>
       </div>
       <div className="todo-list">
-        <button type="button">
-          <span className="todo-icon amber">
-            <ClipboardCheck size={19} />
-          </span>
-          <span>
-            <strong>技能评定待确认</strong>
-            <small>王强等 4 人提交了评定</small>
-          </span>
-          <ChevronRight size={17} />
-        </button>
-        <button type="button">
-          <span className="todo-icon blue">
-            <GraduationCap size={19} />
-          </span>
-          <span>
-            <strong>培训任务提醒</strong>
-            <small>2 项线下培训即将到期</small>
-          </span>
-          <ChevronRight size={17} />
-        </button>
-        <button type="button">
-          <span className="todo-icon green">
-            <UserRound size={19} />
-          </span>
-          <span>
-            <strong>档案完整性</strong>
-            <small>1 名员工缺少岗位信息</small>
-          </span>
-          <ChevronRight size={17} />
-        </button>
+        {content.items.map(([title, detail], index) => (
+          <button type="button" key={title}>
+            <span className={`todo-icon ${["amber", "blue", "green"][index]}`}>
+              {index === 0 ? (
+                <ClipboardCheck size={19} />
+              ) : index === 1 ? (
+                <GraduationCap size={19} />
+              ) : (
+                <UserRound size={19} />
+              )}
+            </span>
+            <span>
+              <strong>{title}</strong>
+              <small>{detail}</small>
+            </span>
+            <ChevronRight size={17} />
+          </button>
+        ))}
       </div>
     </section>
   );
@@ -565,6 +701,7 @@ export function App({ initialSession }: { initialSession?: Session }) {
     return (
       <PasswordChangePage
         onChanged={(session) => setState({ status: "authenticated", session })}
+        onLoggedOut={() => setState({ status: "anonymous" })}
         session={state.session}
       />
     );

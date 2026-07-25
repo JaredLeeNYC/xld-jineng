@@ -186,4 +186,94 @@ describe("authentication HTTP API", () => {
       },
     });
   });
+
+  test("accepts only a validated IP supplied by the trusted reverse proxy", async () => {
+    let context: { ipAddress?: string } = {};
+    const app = createApp({
+      authService: {
+        login: async (
+          _input: { employeeNumber: string; password: string },
+          receivedContext: { ipAddress?: string },
+        ) => {
+          context = receivedContext;
+          return {
+            ok: true,
+            data: {
+              session,
+              token: "plain-session-token",
+              expiresAt: new Date("2026-07-26T00:00:00.000Z"),
+            },
+          };
+        },
+      },
+    } as never);
+
+    await app.handle(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "203.0.113.99",
+          "x-real-ip": "192.0.2.10",
+        },
+        body: JSON.stringify({
+          employeeNumber: "E0001",
+          password: "Initial-Password-123",
+        }),
+      }),
+    );
+
+    expect(context.ipAddress).toBe("192.0.2.10");
+  });
+
+  test("serves scoped employee profiles and the administrator account list", async () => {
+    const calls: string[] = [];
+    const app = createApp({
+      authService: {
+        getEmployeeProfile: async (token: string, employeeId: string) => {
+          calls.push(`profile:${token}:${employeeId}`);
+          return {
+            ok: true,
+            data: {
+              employeeId,
+              employeeNumber: "E0001",
+              displayName: "张明",
+              departmentId: "department-1",
+            },
+          };
+        },
+        listAccounts: async (token: string) => {
+          calls.push(`accounts:${token}`);
+          return {
+            ok: true,
+            data: [
+              {
+                accountId: session.accountId,
+                employeeNumber: session.employeeNumber,
+                displayName: session.displayName,
+                role: session.role,
+                active: true,
+                mustChangePassword: true,
+              },
+            ],
+          };
+        },
+      },
+    } as never);
+
+    const profile = await app.handle(
+      new Request(`http://localhost/api/employees/${session.employeeId}/profile`, {
+        headers: { cookie: "skill_matrix_session=profile-token" },
+      }),
+    );
+    const accounts = await app.handle(
+      new Request("http://localhost/api/admin/accounts", {
+        headers: { cookie: "skill_matrix_session=admin-token" },
+      }),
+    );
+
+    expect(profile.status).toBe(200);
+    expect(accounts.status).toBe(200);
+    expect(calls).toEqual([`profile:profile-token:${session.employeeId}`, "accounts:admin-token"]);
+  });
 });

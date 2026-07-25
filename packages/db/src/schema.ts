@@ -1,8 +1,10 @@
 import { fixedRoles } from "@jineng/skill-matrix-shared";
+import { sql } from "drizzle-orm";
 import {
   bigserial,
   boolean,
   char,
+  check,
   index,
   integer,
   jsonb,
@@ -53,6 +55,10 @@ export const employees = pgTable(
     ...timestamps,
   },
   (table) => [
+    check(
+      "employees_number_canonical",
+      sql`${table.employeeNumber} = upper(trim(${table.employeeNumber}))`,
+    ),
     uniqueIndex("employees_number_unique").on(table.employeeNumber),
     index("employees_department_idx").on(table.departmentId),
   ],

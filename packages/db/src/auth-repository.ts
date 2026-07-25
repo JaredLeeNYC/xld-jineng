@@ -24,6 +24,36 @@ type StoredSession = {
   revokedAt?: Date;
 };
 
+type SecurityEventInput = {
+  type: string;
+  accountId?: string;
+  identifierHash?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  detail?: Record<string, unknown>;
+};
+
+type Queryable = Pick<Pool | PoolClient, "query">;
+
+const insertSecurityEvent = async (
+  queryable: Queryable,
+  input: SecurityEventInput,
+): Promise<void> => {
+  await queryable.query(
+    `insert into security_events (
+       type, account_id, identifier_hash, ip_address, user_agent, detail
+     ) values ($1, $2, $3, $4, $5, $6)`,
+    [
+      input.type,
+      input.accountId ?? null,
+      input.identifierHash ?? null,
+      input.ipAddress ?? null,
+      input.userAgent ?? null,
+      input.detail ?? {},
+    ],
+  );
+};
+
 type AccountRow = {
   id: string;
   employeeId: string;
@@ -89,10 +119,67 @@ const withTransaction = async <T>(
 export const createPostgresAuthRepository = (pool: Pool) => ({
   async findAccountByEmployeeNumber(employeeNumber: string): Promise<AuthAccount | undefined> {
     const result = await pool.query<AccountRow>(
-      `${accountSelection} where e.employee_number = $1`,
+      `${accountSelection} where upper(trim(e.employee_number)) = $1`,
       [employeeNumber],
     );
     return result.rows[0] ? accountFromRow(result.rows[0]) : undefined;
+  },
+
+  async findAccountById(accountId: string): Promise<AuthAccount | undefined> {
+    const result = await pool.query<AccountRow>(`${accountSelection} where a.id = $1`, [accountId]);
+    return result.rows[0] ? accountFromRow(result.rows[0]) : undefined;
+  },
+
+  async findEmployeeProfile(employeeId: string) {
+    const result = await pool.query<{
+      employeeId: string;
+      employeeNumber: string;
+      displayName: string;
+      departmentId: string | null;
+    }>(
+      `select id as "employeeId",
+              employee_number as "employeeNumber",
+              display_name as "displayName",
+              department_id as "departmentId"
+       from employees
+       where id = $1 and active = true`,
+      [employeeId],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      employeeId: row.employeeId,
+      employeeNumber: row.employeeNumber,
+      displayName: row.displayName,
+      ...(row.departmentId ? { departmentId: row.departmentId } : {}),
+    };
+  },
+
+  async listAccounts() {
+    const result = await pool.query<{
+      accountId: string;
+      employeeNumber: string;
+      displayName: string;
+      role: FixedRole;
+      active: boolean;
+      employeeActive: boolean;
+      mustChangePassword: boolean;
+    }>(
+      `select a.id as "accountId",
+              e.employee_number as "employeeNumber",
+              e.display_name as "displayName",
+              a.role,
+              a.active,
+              e.active as "employeeActive",
+              a.must_change_password as "mustChangePassword"
+       from user_accounts a
+       join employees e on e.id = a.employee_id
+       order by e.employee_number`,
+    );
+    return result.rows.map(({ employeeActive, ...row }) => ({
+      ...row,
+      active: row.active && employeeActive,
+    }));
   },
 
   async findLoginThrottle(
@@ -121,6 +208,7 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
     now: Date;
     lockAfter: number;
     lockUntil: Date;
+    event: SecurityEventInput;
   }): Promise<{ failures: number; lockedUntil?: Date }> {
     return withTransaction(pool, async (client) => {
       const result = await client.query<{
@@ -166,6 +254,7 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
           ],
         );
       }
+      await insertSecurityEvent(client, input.event);
 
       const state = result.rows[0] ?? { failures: 1, lockedUntil: null };
       return {
@@ -179,6 +268,7 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
     accountId: string;
     identifierHash: string;
     session: StoredSession;
+    event: SecurityEventInput;
   }): Promise<void> {
     await withTransaction(pool, async (client) => {
       await client.query(
@@ -206,6 +296,7 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
           input.session.createdAt,
         ],
       );
+      await insertSecurityEvent(client, input.event);
     });
   },
 
@@ -266,7 +357,9 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
     accountId: string;
     passwordHash: string;
     session: StoredSession;
-  }): Promise<AuthAccount> {
+    expectedSessionVersion: number;
+    event: SecurityEventInput;
+  }): Promise<AuthAccount | undefined> {
     return withTransaction(pool, async (client) => {
       const update = await client.query<AccountRow>(
         `update user_accounts
@@ -274,7 +367,7 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
              must_change_password = false,
              session_version = session_version + 1,
              updated_at = $3
-         where id = $1
+         where id = $1 and session_version = $4
          returning id,
            employee_id as "employeeId",
            role,
@@ -282,10 +375,15 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
            must_change_password as "mustChangePassword",
            active,
            session_version as "sessionVersion"`,
-        [input.accountId, input.passwordHash, input.session.createdAt],
+        [
+          input.accountId,
+          input.passwordHash,
+          input.session.createdAt,
+          input.expectedSessionVersion,
+        ],
       );
       const partial = update.rows[0];
-      if (!partial) throw new Error("Account not found");
+      if (!partial) return undefined;
       const employee = await client.query<{
         employeeNumber: string;
         displayName: string;
@@ -318,6 +416,7 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
           input.session.createdAt,
         ],
       );
+      await insertSecurityEvent(client, input.event);
       return accountFromRow(row);
     });
   },
@@ -333,6 +432,8 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
     accountId: string;
     passwordHash: string;
     revokedAt: Date;
+    identifierHash: string;
+    event: SecurityEventInput;
   }): Promise<AuthAccount | undefined> {
     return withTransaction(pool, async (client) => {
       const result = await client.query<AccountRow>(
@@ -364,34 +465,15 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
         "update auth_sessions set revoked_at = $2 where account_id = $1 and revoked_at is null",
         [input.accountId, input.revokedAt],
       );
+      await client.query("delete from login_throttles where identifier_hash = $1", [
+        input.identifierHash,
+      ]);
+      await insertSecurityEvent(client, input.event);
       return accountFromRow(row);
     });
   },
 
-  async clearLoginThrottle(identifierHash: string): Promise<void> {
-    await pool.query("delete from login_throttles where identifier_hash = $1", [identifierHash]);
-  },
-
-  async recordSecurityEvent(input: {
-    type: string;
-    accountId?: string;
-    identifierHash?: string;
-    ipAddress?: string;
-    userAgent?: string;
-    detail?: Record<string, unknown>;
-  }): Promise<void> {
-    await pool.query(
-      `insert into security_events (
-         type, account_id, identifier_hash, ip_address, user_agent, detail
-       ) values ($1, $2, $3, $4, $5, $6)`,
-      [
-        input.type,
-        input.accountId ?? null,
-        input.identifierHash ?? null,
-        input.ipAddress ?? null,
-        input.userAgent ?? null,
-        input.detail ?? {},
-      ],
-    );
+  async recordSecurityEvent(input: SecurityEventInput): Promise<void> {
+    await insertSecurityEvent(pool, input);
   },
 });
