@@ -62,6 +62,15 @@ export const createApp = ({
         origin: appUrl,
       }),
     )
+    .onError({ as: "global" }, ({ code, set }) => {
+      if (code === "NOT_FOUND") {
+        set.status = 404;
+        return failure("NOT_FOUND", "接口不存在");
+      }
+
+      set.status = 500;
+      return failure("INTERNAL_ERROR", "服务暂时不可用");
+    })
     .get(
       "/api/health",
       () =>

@@ -1,4 +1,6 @@
 import type { ReadinessProbe } from "@jineng/skill-matrix-shared";
+import { readMigrationFiles } from "drizzle-orm/migrator";
+import { fileURLToPath } from "node:url";
 
 type QueryResult = {
   rows: Array<Record<string, unknown>>;
@@ -8,10 +10,21 @@ export type ReadinessClient = {
   query: (sql: string) => Promise<QueryResult>;
 };
 
-export const expectedMigrationCount = 1;
+export type ExpectedMigration = {
+  hash: string;
+  createdAt: string;
+};
+
+export const migrationsFolder = fileURLToPath(new URL("../drizzle/", import.meta.url));
+
+export const readExpectedMigrations = (): ExpectedMigration[] =>
+  readMigrationFiles({ migrationsFolder }).map((migration) => ({
+    hash: migration.hash,
+    createdAt: String(migration.folderMillis),
+  }));
 
 export const createDatabaseReadinessProbe =
-  (client: ReadinessClient, expectedMigrations = expectedMigrationCount): ReadinessProbe =>
+  (client: ReadinessClient, expectedMigrations = readExpectedMigrations()): ReadinessProbe =>
   async () => {
     try {
       await client.query("select 1");
@@ -25,9 +38,14 @@ export const createDatabaseReadinessProbe =
 
     try {
       const result = await client.query(
-        "select count(*)::integer as count from drizzle.__drizzle_migrations",
+        'select hash, created_at::text as "createdAt" from drizzle.__drizzle_migrations order by created_at, id',
       );
-      if (result.rows[0]?.count !== expectedMigrations) {
+      const appliedMigrations = result.rows.map((row) => ({
+        hash: String(row.hash),
+        createdAt: String(row.createdAt),
+      }));
+
+      if (JSON.stringify(appliedMigrations) !== JSON.stringify(expectedMigrations)) {
         return {
           ok: false,
           reason: "migration-mismatch",

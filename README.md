@@ -28,4 +28,6 @@ bun test
 bun run check
 ```
 
+`bun run check` 会启动本项目的 PostgreSQL 容器，在随机命名的临时数据库中执行两次迁移并校验迁移 hash，结束后删除临时数据库；若容器原本未运行，也会自动停止容器。可用 `POSTGRES_CONTRACT_ADMIN_URL` 指向专用测试实例。
+
 云端部署模板见 [`deploy/README.md`](deploy/README.md)。

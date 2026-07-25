@@ -78,4 +78,18 @@ describe("system HTTP API", () => {
     expect(specification.paths["/api/health"]).toBeDefined();
     expect(specification.paths["/api/ready"]).toBeDefined();
   });
+
+  test("wraps an unknown API route in the standard error envelope", async () => {
+    const response = await createApp().handle(new Request("http://localhost/api/missing"));
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: {
+        code: "NOT_FOUND",
+        message: "接口不存在",
+      },
+    });
+  });
 });
