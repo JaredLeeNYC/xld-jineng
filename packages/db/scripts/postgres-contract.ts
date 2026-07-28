@@ -11,6 +11,7 @@ import { createAssessmentService } from "../../../apps/server/src/assessment-ser
 import { createNotificationService } from "../../../apps/server/src/notification-service";
 import { createReportService } from "../../../apps/server/src/report-service";
 import { readReportWorkbookSummary } from "../../../apps/server/src/report-excel";
+import { createAuditService } from "../../../apps/server/src/audit-service";
 import {
   createDatabaseReadinessProbe,
   createPostgresAuthRepository,
@@ -21,6 +22,7 @@ import {
   createPostgresAssessmentRepository,
   createPostgresNotificationRepository,
   createPostgresReportRepository,
+  createPostgresAuditRepository,
   migrationsFolder,
 } from "../src";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -256,6 +258,7 @@ try {
     repository: createPostgresReportRepository(contractPool, skillRepository),
     now: () => new Date(),
   });
+  const auditService = createAuditService(createPostgresAuditRepository(contractPool));
   const app = createApp({
     authService,
     organizationService,
@@ -265,6 +268,7 @@ try {
     assessmentService,
     notificationService,
     reportService,
+    auditService,
     readinessProbe,
   });
   await contractPool.query(
@@ -2149,7 +2153,10 @@ try {
     [cappedId],
   );
   const automaticAfterCap = await notificationRepository.claim(new Date(), cappedId);
-  const manualRetryAccepted = await notificationRepository.retry(cappedId);
+  const manualRetryAccepted = await notificationRepository.retry(
+    cappedId,
+    accountIds.get("system_admin")!,
+  );
   const manualClaim = await notificationRepository.claim(new Date(), cappedId);
   if (automaticAfterCap || !manualRetryAccepted || !manualClaim)
     throw new Error("永久错误未停止自动重试，或人工重试无法恢复");
@@ -2233,9 +2240,9 @@ try {
   );
   const reportWorkbook = await readReportWorkbookSummary(await reportExport.arrayBuffer());
   const rows = managerReport.data?.rows ?? [];
-  const sortedSkillCodes = rows.map((row) => row.skillCode).sort((a, b) =>
-    b.localeCompare(a, "zh-CN"),
-  );
+  const sortedSkillCodes = rows
+    .map((row) => row.skillCode)
+    .sort((a, b) => b.localeCompare(a, "zh-CN"));
   if (
     managerReportResponse.status !== 200 ||
     employeeReport.status !== 403 ||
@@ -2270,6 +2277,55 @@ try {
     "select 1 from audit_logs where action='reports.exported' limit 1",
   );
   if (!reportAudit.rowCount) throw new Error("报表导出未写入审计日志");
+
+  await contractPool.query(
+    `insert into audit_logs (actor_account_id,action,object_type,object_id,summary)
+     values ($1,'contract.sensitive_probe','contract','probe',$2)`,
+    [
+      accountIds.get("system_admin")!,
+      {
+        password: "must-not-leak",
+        webhookUrl: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=must-not-leak",
+        safe: "visible",
+      },
+    ],
+  );
+  const auditResponse = await app.handle(
+    new Request("http://localhost/api/admin/audit?limit=500", {
+      headers: { cookie: roleLogins.get("system_admin")!.cookie! },
+    }),
+  );
+  const auditBody = (await auditResponse.json()) as {
+    data?: Array<{ action: string; summary: Record<string, unknown> }>;
+  };
+  const deniedAudit = await app.handle(
+    new Request("http://localhost/api/admin/audit", {
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const auditActions = new Set(auditBody.data?.map((row) => row.action));
+  const sensitiveProbe = auditBody.data?.find((row) => row.action === "contract.sensitive_probe");
+  for (const expectedAction of [
+    "employee.assignment_changed",
+    "training_plan.published",
+    "training_task.confirmed",
+    "skill_assessment.archived",
+    "skill_assessment.voided",
+    "reports.exported",
+    "notification_delivery.retried",
+  ]) {
+    if (!auditActions.has(expectedAction))
+      throw new Error(`审计查询缺少关键动作：${expectedAction}`);
+  }
+  if (
+    auditResponse.status !== 200 ||
+    deniedAudit.status !== 403 ||
+    sensitiveProbe?.summary.password !== "[已脱敏]" ||
+    sensitiveProbe.summary.webhookUrl !== "[已脱敏]" ||
+    sensitiveProbe.summary.safe !== "visible" ||
+    JSON.stringify(auditBody).includes("must-not-leak")
+  )
+    throw new Error("审计权限或敏感摘要脱敏失败");
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",

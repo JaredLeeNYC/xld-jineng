@@ -53,6 +53,9 @@ for (const [path, method, statuses] of [
   ["/api/skill-baselines/import/dry-run", "post", ["200", "403"]],
   ["/api/skill-baselines/import/{previewId}/confirm", "post", ["200", "403", "409"]],
   ["/api/skill-matrix", "get", ["200", "403"]],
+  ["/api/reports/dashboard", "get", ["200", "403"]],
+  ["/api/notifications", "get", ["200", "403"]],
+  ["/api/admin/audit", "get", ["200", "403"]],
   ["/api/training-materials", "get", ["200", "403"]],
   ["/api/training-materials/link", "post", ["200", "403", "409"]],
   ["/api/training-materials/upload", "post", ["200", "403", "409"]],
@@ -82,7 +85,6 @@ const requiredDeploymentContent = new Map([
     "deploy/skill-matrix-server.service",
     [
       "WorkingDirectory=/opt/skill-matrix/current",
-      "ExecStartPre=/usr/local/bin/bun run db:migrate",
       "ExecStart=/usr/local/bin/bun apps/server/src/index.ts",
       "ReadWritePaths=/opt/skill-matrix /var/lib/skill-matrix",
     ],
@@ -104,8 +106,29 @@ const requiredDeploymentContent = new Map([
     ["set -euo pipefail", "/opt/skill-matrix/releases/*", "bun run check"],
   ],
   ["deploy/server.env.example", ["MATERIAL_STORAGE_DIR=/var/lib/skill-matrix/materials"]],
-  ["deploy/backup-materials.sh", ["sha256sum", "tar -tzf"]],
-  ["deploy/restore-materials.sh", ["sha256sum -c", "target_dir"]],
+  ["deploy/backup-materials.sh", ["umask 077", "sha256sum", "tar -tzf", "-links +1"]],
+  [
+    "deploy/restore-materials.sh",
+    ["sha256sum -c", "target_dir", "RESTORE_APPROVED", "tar -tvzf", "-links +1"],
+  ],
+  ["deploy/backup-database.sh", ["pg_dump --format=custom", "sha256sum"]],
+  ["deploy/restore-database.sh", ["RESTORE_APPROVED", "pg_restore --exit-on-error"]],
+  ["deploy/smoke-test.sh", ["/api/health", "/api/ready", "/api/auth/login"]],
+  [
+    "deploy/release.sh",
+    [
+      "RELEASE_APPROVED",
+      "DATABASE_URL",
+      "server.env permissions",
+      "backup-database.sh",
+      "bun run db:migrate",
+      "smoke-test.sh",
+    ],
+  ],
+  [
+    "packages/db/scripts/verify-restored-system.ts",
+    ["Bun.password.verify", "createFilesystemMaterialStorage", "sha256"],
+  ],
 ]);
 
 for (const [path, requiredParts] of requiredDeploymentContent) {
@@ -128,12 +151,21 @@ const syntaxCheck = Bun.spawnSync({
     "deploy/validate-release.sh",
     "deploy/backup-materials.sh",
     "deploy/restore-materials.sh",
+    "deploy/backup-database.sh",
+    "deploy/restore-database.sh",
+    "deploy/smoke-test.sh",
+    "deploy/release.sh",
   ],
   stderr: "pipe",
   stdout: "pipe",
 });
 if (!syntaxCheck.success) {
   fail(`发布脚本语法错误：${syntaxCheck.stderr.toString()}`);
+}
+
+const serviceFile = await Bun.file("deploy/skill-matrix-server.service").text();
+if (serviceFile.includes("ExecStartPre") || serviceFile.includes("db:migrate")) {
+  fail("systemd 普通重启不得隐式执行数据库迁移");
 }
 
 console.log("OpenAPI 与部署契约校验通过");

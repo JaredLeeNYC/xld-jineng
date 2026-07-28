@@ -11,6 +11,7 @@ import { createTrainingService } from "./training-service";
 import { createAssessmentService } from "./assessment-service";
 import { createNotificationService } from "./notification-service";
 import { createReportService } from "./report-service";
+import { createAuditService } from "./audit-service";
 
 const config = parseServerConfig(process.env);
 const database = createDatabase(config);
@@ -77,6 +78,7 @@ const reportService = createReportService({
   repository: database.reportRepository,
   now: () => new Date(),
 });
+const auditService = createAuditService(database.auditRepository);
 
 const app = createApp({
   appUrl: config.appUrl,
@@ -88,6 +90,7 @@ const app = createApp({
   assessmentService,
   notificationService,
   reportService,
+  auditService,
   readinessProbe: database.readinessProbe,
   secureCookie: config.appUrl.startsWith("https://"),
 }).listen({

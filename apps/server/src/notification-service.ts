@@ -129,7 +129,7 @@ export const createNotificationService = (dependencies: {
     },
     async retry(actor: SessionView, id: string) {
       if (actor.role !== "system_admin") return fail("FORBIDDEN", "仅系统管理员可重试通知", 403);
-      if (!(await repository.retry(id)))
+      if (!(await repository.retry(id, actor.accountId)))
         return fail("DELIVERY_NOT_RETRYABLE", "发送记录不可重试", 409);
       await dispatchOne(id);
       return { ok: true as const, data: { id } };

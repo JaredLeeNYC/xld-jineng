@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm, utimes } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createFilesystemMaterialStorage, createMemoryMaterialStorage } from "./material-storage";
@@ -80,17 +80,57 @@ describe("material storage", () => {
       stderr: "pipe",
     });
     if (!backup.success) throw new Error(`backup failed: ${backup.stderr.toString()}`);
+    const unapprovedRestore = Bun.spawnSync({
+      cmd: [bash, "deploy/restore-materials.sh", bashPath(archive), bashPath(target)],
+      cwd: repositoryRoot,
+      stderr: "pipe",
+    });
+    expect(unapprovedRestore.success).toBe(false);
+    expect(unapprovedRestore.stderr.toString()).toContain("RESTORE_APPROVED");
     const blockedRestore = Bun.spawnSync({
       cmd: [bash, "deploy/restore-materials.sh", bashPath(archive), bashPath(target)],
       cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        RESTORE_APPROVED: "YES",
+        ALLOW_UNSAFE_TEST_RESTORE: "YES",
+        RESTORE_TEST_ROOT: bashPath(directory),
+      },
       stderr: "pipe",
     });
     expect(blockedRestore.success).toBe(false);
     expect(blockedRestore.stderr.toString()).toContain("active material upload");
     await rm(`${target}.upload-locks`, { recursive: true, force: true });
+    await appendFile(archive, "tampered");
+    const tamperedRestore = Bun.spawnSync({
+      cmd: [bash, "deploy/restore-materials.sh", bashPath(archive), bashPath(target)],
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        RESTORE_APPROVED: "YES",
+        ALLOW_UNSAFE_TEST_RESTORE: "YES",
+        RESTORE_TEST_ROOT: bashPath(directory),
+      },
+      stderr: "pipe",
+    });
+    expect(tamperedRestore.success).toBe(false);
+    expect(tamperedRestore.stderr.toString()).toContain("did NOT match");
+    const freshBackup = Bun.spawnSync({
+      cmd: [bash, "deploy/backup-materials.sh", bashPath(source), bashPath(archive)],
+      cwd: repositoryRoot,
+      stderr: "pipe",
+    });
+    if (!freshBackup.success)
+      throw new Error(`fresh backup failed: ${freshBackup.stderr.toString()}`);
     const restore = Bun.spawnSync({
       cmd: [bash, "deploy/restore-materials.sh", bashPath(archive), bashPath(target)],
       cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        RESTORE_APPROVED: "YES",
+        ALLOW_UNSAFE_TEST_RESTORE: "YES",
+        RESTORE_TEST_ROOT: bashPath(directory),
+      },
       stderr: "pipe",
     });
     if (!restore.success) throw new Error(`restore failed: ${restore.stderr.toString()}`);
@@ -98,5 +138,5 @@ describe("material storage", () => {
       new Uint8Array([7, 8, 9]).buffer,
     );
     expect(await Bun.file(join(target, "stale-file")).exists()).toBe(false);
-  }, 15_000);
+  }, 45_000);
 });

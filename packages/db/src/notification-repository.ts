@@ -169,15 +169,23 @@ export const createPostgresNotificationRepository = (pool: Pool) => ({
       createdAt: new Date(row.createdAt).toISOString(),
     }));
   },
-  async retry(id: string) {
-    const result = await pool.query(
-      `update notification_outbox set status='pending',next_attempt_at=now(),error_message=null,
-         updated_at=now() where id=$1 and status='failed'
-           and exists (select 1 from webhook_channels c where c.id=channel_id and c.active=true)
-         returning id`,
-      [id],
-    );
-    return Boolean(result.rowCount);
+  async retry(id: string, actorAccountId: string) {
+    return transaction(pool, async (client) => {
+      const result = await client.query(
+        `update notification_outbox set status='pending',next_attempt_at=now(),error_message=null,
+           updated_at=now() where id=$1 and status='failed'
+             and exists (select 1 from webhook_channels c where c.id=channel_id and c.active=true)
+           returning id`,
+        [id],
+      );
+      if (!result.rowCount) return false;
+      await client.query(
+        `insert into audit_logs (actor_account_id,action,object_type,object_id)
+         values ($1,'notification_delivery.retried','notification_delivery',$2)`,
+        [actorAccountId, id],
+      );
+      return true;
+    });
   },
   async claim(now: Date, onlyId?: string) {
     return transaction(pool, async (client) => {

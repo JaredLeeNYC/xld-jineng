@@ -9,7 +9,6 @@ User=skill-matrix
 Group=skill-matrix
 WorkingDirectory=/opt/skill-matrix/current
 EnvironmentFile=/etc/skill-matrix/server.env
-ExecStartPre=/usr/local/bin/bun run db:migrate
 ExecStart=/usr/local/bin/bun apps/server/src/index.ts
 Restart=on-failure
 RestartSec=5

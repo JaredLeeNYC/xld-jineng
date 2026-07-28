@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   App,
+  AuditPanel,
   AssessmentPanel,
   OrganizationPanel,
   ReportDashboardPanel,
@@ -208,5 +209,6 @@ describe("application shell", () => {
     expect(renderToStaticMarkup(<WebhookSettingsPanel />)).toContain(
       "正在加载 Webhook 配置与发送记录",
     );
+    expect(renderToStaticMarkup(<AuditPanel />)).toContain("正在加载审计日志");
   });
 });

@@ -15,6 +15,7 @@ import type { AssessmentService } from "./assessment-service";
 import type { NotificationService } from "./notification-service";
 import type { ReportService } from "./report-service";
 import { createReportWorkbook } from "./report-excel";
+import type { AuditService } from "./audit-service";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -151,6 +152,7 @@ type AppDependencies = {
   assessmentService?: AssessmentService;
   notificationService?: NotificationService;
   reportService?: ReportService;
+  auditService?: AuditService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
 };
@@ -221,6 +223,7 @@ export const createApp = ({
   assessmentService,
   notificationService,
   reportService,
+  auditService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
 }: AppDependencies = {}) =>
@@ -1393,6 +1396,7 @@ export const createApp = ({
           ),
           sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
         }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )
     .get(
@@ -2404,6 +2408,38 @@ export const createApp = ({
       },
       {
         params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/admin/audit",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!auditService) {
+          set.status = 503;
+          return failure("AUDIT_SERVICE_UNAVAILABLE", "审计服务暂不可用");
+        }
+        const result = await auditService.list(authenticated.actor, {
+          ...(query.source ? { source: query.source } : {}),
+          ...(query.action ? { action: query.action } : {}),
+          ...(query.limit ? { limit: Number(query.limit) } : {}),
+        });
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({
+          source: t.Optional(t.Union([t.Literal("business"), t.Literal("security")])),
+          action: t.Optional(t.String({ maxLength: 80 })),
+          limit: t.Optional(t.String()),
+        }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )

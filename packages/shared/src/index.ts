@@ -123,3 +123,4 @@ export * from "./training-material";
 export * from "./training-plan";
 export * from "./assessment";
 export * from "./report";
+export * from "./mes-v1";

@@ -2505,6 +2505,133 @@ type NotificationDelivery = {
   errorMessage?: string;
 };
 
+type AuditRecord = {
+  id: string;
+  source: "business" | "security";
+  actorName?: string;
+  action: string;
+  objectType: string;
+  objectId: string;
+  summary: Record<string, unknown>;
+  createdAt: string;
+};
+
+export function AuditPanel() {
+  const [source, setSource] = useState("");
+  const [action, setAction] = useState("");
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | { status: "ready"; rows: AuditRecord[] }
+  >({ status: "loading" });
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const parameters = new URLSearchParams();
+      if (source) parameters.set("source", source);
+      if (action.trim()) parameters.set("action", action.trim());
+      const { result } = await request<AuditRecord[]>(`/api/admin/audit?${parameters}`);
+      setState(
+        result.ok
+          ? { status: "ready", rows: result.data }
+          : { status: "error", message: result.error.message },
+      );
+    } catch {
+      setState({ status: "error", message: "暂时无法加载审计日志" });
+    }
+  };
+  useEffect(() => void load(), []);
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载审计日志…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" type="button" onClick={() => void load()}>
+          重新加载
+        </button>
+      </section>
+    );
+  return (
+    <div className="matrix-page">
+      <section className="welcome">
+        <div>
+          <p className="eyebrow">系统审计</p>
+          <h1>关键操作与登录安全事件</h1>
+          <p>摘要自动隐藏密码、令牌、密钥和 Webhook 地址。</p>
+        </div>
+      </section>
+      <section className="panel matrix-filter">
+        <select value={source} onChange={(event) => setSource(event.target.value)}>
+          <option value="">全部来源</option>
+          <option value="business">业务操作</option>
+          <option value="security">登录安全</option>
+        </select>
+        <input
+          placeholder="按动作筛选"
+          value={action}
+          onChange={(event) => setAction(event.target.value)}
+        />
+        <button className="primary-button" type="button" onClick={() => void load()}>
+          查询
+        </button>
+      </section>
+      {state.rows.length === 0 ? (
+        <section className="panel list-state">当前条件暂无审计记录</section>
+      ) : (
+        <section className="panel">
+          <div className="master-table-wrap">
+            <table className="master-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>来源</th>
+                  <th>操作者</th>
+                  <th>动作</th>
+                  <th>对象</th>
+                  <th>摘要</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{new Date(row.createdAt).toLocaleString("zh-CN")}</td>
+                    <td>{row.source === "security" ? "登录安全" : "业务操作"}</td>
+                    <td>{row.actorName ?? "系统/未知账号"}</td>
+                    <td>{row.action}</td>
+                    <td>
+                      {row.objectType} · {row.objectId}
+                    </td>
+                    <td>{JSON.stringify(row.summary)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="master-cards">
+            {state.rows.map((row) => (
+              <article className="master-card" key={row.id}>
+                <header>
+                  <strong>{row.action}</strong>
+                  <span>{row.source === "security" ? "登录安全" : "业务操作"}</span>
+                </header>
+                <p>
+                  {row.actorName ?? "系统/未知账号"} ·{" "}
+                  {new Date(row.createdAt).toLocaleString("zh-CN")}
+                </p>
+                <small>
+                  {row.objectType} · {row.objectId}
+                </small>
+                <small>{JSON.stringify(row.summary)}</small>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 export function NotificationPanel() {
   const [state, setState] = useState<
     | { status: "loading" }
@@ -4174,6 +4301,8 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             <AssessmentPanel session={session} />
           ) : activeNavigation === "notifications" ? (
             <NotificationPanel />
+          ) : activeNavigation === "audit" ? (
+            <AuditPanel />
           ) : activeNavigation === "settings" ? (
             <WebhookSettingsPanel />
           ) : activeNavigation === "dashboard" && isManagement ? (

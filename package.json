@@ -18,7 +18,8 @@
     "db:generate": "bun run --filter @jineng/skill-matrix-db db:generate",
     "db:migrate": "bun run --filter @jineng/skill-matrix-db db:migrate",
     "db:seed": "bun packages/db/scripts/seed.ts",
-    "materials:cleanup": "bun apps/server/src/cleanup-material-storage.ts"
+    "materials:cleanup": "bun apps/server/src/cleanup-material-storage.ts",
+    "restore:verify": "bun packages/db/scripts/verify-restored-system.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.3.3",
