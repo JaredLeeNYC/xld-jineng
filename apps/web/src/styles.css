@@ -1021,6 +1021,91 @@ main {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
 }
+
+.material-page {
+  display: grid;
+  gap: 20px;
+}
+.material-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.material-form h2,
+.material-form textarea,
+.material-form select,
+.material-form button {
+  grid-column: 1 / -1;
+}
+.material-form select {
+  min-height: 110px;
+}
+.material-form textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+.material-list {
+  overflow: hidden;
+}
+.material-list .panel-heading input {
+  width: min(320px, 100%);
+}
+.material-table {
+  overflow-x: auto;
+}
+.material-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.material-table th,
+.material-table td {
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.material-table td:first-child {
+  display: grid;
+  gap: 4px;
+}
+.material-table td small {
+  color: var(--muted);
+}
+.material-table td button {
+  margin-right: 8px;
+}
+.material-cards {
+  display: none;
+  gap: 12px;
+}
+.material-cards article {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+}
+.material-cards header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+@media (max-width: 720px) {
+  .material-form {
+    grid-template-columns: 1fr;
+  }
+  .material-form > * {
+    grid-column: 1;
+  }
+  .material-table {
+    display: none;
+  }
+  .material-cards {
+    display: grid;
+  }
+  .material-list .panel-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 .skill-table-wrap,
 .requirement-table-wrap,
 .heatmap-wrap {

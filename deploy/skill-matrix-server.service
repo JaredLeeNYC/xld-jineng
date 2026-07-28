@@ -17,7 +17,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/skill-matrix
+ReadWritePaths=/opt/skill-matrix /var/lib/skill-matrix
 
 [Install]
 WantedBy=multi-user.target

@@ -8,6 +8,7 @@ describe("server configuration", () => {
       databaseUrl: "postgres://skill_matrix:skill_matrix_dev@localhost:5433/skill_matrix",
       host: "0.0.0.0",
       port: 3000,
+      materialStorageDir: ".data/materials",
     });
   });
 

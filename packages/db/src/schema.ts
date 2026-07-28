@@ -218,6 +218,53 @@ export const validSkillAssessments = pgTable(
   ],
 );
 
+export const trainingMaterials = pgTable(
+  "training_materials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: varchar("title", { length: 150 }).notNull(),
+    category: varchar("category", { length: 80 }).notNull(),
+    description: varchar("description", { length: 500 }),
+    kind: varchar("kind", { length: 10 }).notNull(),
+    externalUrl: varchar("external_url", { length: 2_000 }),
+    storageKey: varchar("storage_key", { length: 150 }),
+    originalFilename: varchar("original_filename", { length: 255 }),
+    mimeType: varchar("mime_type", { length: 150 }),
+    sizeBytes: integer("size_bytes"),
+    checksum: char("checksum", { length: 64 }),
+    active: boolean("active").notNull().default(true),
+    createdByAccountId: uuid("created_by_account_id")
+      .notNull()
+      .references(() => userAccounts.id, { onDelete: "restrict" }),
+    ...timestamps,
+  },
+  (table) => [
+    check("training_materials_kind", sql`${table.kind} in ('file', 'link')`),
+    check(
+      "training_materials_source",
+      sql`(${table.kind} = 'file' and ${table.storageKey} is not null and ${table.externalUrl} is null and ${table.checksum} is not null) or (${table.kind} = 'link' and ${table.externalUrl} is not null and ${table.storageKey} is null and ${table.checksum} is null)`,
+    ),
+    index("training_materials_category_idx").on(table.category),
+  ],
+);
+
+export const trainingMaterialSkills = pgTable(
+  "training_material_skills",
+  {
+    materialId: uuid("material_id")
+      .notNull()
+      .references(() => trainingMaterials.id, { onDelete: "restrict" }),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("training_material_skills_unique").on(table.materialId, table.skillId),
+    index("training_material_skills_skill_idx").on(table.skillId),
+  ],
+);
+
 export const employeeCurrentSkills = pgTable(
   "employee_current_skills",
   {

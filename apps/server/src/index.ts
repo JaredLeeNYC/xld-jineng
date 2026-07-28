@@ -5,6 +5,8 @@ import { createApp } from "./app";
 import { createAuthService } from "./auth-service";
 import { createOrganizationService } from "./organization-service";
 import { createSkillService } from "./skill-service";
+import { createMaterialService } from "./material-service";
+import { createFilesystemMaterialStorage } from "./material-storage";
 
 const config = parseServerConfig(process.env);
 const database = createDatabase(config);
@@ -46,12 +48,18 @@ const skillService = createSkillService({
   idSource: () => randomUUID(),
   now: () => new Date(),
 });
+const materialService = createMaterialService({
+  repository: database.materialRepository,
+  storage: createFilesystemMaterialStorage(config.materialStorageDir),
+  idSource: () => randomUUID(),
+});
 
 const app = createApp({
   appUrl: config.appUrl,
   authService,
   organizationService,
   skillService,
+  materialService,
   readinessProbe: database.readinessProbe,
   secureCookie: config.appUrl.startsWith("https://"),
 }).listen({

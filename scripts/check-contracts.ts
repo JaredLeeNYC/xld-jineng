@@ -53,6 +53,12 @@ for (const [path, method, statuses] of [
   ["/api/skill-baselines/import/dry-run", "post", ["200", "403"]],
   ["/api/skill-baselines/import/{previewId}/confirm", "post", ["200", "403", "409"]],
   ["/api/skill-matrix", "get", ["200", "403"]],
+  ["/api/training-materials", "get", ["200", "403"]],
+  ["/api/training-materials/link", "post", ["200", "403", "409"]],
+  ["/api/training-materials/upload", "post", ["200", "403", "409"]],
+  ["/api/training-materials/{id}", "patch", ["200", "403", "404"]],
+  ["/api/training-materials/{id}/deactivate", "post", ["200", "403", "404"]],
+  ["/api/training-materials/{id}/content", "get", ["200", "403", "404"]],
 ] as const) {
   const responses = specification.paths?.[path]?.[method]?.responses;
   if (!responses || statuses.some((status) => !responses[status])) {
@@ -67,6 +73,7 @@ const requiredDeploymentContent = new Map([
       "WorkingDirectory=/opt/skill-matrix/current",
       "ExecStartPre=/usr/local/bin/bun run db:migrate",
       "ExecStart=/usr/local/bin/bun apps/server/src/index.ts",
+      "ReadWritePaths=/opt/skill-matrix /var/lib/skill-matrix",
     ],
   ],
   [
@@ -85,6 +92,9 @@ const requiredDeploymentContent = new Map([
     "deploy/validate-release.sh",
     ["set -euo pipefail", "/opt/skill-matrix/releases/*", "bun run check"],
   ],
+  ["deploy/server.env.example", ["MATERIAL_STORAGE_DIR=/var/lib/skill-matrix/materials"]],
+  ["deploy/backup-materials.sh", ["sha256sum", "tar -tzf"]],
+  ["deploy/restore-materials.sh", ["sha256sum -c", "target_dir"]],
 ]);
 
 for (const [path, requiredParts] of requiredDeploymentContent) {
@@ -101,7 +111,13 @@ const bash =
     ? "C:/Program Files/Git/bin/bash.exe"
     : "bash";
 const syntaxCheck = Bun.spawnSync({
-  cmd: [bash, "-n", "deploy/validate-release.sh"],
+  cmd: [
+    bash,
+    "-n",
+    "deploy/validate-release.sh",
+    "deploy/backup-materials.sh",
+    "deploy/restore-materials.sh",
+  ],
   stderr: "pipe",
   stdout: "pipe",
 });

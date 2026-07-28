@@ -9,6 +9,7 @@ import { createEmployeeExport, parseEmployeeWorkbook } from "./organization-exce
 import type { OrganizationService } from "./organization-service";
 import { parseSkillBaselineWorkbook } from "./skill-excel";
 import type { SkillService } from "./skill-service";
+import type { MaterialService } from "./material-service";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -140,6 +141,7 @@ type AppDependencies = {
   authService?: AuthHttpService;
   organizationService?: OrganizationService;
   skillService?: SkillService;
+  materialService?: MaterialService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
 };
@@ -205,6 +207,7 @@ export const createApp = ({
   authService,
   organizationService,
   skillService,
+  materialService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
 }: AppDependencies = {}) =>
@@ -1268,6 +1271,198 @@ export const createApp = ({
           positionId: t.Optional(t.String({ format: "uuid" })),
           skillId: t.Optional(t.String({ format: "uuid" })),
         }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/training-materials",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!materialService) {
+          set.status = 503;
+          return failure("MATERIAL_SERVICE_UNAVAILABLE", "培训资料服务暂不可用");
+        }
+        const result = await materialService.list(authenticated.actor, {
+          includeInactive: query.includeInactive === "true",
+          ...(query.query ? { query: query.query } : {}),
+        });
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({
+          includeInactive: t.Optional(t.String()),
+          query: t.Optional(t.String({ maxLength: 100 })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-materials/link",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!materialService) {
+          set.status = 503;
+          return failure("MATERIAL_SERVICE_UNAVAILABLE", "培训资料服务暂不可用");
+        }
+        const result = await materialService.createLink(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          title: t.String({ maxLength: 150 }),
+          category: t.String({ maxLength: 80 }),
+          description: t.Optional(t.String({ maxLength: 500 })),
+          externalUrl: t.String({ maxLength: 2000 }),
+          skillIds: t.Array(t.String({ format: "uuid" }), { minItems: 1 }),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-materials/upload",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!materialService) {
+          set.status = 503;
+          return failure("MATERIAL_SERVICE_UNAVAILABLE", "培训资料服务暂不可用");
+        }
+        let skillIds: string[];
+        try {
+          skillIds = Array.isArray(body.skillIds)
+            ? body.skillIds
+            : (JSON.parse(body.skillIds) as string[]);
+        } catch {
+          set.status = 400;
+          return failure("INVALID_SKILLS", "关联技能格式无效");
+        }
+        const result = await materialService.upload(authenticated.actor, {
+          title: body.title,
+          category: body.category,
+          ...(body.description ? { description: body.description } : {}),
+          skillIds,
+          filename: body.file.name,
+          mimeType: body.file.type,
+          bytes: new Uint8Array(await body.file.arrayBuffer()),
+        });
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          title: t.String({ maxLength: 150 }),
+          category: t.String({ maxLength: 80 }),
+          description: t.Optional(t.String({ maxLength: 500 })),
+          skillIds: t.Union([t.String(), t.Array(t.String({ format: "uuid" }), { minItems: 1 })]),
+          file: t.File({ maxSize: "25m" }),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .patch(
+      "/api/training-materials/:id",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!materialService) {
+          set.status = 503;
+          return failure("MATERIAL_SERVICE_UNAVAILABLE", "培训资料服务暂不可用");
+        }
+        const result = await materialService.update(authenticated.actor, params.id, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          title: t.String({ maxLength: 150 }),
+          category: t.String({ maxLength: 80 }),
+          description: t.Optional(t.String({ maxLength: 500 })),
+          skillIds: t.Array(t.String({ format: "uuid" }), { minItems: 1 }),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-materials/:id/deactivate",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!materialService) {
+          set.status = 503;
+          return failure("MATERIAL_SERVICE_UNAVAILABLE", "培训资料服务暂不可用");
+        }
+        const result = await materialService.deactivate(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/training-materials/:id/content",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!materialService) {
+          set.status = 503;
+          return failure("MATERIAL_SERVICE_UNAVAILABLE", "培训资料服务暂不可用");
+        }
+        const result = await materialService.content(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        if (result.data.kind === "link") return Response.redirect(result.data.url, 302);
+        return new Response(result.data.bytes.slice().buffer as ArrayBuffer, {
+          headers: {
+            "content-type": result.data.mimeType,
+            "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(result.data.filename)}`,
+            "x-content-type-options": "nosniff",
+          },
+        });
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )

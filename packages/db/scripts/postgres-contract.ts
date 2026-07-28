@@ -4,11 +4,14 @@ import { createOrganizationService } from "../../../apps/server/src/organization
 import { createEmployeeImportWorkbook } from "../../../apps/server/src/organization-excel";
 import { createSkillBaselineWorkbook } from "../../../apps/server/src/skill-excel";
 import { createSkillService } from "../../../apps/server/src/skill-service";
+import { createMaterialService } from "../../../apps/server/src/material-service";
+import { createMemoryMaterialStorage } from "../../../apps/server/src/material-storage";
 import {
   createDatabaseReadinessProbe,
   createPostgresAuthRepository,
   createPostgresOrganizationRepository,
   createPostgresSkillRepository,
+  createPostgresMaterialRepository,
   migrationsFolder,
 } from "../src";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -200,7 +203,18 @@ try {
     idSource: () => randomUUID(),
     now: () => new Date(),
   });
-  const app = createApp({ authService, organizationService, skillService, readinessProbe });
+  const materialService = createMaterialService({
+    repository: createPostgresMaterialRepository(contractPool),
+    storage: createMemoryMaterialStorage(),
+    idSource: () => randomUUID(),
+  });
+  const app = createApp({
+    authService,
+    organizationService,
+    skillService,
+    materialService,
+    readinessProbe,
+  });
   try {
     await authService.login({
       employeeNumber: "DEBUG-UNKNOWN",
@@ -895,11 +909,7 @@ try {
     await contractPool.query(
       `insert into valid_skill_assessments (assessment_id, employee_id, skill_id)
        values ($1, $2, $3)`,
-      [
-        invalidAssessment.rows[0]!.id,
-        assignment.employeeId,
-        createdSkills.get("S002"),
-      ],
+      [invalidAssessment.rows[0]!.id, assignment.employeeId, createdSkills.get("S002")],
     );
   } catch (error) {
     forgedValidMarkerRejected =
@@ -1111,6 +1121,90 @@ try {
   );
   if ((skillAudit.rows[0]?.count ?? 0) < 10) {
     throw new Error("技能、岗位要求、复制与基线归档未完整写入审计日志");
+  }
+
+  const materialSkill = await contractPool.query<{ id: string }>(
+    "select id from skills where active = true order by code limit 1",
+  );
+  const materialForm = new FormData();
+  materialForm.set("title", "设备点检培训");
+  materialForm.set("category", "设备");
+  materialForm.set("description", "合同测试附件");
+  materialForm.set("skillIds", JSON.stringify([materialSkill.rows[0]!.id]));
+  materialForm.set(
+    "file",
+    new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31])], "点检.pdf", {
+      type: "application/pdf",
+    }),
+  );
+  const materialUploadResponse = await app.handle(
+    new Request("http://localhost/api/training-materials/upload", {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      body: materialForm,
+    }),
+  );
+  const materialUploadBody = (await materialUploadResponse.json()) as {
+    data?: { id: string };
+    error?: { message: string };
+  };
+  if (materialUploadResponse.status !== 200 || !materialUploadBody.data?.id) {
+    throw new Error(
+      `HR 培训资料上传失败：HTTP ${materialUploadResponse.status} ${materialUploadBody.error?.message ?? "unknown"}`,
+    );
+  }
+  const storedMaterial = await contractPool.query<{
+    storageKey: string;
+    originalFilename: string;
+    checksum: string;
+  }>(
+    `select storage_key as "storageKey", original_filename as "originalFilename", checksum
+     from training_materials where id = $1`,
+    [materialUploadBody.data.id],
+  );
+  if (
+    storedMaterial.rows[0]?.storageKey.includes("点检") ||
+    storedMaterial.rows[0]?.storageKey.includes("/") ||
+    storedMaterial.rows[0]?.originalFilename !== "点检.pdf" ||
+    storedMaterial.rows[0]?.checksum.length !== 64
+  ) {
+    throw new Error("培训资料数据库元数据或随机存储键不符合约束");
+  }
+  const employeeMaterialResponse = await app.handle(
+    new Request(`http://localhost/api/training-materials/${materialUploadBody.data.id}/content`, {
+      headers: { cookie: importedCookie! },
+    }),
+  );
+  const systemMaterialResponse = await app.handle(
+    new Request("http://localhost/api/training-materials", {
+      headers: { cookie: roleLogins.get("system_admin")!.cookie! },
+    }),
+  );
+  if (
+    employeeMaterialResponse.status !== 200 ||
+    !employeeMaterialResponse.headers.get("content-disposition")?.includes("UTF-8") ||
+    systemMaterialResponse.status !== 403
+  ) {
+    throw new Error(
+      `培训资料授权下载或五角色边界失败：employee=${employeeMaterialResponse.status}, disposition=${employeeMaterialResponse.headers.get("content-disposition")}, system=${systemMaterialResponse.status}`,
+    );
+  }
+  const deactivateMaterialResponse = await app.handle(
+    new Request(
+      `http://localhost/api/training-materials/${materialUploadBody.data.id}/deactivate`,
+      {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      },
+    ),
+  );
+  const inactiveMaterialResponse = await app.handle(
+    new Request(`http://localhost/api/training-materials/${materialUploadBody.data.id}/content`, {
+      headers: { cookie: importedCookie! },
+    }),
+  );
+  if (deactivateMaterialResponse.status !== 200 || inactiveMaterialResponse.status !== 404) {
+    throw new Error("停用培训资料仍可用于员工新访问");
   }
 
   await contractPool.query(

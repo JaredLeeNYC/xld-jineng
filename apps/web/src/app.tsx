@@ -8,6 +8,7 @@ import {
   type SkillCategory,
   type SkillMatrixCell,
   type SkillView,
+  type TrainingMaterialView,
 } from "@jineng/skill-matrix-shared";
 import {
   Bell,
@@ -2142,6 +2143,325 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
   );
 }
 
+export function TrainingMaterialPanel({ canManage }: { canManage: boolean }) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | { status: "ready"; materials: TrainingMaterialView[]; skills: SkillView[] }
+  >({ status: "loading" });
+  const [query, setQuery] = useState("");
+  const [notice, setNotice] = useState("");
+  const [form, setForm] = useState({
+    title: "",
+    category: "",
+    description: "",
+    externalUrl: "",
+    skillIds: [] as string[],
+  });
+  const [file, setFile] = useState<File>();
+
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const materials = await request<TrainingMaterialView[]>(
+        `/api/training-materials${canManage ? "?includeInactive=true" : ""}`,
+      );
+      if (!materials.result.ok) {
+        setState({ status: "error", message: materials.result.error.message });
+        return;
+      }
+      let skills: SkillView[] = [];
+      if (canManage) {
+        const response = await request<SkillView[]>("/api/skills");
+        if (!response.result.ok) {
+          setState({ status: "error", message: response.result.error.message });
+          return;
+        }
+        skills = response.result.data;
+      }
+      setState({ status: "ready", materials: materials.result.data, skills });
+    } catch {
+      setState({ status: "error", message: "暂时无法连接培训资料服务" });
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, [canManage]);
+
+  const create = async (event: FormEvent, kind: "file" | "link") => {
+    event.preventDefault();
+    setNotice("");
+    let response: { result: ApiResult<{ id: string }> };
+    if (kind === "file") {
+      if (!file) {
+        setNotice("请选择文件");
+        return;
+      }
+      const body = new FormData();
+      body.set("title", form.title);
+      body.set("category", form.category);
+      body.set("description", form.description);
+      body.set("skillIds", JSON.stringify(form.skillIds));
+      body.set("file", file);
+      response = await request("/api/training-materials/upload", { method: "POST", body });
+    } else {
+      response = await request("/api/training-materials/link", {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+    }
+    if (!response.result.ok) {
+      setNotice(response.result.error.message);
+      return;
+    }
+    setNotice("资料保存成功");
+    setForm({ title: "", category: "", description: "", externalUrl: "", skillIds: [] });
+    setFile(undefined);
+    await load();
+  };
+  const changeSkills = (values: HTMLOptionsCollection) =>
+    setForm({
+      ...form,
+      skillIds: Array.from(values)
+        .filter((item) => item.selected)
+        .map((item) => item.value),
+    });
+  const openContent = async (material: TrainingMaterialView) => {
+    setNotice("");
+    if (material.kind === "link" && material.externalUrl) {
+      window.open(material.externalUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/training-materials/${material.id}/content`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const result = (await response.json()) as ApiResult<never>;
+        setNotice(result.ok ? "下载失败" : result.error.message);
+        return;
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = material.originalFilename ?? material.title;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setNotice("下载失败，请稍后重试");
+    }
+  };
+
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载培训资料…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" onClick={load} type="button">
+          重新加载
+        </button>
+      </section>
+    );
+  const materials = state.materials.filter((item) =>
+    `${item.title} ${item.category} ${item.skills.map((skill) => skill.name).join(" ")}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+  return (
+    <div className="material-page">
+      <section className="welcome">
+        <div>
+          <p className="eyebrow">培训资料</p>
+          <h1>{canManage ? "培训资料库" : "学习资料"}</h1>
+          <p>查找与岗位技能关联的文档、图片和外部课程。</p>
+        </div>
+      </section>
+      {notice && (
+        <p className="organization-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {canManage && (
+        <form
+          className="panel compact-form material-form"
+          onSubmit={(event) => void create(event, file ? "file" : "link")}
+        >
+          <h2>新增资料</h2>
+          <input
+            required
+            maxLength={150}
+            placeholder="资料标题"
+            value={form.title}
+            onChange={(event) => setForm({ ...form, title: event.target.value })}
+          />
+          <input
+            required
+            maxLength={80}
+            placeholder="分类，如：安全培训"
+            value={form.category}
+            onChange={(event) => setForm({ ...form, category: event.target.value })}
+          />
+          <textarea
+            maxLength={500}
+            placeholder="资料说明（选填）"
+            value={form.description}
+            onChange={(event) => setForm({ ...form, description: event.target.value })}
+          />
+          <select
+            multiple
+            required
+            aria-label="关联技能"
+            value={form.skillIds}
+            onChange={(event) => changeSkills(event.target.options)}
+          >
+            {state.skills.map((skill) => (
+              <option key={skill.id} value={skill.id}>
+                {skill.code} · {skill.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="url"
+            placeholder="外部网页或视频链接（与文件二选一）"
+            value={form.externalUrl}
+            onChange={(event) => setForm({ ...form, externalUrl: event.target.value })}
+            disabled={Boolean(file)}
+          />
+          <input
+            type="file"
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.webp"
+            onChange={(event) => setFile(event.target.files?.[0])}
+            disabled={Boolean(form.externalUrl)}
+          />
+          <button className="primary-button" type="submit">
+            保存资料
+          </button>
+        </form>
+      )}
+      <section className="panel material-list">
+        <div className="panel-heading">
+          <div>
+            <h2>资料列表</h2>
+            <p>停用资料不会出现在新的员工学习入口。</p>
+          </div>
+          <input
+            aria-label="搜索资料"
+            placeholder="搜索标题、分类或技能"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        {materials.length === 0 ? (
+          <div className="list-state-panel">暂无符合条件的培训资料</div>
+        ) : (
+          <>
+            <div className="material-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>资料</th>
+                    <th>分类</th>
+                    <th>关联技能</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {materials.map((material) => (
+                    <tr key={material.id}>
+                      <td>
+                        <strong>{material.title}</strong>
+                        <small>
+                          {material.kind === "file" ? material.originalFilename : "外部链接"}
+                        </small>
+                      </td>
+                      <td>{material.category}</td>
+                      <td>{material.skills.map((skill) => skill.name).join("、")}</td>
+                      <td>{material.active ? "可用" : "已停用"}</td>
+                      <td>
+                        <button type="button" onClick={() => void openContent(material)}>
+                          查看/下载
+                        </button>
+                        {canManage && material.active && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const title = window.prompt("资料标题", material.title);
+                                if (!title) return;
+                                const category = window.prompt("资料分类", material.category);
+                                if (!category) return;
+                                const result = await request(
+                                  `/api/training-materials/${material.id}`,
+                                  {
+                                    method: "PATCH",
+                                    body: JSON.stringify({
+                                      title,
+                                      category,
+                                      description: material.description,
+                                      skillIds: material.skillIds,
+                                    }),
+                                  },
+                                );
+                                setNotice(
+                                  result.result.ok ? "资料已更新" : result.result.error.message,
+                                );
+                                await load();
+                              }}
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const result = await request(
+                                  `/api/training-materials/${material.id}/deactivate`,
+                                  { method: "POST" },
+                                );
+                                setNotice(
+                                  result.result.ok ? "资料已停用" : result.result.error.message,
+                                );
+                                await load();
+                              }}
+                            >
+                              停用
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="material-cards">
+              {materials.map((material) => (
+                <article key={material.id}>
+                  <header>
+                    <strong>{material.title}</strong>
+                    <span>{material.active ? "可用" : "已停用"}</span>
+                  </header>
+                  <p>
+                    {material.category} · {material.skills.map((skill) => skill.name).join("、")}
+                  </p>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={() => void openContent(material)}
+                  >
+                    查看/下载
+                  </button>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session: Session }) {
   const navigation = navigationForRole(session.role);
   const [activeNavigation, setActiveNavigation] = useState(navigation[0]?.id ?? "dashboard");
@@ -2230,6 +2550,8 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             <SkillAdminPanel />
           ) : activeNavigation === "matrix" || activeNavigation === "my-skills" ? (
             <SkillMatrixPanel personal={session.role === "employee"} />
+          ) : activeNavigation === "training" || activeNavigation === "my-training" ? (
+            <TrainingMaterialPanel canManage={session.role === "hr_admin"} />
           ) : (
             <>
               <section className="welcome">

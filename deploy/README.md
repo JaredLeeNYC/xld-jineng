@@ -19,3 +19,10 @@
 - Bun 固定使用项目 `packageManager` 声明的版本。
 
 数据库迁移由 systemd 的 `ExecStartPre` 在 API 启动前执行。Drizzle 的迁移记录保证重复执行安全；应用就绪探针同时核对已执行迁移数量。
+
+## 培训资料持久化与备份
+
+- 生产环境将 `MATERIAL_STORAGE_DIR` 固定为 `/var/lib/skill-matrix/materials`，该目录位于 `/opt/skill-matrix/releases` 发布目录之外，切换版本不会覆盖附件。
+- 发布前执行 `deploy/backup-materials.sh /var/lib/skill-matrix/materials /var/backups/skill-matrix-materials.tar.gz`。
+- 恢复演练执行 `deploy/restore-materials.sh /var/backups/skill-matrix-materials.tar.gz /var/lib/skill-matrix/materials-restore-test`；脚本会逐文件校验 SHA-256 后才复制。
+- 数据库与附件归档必须取自同一维护窗口。孤儿对象通过数据库存储键对账清理，不允许依据原始文件名删除文件。

@@ -10,6 +10,7 @@ const serverConfigSchema = z.object({
     .default("postgres://skill_matrix:skill_matrix_dev@localhost:5433/skill_matrix"),
   HOST: z.string().min(1).default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().max(65_535).default(3000),
+  MATERIAL_STORAGE_DIR: z.string().min(1).default(".data/materials"),
 });
 
 export type ServerConfig = {
@@ -17,6 +18,7 @@ export type ServerConfig = {
   databaseUrl: string;
   host: string;
   port: number;
+  materialStorageDir: string;
 };
 
 export const parseServerConfig = (
@@ -28,5 +30,6 @@ export const parseServerConfig = (
     databaseUrl: parsed.DATABASE_URL,
     host: parsed.HOST,
     port: parsed.PORT,
+    materialStorageDir: parsed.MATERIAL_STORAGE_DIR,
   };
 };
