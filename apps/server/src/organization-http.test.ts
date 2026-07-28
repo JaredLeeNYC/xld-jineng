@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createApp } from "./app";
+import { createOrganizationService } from "./organization-service";
 
 const hrSession = {
   accountId: "00000000-0000-4000-8000-000000000001",
@@ -91,6 +92,38 @@ describe("organization HTTP API", () => {
     expect(await response.json()).toMatchObject({
       ok: false,
       error: { code: "PASSWORD_CHANGE_REQUIRED" },
+    });
+  });
+
+  test("returns 403 when a department manager has no department scope", async () => {
+    const { departmentId: _departmentId, ...unscopedManager } = {
+      ...hrSession,
+      role: "department_manager" as const,
+    };
+    const organizationService = createOrganizationService({
+      repository: {
+        listEmployees: async () => {
+          throw new Error("an unscoped query must not reach the repository");
+        },
+      } as never,
+      passwordHash: async (value) => value,
+      temporaryPassword: () => "unused",
+      idSource: () => crypto.randomUUID(),
+      now: () => new Date("2026-07-28T00:00:00.000Z"),
+    });
+    const response = await createApp({
+      authService: { getSession: async () => ({ ok: true, data: unscopedManager }) },
+      organizationService,
+    } as never).handle(
+      new Request("http://localhost/api/organization/employees", {
+        headers: { cookie: "skill_matrix_session=manager-token" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
     });
   });
 });

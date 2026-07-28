@@ -58,6 +58,7 @@ const createFixture = () => {
       { id: "department-1", code: "D001", name: "装配部", active: true },
       { id: "department-2", code: "D002", name: "质量部", active: true },
     ],
+    changeAssignment: async () => true,
     recordExport: async () => undefined,
   } as unknown as OrganizationRepository;
   const service = createOrganizationService({
@@ -101,6 +102,25 @@ describe("organization service", () => {
     ]);
   });
 
+  test("reports impossible calendar dates during dry-run", async () => {
+    const { service } = createFixture();
+    const result = await service.dryRunImport(hr, [
+      {
+        rowNumber: 2,
+        employeeNumber: "E0002",
+        displayName: "李华",
+        departmentCode: "D001",
+        positionCode: "P001",
+        hireDate: "2026-02-30",
+      },
+    ]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { errors: [{ rowNumber: 2, field: "hireDate", code: "INVALID_VALUE" }] },
+    });
+  });
+
   test("confirms only a clean HR preview and returns one-time credentials", async () => {
     const { service, getConfirmedRows } = createFixture();
     const preview = await service.dryRunImport(hr, [
@@ -141,6 +161,35 @@ describe("organization service", () => {
       ok: true,
       data: [{ id: "employee-self" }],
     });
+  });
+
+  test("fails closed when a manager has no department scope", async () => {
+    const { service } = createFixture();
+    const { departmentId: _departmentId, ...unscopedManager } = manager;
+
+    expect(await service.listDepartments(unscopedManager)).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+    expect(await service.listEmployees(unscopedManager)).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+  });
+
+  test("rejects invalid and future assignment effective times", async () => {
+    const { service } = createFixture();
+    const input = { departmentId: "department-1", positionId: "position-1", reason: "调岗" };
+
+    expect(
+      await service.changeAssignment(hr, "employee-1", { ...input, effectiveAt: "not-a-date" }),
+    ).toMatchObject({ ok: false, error: { code: "INVALID_EFFECTIVE_AT" } });
+    expect(
+      await service.changeAssignment(hr, "employee-1", {
+        ...input,
+        effectiveAt: "2026-07-29T00:00:00.000Z",
+      }),
+    ).toMatchObject({ ok: false, error: { code: "INVALID_EFFECTIVE_AT" } });
   });
 
   test("rejects organization writes from a department manager", async () => {

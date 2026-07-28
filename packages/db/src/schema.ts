@@ -108,6 +108,10 @@ export const positionAssignments = pgTable(
     ...timestamps,
   },
   (table) => [
+    check(
+      "position_assignments_valid_range",
+      sql`${table.endedAt} is null or ${table.endedAt} > ${table.startedAt}`,
+    ),
     uniqueIndex("position_assignments_current_employee_unique")
       .on(table.employeeId)
       .where(sql`${table.endedAt} is null`),

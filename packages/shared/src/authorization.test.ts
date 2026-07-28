@@ -23,6 +23,7 @@ describe("fixed role authorization", () => {
   test("exposes only navigation allowed for each role", () => {
     expect(navigationForRole("employee").map((item) => item.id)).toEqual([
       "my-workspace",
+      "profile",
       "my-skills",
       "my-training",
       "notifications",

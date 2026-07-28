@@ -24,6 +24,12 @@ const requireHr = (actor: SessionView): OrganizationFailure | undefined =>
 
 const validateName = (value: string) => value.trim().length >= 1 && value.trim().length <= 100;
 
+const isIsoDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+
 const validateImportRows = async (
   repository: OrganizationRepository,
   inputRows: EmployeeImportRow[],
@@ -87,7 +93,7 @@ const validateImportRows = async (
         message: "岗位编码不存在、已停用或不属于所选部门",
       });
     }
-    if (row.hireDate && !/^\d{4}-\d{2}-\d{2}$/.test(row.hireDate)) {
+    if (row.hireDate && !isIsoDate(row.hireDate)) {
       errors.push({
         rowNumber: row.rowNumber,
         field: "hireDate",
@@ -109,8 +115,16 @@ export const createOrganizationService = (dependencies: {
   const { repository, passwordHash, temporaryPassword, idSource, now } = dependencies;
   return {
     async listDepartments(actor: SessionView, includeInactive = false) {
-      if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role)) {
+      if (
+        !["hr_admin", "department_manager", "executive_viewer", "employee"].includes(actor.role)
+      ) {
         return failure("FORBIDDEN", "无权查看组织数据", 403);
+      }
+      if (
+        (actor.role === "department_manager" || actor.role === "employee") &&
+        !actor.departmentId
+      ) {
+        return failure("FORBIDDEN", "账号未关联有效部门", 403);
       }
       const departments = await repository.listDepartments(
         actor.role === "hr_admin" ? includeInactive : false,
@@ -118,7 +132,7 @@ export const createOrganizationService = (dependencies: {
       return {
         ok: true as const,
         data:
-          actor.role === "department_manager"
+          actor.role === "department_manager" || actor.role === "employee"
             ? departments.filter((item) => item.id === actor.departmentId)
             : departments,
       };
@@ -175,6 +189,12 @@ export const createOrganizationService = (dependencies: {
         !["hr_admin", "department_manager", "executive_viewer", "employee"].includes(actor.role)
       ) {
         return failure("FORBIDDEN", "无权查看岗位", 403);
+      }
+      if (
+        (actor.role === "department_manager" || actor.role === "employee") &&
+        !actor.departmentId
+      ) {
+        return failure("FORBIDDEN", "账号未关联有效部门", 403);
       }
       return {
         ok: true as const,
@@ -246,6 +266,9 @@ export const createOrganizationService = (dependencies: {
       filters: { active?: boolean; query?: string } = {},
     ): Promise<OrganizationResult<Awaited<ReturnType<OrganizationRepository["listEmployees"]>>>> {
       if (actor.role === "system_admin") return failure("FORBIDDEN", "无权查看业务人员", 403);
+      if (actor.role === "department_manager" && !actor.departmentId) {
+        return failure("FORBIDDEN", "主管账号未关联有效部门", 403);
+      }
       return {
         ok: true,
         data: await repository.listEmployees({
@@ -286,7 +309,7 @@ export const createOrganizationService = (dependencies: {
       if (!validateName(input.displayName)) {
         return failure("INVALID_EMPLOYEE", "员工姓名不能为空", 400);
       }
-      if (input.hireDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.hireDate)) {
+      if (input.hireDate && !isIsoDate(input.hireDate)) {
         return failure("INVALID_EMPLOYEE", "入职日期必须为 YYYY-MM-DD", 400);
       }
       return (await repository.updateEmployee({
@@ -308,12 +331,16 @@ export const createOrganizationService = (dependencies: {
       const denied = requireHr(actor);
       if (denied) return denied;
       if (!input.reason.trim()) return failure("REASON_REQUIRED", "岗位变更原因不能为空", 400);
+      const effectiveAt = input.effectiveAt ? new Date(input.effectiveAt) : now();
+      if (Number.isNaN(effectiveAt.getTime()) || effectiveAt > now()) {
+        return failure("INVALID_EFFECTIVE_AT", "岗位生效时间无效或晚于当前时间", 400);
+      }
       const changed = await repository.changeAssignment({
         employeeId,
         departmentId: input.departmentId,
         positionId: input.positionId,
         reason: input.reason.trim(),
-        effectiveAt: input.effectiveAt ? new Date(input.effectiveAt) : now(),
+        effectiveAt,
         actorAccountId: actor.accountId,
       });
       return changed

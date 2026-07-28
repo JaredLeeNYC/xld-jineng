@@ -69,6 +69,14 @@ type ImportPreview = {
   validRows: number;
   errors: Array<{ rowNumber: number; field: string; message: string }>;
 };
+type PositionAssignment = {
+  id: string;
+  departmentName: string;
+  positionName: string;
+  startedAt: string;
+  endedAt?: string;
+  reason: string;
+};
 
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 
@@ -93,6 +101,7 @@ const request = async <T,>(
 
 const iconByNavigation: Record<string, LucideIcon> = {
   "my-workspace": LayoutDashboard,
+  profile: UserRound,
   "my-skills": BookOpenCheck,
   "my-training": GraduationCap,
   notifications: Bell,
@@ -466,6 +475,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
     | { status: "ready"; departments: Department[]; positions: Position[]; employees: Employee[] }
   >({ status: "loading" });
   const [query, setQuery] = useState("");
+  const [masterQuery, setMasterQuery] = useState("");
   const [notice, setNotice] = useState("");
   const [departmentForm, setDepartmentForm] = useState({ code: "", name: "" });
   const [positionForm, setPositionForm] = useState({ code: "", name: "", departmentId: "" });
@@ -476,6 +486,13 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
     positionCode: "",
   });
   const [editing, setEditing] = useState<Employee>();
+  const [editingDepartment, setEditingDepartment] = useState<Department>();
+  const [editingPosition, setEditingPosition] = useState<Position>();
+  const [history, setHistory] = useState<{
+    employee: Employee;
+    assignments?: PositionAssignment[];
+    error?: string;
+  }>();
   const [assignment, setAssignment] = useState({ departmentId: "", positionId: "", reason: "" });
   const [importFile, setImportFile] = useState<File>();
   const [preview, setPreview] = useState<ImportPreview>();
@@ -570,6 +587,18 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
     await load();
   };
 
+  const showHistory = async (employee: Employee) => {
+    setHistory({ employee });
+    const { result } = await request<PositionAssignment[]>(
+      `/api/organization/employees/${employee.id}/assignments`,
+    );
+    setHistory(
+      result.ok
+        ? { employee, assignments: result.data }
+        : { employee, error: result.error.message },
+    );
+  };
+
   if (state.status === "loading") {
     return <section className="panel list-state-panel">正在加载组织人员…</section>;
   }
@@ -594,6 +623,47 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
       position.active &&
       (!assignment.departmentId || position.departmentId === assignment.departmentId),
   );
+  const normalizedMasterQuery = masterQuery.trim().toLowerCase();
+  const filteredDepartments = state.departments.filter((department) =>
+    `${department.code} ${department.name}`.toLowerCase().includes(normalizedMasterQuery),
+  );
+  const filteredPositions = state.positions.filter((position) =>
+    `${position.code} ${position.name} ${position.departmentName}`
+      .toLowerCase()
+      .includes(normalizedMasterQuery),
+  );
+  const employeeActions = (employee: Employee) => (
+    <>
+      <button type="button" onClick={() => void showHistory(employee)}>
+        履历
+      </button>
+      {canManage && employee.active && (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(employee);
+              setAssignment({
+                departmentId: employee.departmentId ?? "",
+                positionId: employee.positionId ?? "",
+                reason: "",
+              });
+            }}
+          >
+            编辑
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void mutate(`/api/organization/employees/${employee.id}/deactivate`, "POST")
+            }
+          >
+            停用
+          </button>
+        </>
+      )}
+    </>
+  );
 
   return (
     <div className="organization-page">
@@ -603,7 +673,10 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
           <h1>工厂人员与岗位</h1>
           <p>维护稳定业务编码、当前岗位与可追溯任职履历。</p>
         </div>
-        <a className="primary-button export-link" href="/api/organization/employees/export.xlsx">
+        <a
+          className="primary-button export-link"
+          href={`/api/organization/employees/export.xlsx${query ? `?query=${encodeURIComponent(query)}` : ""}`}
+        >
           导出当前数据
         </a>
       </section>
@@ -705,13 +778,30 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
             className="panel compact-form"
             onSubmit={async (event) => {
               event.preventDefault();
-              if (await mutate("/api/organization/employees", "POST", employeeForm)) {
+              setNotice("");
+              try {
+                const { result } = await request<{
+                  imported: number;
+                  credentials: Array<{ employeeNumber: string; temporaryPassword: string }>;
+                }>("/api/organization/employees", {
+                  method: "POST",
+                  body: JSON.stringify(employeeForm),
+                });
+                if (!result.ok) {
+                  setNotice(result.error.message);
+                  return;
+                }
+                setCredentials(result.data.credentials);
+                setNotice("员工已创建；初始凭证仅在本页显示一次。");
                 setEmployeeForm({
                   employeeNumber: "",
                   displayName: "",
                   departmentCode: "",
                   positionCode: "",
                 });
+                await load();
+              } catch {
+                setNotice("创建员工失败，请稍后再试");
               }
             }}
           >
@@ -753,6 +843,175 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
             </button>
           </form>
         </section>
+      )}
+
+      {canManage && (
+        <section className="organization-master-grid">
+          <label className="master-filter">
+            筛选部门与岗位
+            <input
+              className="table-filter"
+              placeholder="输入编码、名称或所属部门"
+              value={masterQuery}
+              onChange={(event) => setMasterQuery(event.target.value)}
+            />
+          </label>
+          <section className="panel master-list">
+            <div className="panel-heading">
+              <div>
+                <h2>部门</h2>
+                <p>停用后不影响历史记录</p>
+              </div>
+            </div>
+            {filteredDepartments.length === 0 ? (
+              <p className="list-state">当前筛选暂无部门</p>
+            ) : (
+              filteredDepartments.map((department) => (
+                <div className="master-row" key={department.id}>
+                  <span>
+                    <strong>{department.code}</strong>
+                    <small>{department.name}</small>
+                  </span>
+                  <em>{department.active ? "启用" : "停用"}</em>
+                  {department.active && (
+                    <span>
+                      <button type="button" onClick={() => setEditingDepartment(department)}>
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void mutate(
+                            `/api/organization/departments/${department.id}/deactivate`,
+                            "POST",
+                          )
+                        }
+                      >
+                        停用
+                      </button>
+                    </span>
+                  )}
+                </div>
+              ))
+            )}
+          </section>
+          <section className="panel master-list">
+            <div className="panel-heading">
+              <div>
+                <h2>岗位</h2>
+                <p>岗位编码作为稳定业务键</p>
+              </div>
+            </div>
+            {filteredPositions.length === 0 ? (
+              <p className="list-state">当前筛选暂无岗位</p>
+            ) : (
+              filteredPositions.map((position) => (
+                <div className="master-row" key={position.id}>
+                  <span>
+                    <strong>
+                      {position.code} · {position.name}
+                    </strong>
+                    <small>{position.departmentName}</small>
+                  </span>
+                  <em>{position.active ? "启用" : "停用"}</em>
+                  {position.active && (
+                    <span>
+                      <button type="button" onClick={() => setEditingPosition(position)}>
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void mutate(
+                            `/api/organization/positions/${position.id}/deactivate`,
+                            "POST",
+                          )
+                        }
+                      >
+                        停用
+                      </button>
+                    </span>
+                  )}
+                </div>
+              ))
+            )}
+          </section>
+        </section>
+      )}
+
+      {editingDepartment && (
+        <form
+          className="panel inline-editor"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (
+              await mutate(`/api/organization/departments/${editingDepartment.id}`, "PATCH", {
+                name: editingDepartment.name,
+              })
+            ) {
+              setEditingDepartment(undefined);
+            }
+          }}
+        >
+          <strong>编辑部门 {editingDepartment.code}</strong>
+          <input
+            value={editingDepartment.name}
+            onChange={(event) =>
+              setEditingDepartment({ ...editingDepartment, name: event.target.value })
+            }
+          />
+          <button className="primary-button" type="submit">
+            保存
+          </button>
+          <button type="button" onClick={() => setEditingDepartment(undefined)}>
+            取消
+          </button>
+        </form>
+      )}
+
+      {editingPosition && (
+        <form
+          className="panel inline-editor"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (
+              await mutate(`/api/organization/positions/${editingPosition.id}`, "PATCH", {
+                name: editingPosition.name,
+                departmentId: editingPosition.departmentId,
+              })
+            ) {
+              setEditingPosition(undefined);
+            }
+          }}
+        >
+          <strong>编辑岗位 {editingPosition.code}</strong>
+          <input
+            value={editingPosition.name}
+            onChange={(event) =>
+              setEditingPosition({ ...editingPosition, name: event.target.value })
+            }
+          />
+          <select
+            value={editingPosition.departmentId}
+            onChange={(event) =>
+              setEditingPosition({ ...editingPosition, departmentId: event.target.value })
+            }
+          >
+            {state.departments
+              .filter((item) => item.active)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+          </select>
+          <button className="primary-button" type="submit">
+            保存
+          </button>
+          <button type="button" onClick={() => setEditingPosition(undefined)}>
+            取消
+          </button>
+        </form>
       )}
 
       {canManage && (
@@ -894,6 +1153,39 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
         </section>
       )}
 
+      {history && (
+        <section className="panel assignment-history">
+          <div className="panel-heading">
+            <div>
+              <h2>{history.employee.displayName}的岗位履历</h2>
+              <p>{history.employee.employeeNumber}</p>
+            </div>
+            <button type="button" onClick={() => setHistory(undefined)}>
+              关闭
+            </button>
+          </div>
+          {history.error ? (
+            <p className="form-error">{history.error}</p>
+          ) : !history.assignments ? (
+            <p className="list-state">正在加载岗位履历…</p>
+          ) : history.assignments.length === 0 ? (
+            <p className="list-state">暂无岗位履历</p>
+          ) : (
+            history.assignments.map((item) => (
+              <div className="history-row" key={item.id}>
+                <strong>
+                  {item.departmentName} · {item.positionName}
+                </strong>
+                <span>
+                  {item.startedAt.slice(0, 10)} 至 {item.endedAt?.slice(0, 10) ?? "当前"}
+                </span>
+                <small>{item.reason}</small>
+              </div>
+            ))
+          )}
+        </section>
+      )}
+
       <section className="panel employee-list-panel">
         <div className="panel-heading">
           <div>
@@ -910,62 +1202,60 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
         {filteredEmployees.length === 0 ? (
           <p className="list-state">当前筛选没有员工</p>
         ) : (
-          <div className="employee-table-wrap">
-            <table className="employee-table">
-              <thead>
-                <tr>
-                  <th>工号 / 姓名</th>
-                  <th>部门</th>
-                  <th>岗位</th>
-                  <th>状态</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEmployees.map((employee) => (
-                  <tr key={employee.id}>
-                    <td>
-                      <strong>{employee.employeeNumber}</strong>
-                      <small>{employee.displayName}</small>
-                    </td>
-                    <td>{employee.departmentName ?? "未分配"}</td>
-                    <td>{employee.positionName ?? "未分配"}</td>
-                    <td>{employee.active ? "在职" : "已停用"}</td>
-                    <td>
-                      {canManage && employee.active && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditing(employee);
-                              setAssignment({
-                                departmentId: employee.departmentId ?? "",
-                                positionId: employee.positionId ?? "",
-                                reason: "",
-                              });
-                            }}
-                          >
-                            编辑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void mutate(
-                                `/api/organization/employees/${employee.id}/deactivate`,
-                                "POST",
-                              )
-                            }
-                          >
-                            停用
-                          </button>
-                        </>
-                      )}
-                    </td>
+          <>
+            <div className="employee-table-wrap">
+              <table className="employee-table">
+                <thead>
+                  <tr>
+                    <th>工号 / 姓名</th>
+                    <th>部门</th>
+                    <th>岗位</th>
+                    <th>状态</th>
+                    <th>操作</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredEmployees.map((employee) => (
+                    <tr key={employee.id}>
+                      <td>
+                        <strong>{employee.employeeNumber}</strong>
+                        <small>{employee.displayName}</small>
+                      </td>
+                      <td>{employee.departmentName ?? "未分配"}</td>
+                      <td>{employee.positionName ?? "未分配"}</td>
+                      <td>{employee.active ? "在职" : "已停用"}</td>
+                      <td>{employeeActions(employee)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="employee-cards">
+              {filteredEmployees.map((employee) => (
+                <article className="employee-card" key={employee.id}>
+                  <header>
+                    <strong>{employee.displayName}</strong>
+                    <span>{employee.employeeNumber}</span>
+                  </header>
+                  <dl>
+                    <div>
+                      <dt>部门</dt>
+                      <dd>{employee.departmentName ?? "未分配"}</dd>
+                    </div>
+                    <div>
+                      <dt>岗位</dt>
+                      <dd>{employee.positionName ?? "未分配"}</dd>
+                    </div>
+                    <div>
+                      <dt>状态</dt>
+                      <dd>{employee.active ? "在职" : "已停用"}</dd>
+                    </div>
+                  </dl>
+                  <footer>{employeeActions(employee)}</footer>
+                </article>
+              ))}
+            </div>
+          </>
         )}
       </section>
     </div>
@@ -1052,7 +1342,9 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
         </header>
 
         <div className="content">
-          {activeNavigation === "organization" || activeNavigation === "employees" ? (
+          {activeNavigation === "organization" ||
+          activeNavigation === "employees" ||
+          activeNavigation === "profile" ? (
             <OrganizationPanel canManage={session.role === "hr_admin"} />
           ) : (
             <>

@@ -813,7 +813,11 @@ main {
   color: #59451e;
 }
 .credential-panel button,
-.employee-table button {
+.employee-table button,
+.employee-card button,
+.master-row button,
+.inline-editor > button,
+.assignment-history .panel-heading button {
   border: 0;
   background: none;
   color: var(--green);
@@ -826,6 +830,101 @@ main {
 }
 .employee-table-wrap {
   overflow-x: auto;
+}
+.organization-master-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.master-filter {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.master-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+.master-row,
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 11px 0;
+}
+.master-row strong,
+.master-row small,
+.history-row strong,
+.history-row small {
+  display: block;
+}
+.master-row small,
+.master-row em,
+.history-row span,
+.history-row small {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+.inline-editor {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 2fr) minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+}
+.inline-editor input,
+.inline-editor select {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font: inherit;
+}
+.assignment-history {
+  display: grid;
+}
+.history-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.history-row small {
+  grid-column: 1 / -1;
+}
+.employee-cards {
+  display: none;
+}
+.employee-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  background: white;
+}
+.employee-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.employee-card header span,
+.employee-card dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.employee-card dl {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0;
+}
+.employee-card dl div {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+}
+.employee-card dd {
+  margin: 0;
 }
 .employee-table {
   width: 100%;
@@ -893,6 +992,9 @@ main {
     grid-template-columns: 1fr 1fr;
   }
   .edit-employee-panel form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .inline-editor {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -983,22 +1085,21 @@ main {
   .import-preview {
     display: grid;
   }
-  .employee-table,
-  .employee-table tbody,
-  .employee-table tr,
-  .employee-table td {
-    display: block;
-  }
-  .employee-table thead {
+  .employee-table-wrap {
     display: none;
   }
-  .employee-table tr {
-    border-bottom: 1px solid var(--line);
-    padding: 10px 0;
+  .employee-cards {
+    display: grid;
+    gap: 10px;
   }
-  .employee-table td {
-    border: 0;
-    padding: 4px 0;
+  .organization-master-grid {
+    grid-template-columns: 1fr;
+  }
+  .master-filter {
+    display: grid;
+  }
+  .inline-editor {
+    grid-template-columns: 1fr;
   }
   .welcome {
     align-items: flex-start;

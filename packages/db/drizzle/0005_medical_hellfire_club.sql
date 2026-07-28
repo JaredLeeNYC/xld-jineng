@@ -1,0 +1,1 @@
+ALTER TABLE "position_assignments" ADD CONSTRAINT "position_assignments_valid_range" CHECK ("position_assignments"."ended_at" is null or "position_assignments"."ended_at" > "position_assignments"."started_at");

@@ -68,6 +68,7 @@ export type NavigationItem = {
 const roleNavigation: Record<FixedRole, readonly NavigationItem[]> = {
   employee: [
     { id: "my-workspace", label: "我的工作台", access: "read" },
+    { id: "profile", label: "个人资料", access: "read" },
     { id: "my-skills", label: "我的技能", access: "read" },
     { id: "my-training", label: "我的培训", access: "write" },
     { id: "notifications", label: "消息通知", access: "read" },

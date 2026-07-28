@@ -547,6 +547,68 @@ try {
     throw new Error(`组织导入留下半成功数据：${JSON.stringify(importedCounts.rows[0])}`);
   }
 
+  const assignmentTarget = await contractPool.query<{
+    employeeId: string;
+    departmentId: string;
+    positionId: string;
+  }>(
+    `select e.id as "employeeId", d.id as "departmentId", p.id as "positionId"
+     from employees e
+     join departments d on d.code = 'D001'
+     join positions p on p.department_id = d.id and p.code = 'P002'
+     where e.employee_number = 'E1001'`,
+  );
+  const assignment = assignmentTarget.rows[0]!;
+  const validEffectiveAt = new Date().toISOString();
+  const changeAssignmentResponse = await app.handle(
+    new Request(`http://localhost/api/organization/employees/${assignment.employeeId}/assignment`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: roleLogins.get("hr_admin")!.cookie!,
+      },
+      body: JSON.stringify({
+        departmentId: assignment.departmentId,
+        positionId: assignment.positionId,
+        reason: "合同测试调岗",
+        effectiveAt: validEffectiveAt,
+      }),
+    }),
+  );
+  if (changeAssignmentResponse.status !== 200) {
+    throw new Error(`有效岗位变更失败：${await changeAssignmentResponse.text()}`);
+  }
+  const backdatedResponse = await app.handle(
+    new Request(`http://localhost/api/organization/employees/${assignment.employeeId}/assignment`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: roleLogins.get("hr_admin")!.cookie!,
+      },
+      body: JSON.stringify({
+        departmentId: assignment.departmentId,
+        positionId: assignment.positionId,
+        reason: "倒签应拒绝",
+        effectiveAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    }),
+  );
+  const assignmentCounts = await contractPool.query<{ total: number; current: number }>(
+    `select count(*)::integer as total,
+            count(*) filter (where ended_at is null)::integer as current
+     from position_assignments where employee_id = $1`,
+    [assignment.employeeId],
+  );
+  if (
+    backdatedResponse.status !== 409 ||
+    assignmentCounts.rows[0]?.total !== 2 ||
+    assignmentCounts.rows[0]?.current !== 1
+  ) {
+    throw new Error(
+      `岗位履历时间边界或唯一当前岗位失效：status=${backdatedResponse.status} counts=${JSON.stringify(assignmentCounts.rows[0])}`,
+    );
+  }
+
   const managerEmployees = await app.handle(
     new Request("http://localhost/api/organization/employees", {
       headers: { cookie: successfulConcurrentCookie },

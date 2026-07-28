@@ -325,6 +325,18 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
     actorAccountId: string;
   }): Promise<boolean> {
     return withTransaction(pool, async (client) => {
+      const employee = await client.query(
+        `select id from employees where id = $1 and active = true for update`,
+        [input.employeeId],
+      );
+      if (employee.rowCount === 0) return false;
+      const current = await client.query<{ startedAt: Date }>(
+        `select started_at as "startedAt" from position_assignments
+         where employee_id = $1 and ended_at is null for update`,
+        [input.employeeId],
+      );
+      const currentStartedAt = current.rows[0]?.startedAt;
+      if (currentStartedAt && input.effectiveAt <= currentStartedAt) return false;
       const target = await client.query(
         `select p.id from positions p join departments d on d.id = p.department_id
          where p.id = $1 and p.department_id = $2 and p.active = true and d.active = true`,
@@ -339,7 +351,7 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       const created = await client.query<{ id: string }>(
         `insert into position_assignments (
            employee_id, department_id, position_id, started_at, reason
-         ) select id, $2, $3, $4, $5 from employees where id = $1 and active = true
+         ) values ($1, $2, $3, $4, $5)
          returning id`,
         [input.employeeId, input.departmentId, input.positionId, input.effectiveAt, input.reason],
       );
