@@ -124,3 +124,4 @@ export * from "./training-plan";
 export * from "./assessment";
 export * from "./report";
 export * from "./mes-v1";
+export * from "./password-policy";

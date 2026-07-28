@@ -1,9 +1,16 @@
 import { parseServerConfig } from "@jineng/skill-matrix-config";
+import {
+  maximumPasswordLength,
+  minimumPasswordLength,
+  passwordLengthIsValid,
+} from "@jineng/skill-matrix-shared";
 import { Pool } from "pg";
 
 const initialPassword = process.env.SEED_INITIAL_PASSWORD;
-if (!initialPassword || initialPassword.length < 12) {
-  throw new Error("SEED_INITIAL_PASSWORD 必须显式设置且不少于 12 位");
+if (!initialPassword || !passwordLengthIsValid(initialPassword)) {
+  throw new Error(
+    `SEED_INITIAL_PASSWORD 必须显式设置且长度为 ${minimumPasswordLength}–${maximumPasswordLength} 位`,
+  );
 }
 
 const config = parseServerConfig(process.env);

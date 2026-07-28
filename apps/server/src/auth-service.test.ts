@@ -291,6 +291,64 @@ describe("authentication service", () => {
     expect(repository.accounts.get("E0001")?.passwordHash).toBe("hash:Changed-Password-456");
   });
 
+  test("rejects seven-character passwords and accepts eight-character passwords", async () => {
+    const { repository, service } = createFixture();
+    const login = await service.login({
+      employeeNumber: "E0001",
+      password: "Initial-Password-123",
+    });
+    if (!login.ok) throw new Error("login failed");
+
+    expect(
+      await service.changePassword(login.data.token, {
+        currentPassword: "Initial-Password-123",
+        newPassword: "1234567",
+      }),
+    ).toMatchObject({ ok: false, error: { code: "WEAK_PASSWORD" } });
+    expect(
+      await service.changePassword(login.data.token, {
+        currentPassword: "Initial-Password-123",
+        newPassword: "x".repeat(201),
+      }),
+    ).toMatchObject({ ok: false, error: { code: "WEAK_PASSWORD" } });
+    expect(
+      await service.changePassword(login.data.token, {
+        currentPassword: "Initial-Password-123",
+        newPassword: "12345678",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(repository.accounts.get("E0001")?.passwordHash).toBe("hash:12345678");
+
+    const resetFixture = createFixture([employeeAccount(), adminAccount()]);
+    const adminLogin = await resetFixture.service.login({
+      employeeNumber: "A0001",
+      password: "Admin-Password-123",
+    });
+    if (!adminLogin.ok) throw new Error("admin login failed");
+    expect(
+      await resetFixture.service.resetPassword(
+        adminLogin.data.token,
+        "account-employee",
+        "1234567",
+      ),
+    ).toMatchObject({ ok: false, error: { code: "WEAK_PASSWORD" } });
+    expect(
+      await resetFixture.service.resetPassword(
+        adminLogin.data.token,
+        "account-employee",
+        "x".repeat(201),
+      ),
+    ).toMatchObject({ ok: false, error: { code: "WEAK_PASSWORD" } });
+    expect(
+      await resetFixture.service.resetPassword(
+        adminLogin.data.token,
+        "account-employee",
+        "12345678",
+      ),
+    ).toMatchObject({ ok: true });
+    expect(resetFixture.repository.accounts.get("E0001")?.passwordHash).toBe("hash:12345678");
+  });
+
   test("records forbidden access and lets only a system admin reset passwords", async () => {
     const employee = employeeAccount();
     employee.mustChangePassword = false;

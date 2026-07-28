@@ -149,6 +149,63 @@ describe("authentication HTTP API", () => {
     ]);
   });
 
+  test("accepts eight-character passwords and rejects seven-character passwords at HTTP boundaries", async () => {
+    const calls: string[] = [];
+    const app = createApp({
+      authService: {
+        changePassword: async (_token: string, input: { newPassword: string }) => {
+          calls.push(`change:${input.newPassword}`);
+          return {
+            ok: true,
+            data: {
+              session: { ...session, mustChangePassword: false },
+              token: "rotated-token",
+              expiresAt: new Date("2026-07-27T00:00:00.000Z"),
+            },
+          };
+        },
+        resetPassword: async (_token: string, _accountId: string, password: string) => {
+          calls.push(`reset:${password}`);
+          return { ok: true, data: { accountId: "account-1", mustChangePassword: true } };
+        },
+      },
+    } as never);
+
+    const change = (newPassword: string) =>
+      app.handle(
+        new Request("http://localhost/api/auth/change-password", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: "skill_matrix_session=plain-session-token",
+          },
+          body: JSON.stringify({ currentPassword: "current-password", newPassword }),
+        }),
+      );
+    const reset = (temporaryPassword: string) =>
+      app.handle(
+        new Request(
+          "http://localhost/api/admin/accounts/00000000-0000-4000-8000-000000000001/reset-password",
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              cookie: "skill_matrix_session=admin-token",
+            },
+            body: JSON.stringify({ temporaryPassword }),
+          },
+        ),
+      );
+
+    expect((await change("1234567")).status).toBe(422);
+    expect((await reset("1234567")).status).toBe(422);
+    expect((await change("x".repeat(201))).status).toBe(422);
+    expect((await reset("x".repeat(201))).status).toBe(422);
+    expect((await change("12345678")).status).toBe(200);
+    expect((await reset("12345678")).status).toBe(200);
+    expect(calls).toEqual(["change:12345678", "reset:12345678"]);
+  });
+
   test("maps an authorization refusal to a structured 403", async () => {
     const response = await createApp({
       authService: {

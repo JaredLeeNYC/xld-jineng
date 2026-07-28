@@ -1,4 +1,10 @@
-import { failure, success, type ReadinessProbe } from "@jineng/skill-matrix-shared";
+import {
+  failure,
+  maximumPasswordLength,
+  minimumPasswordLength,
+  success,
+  type ReadinessProbe,
+} from "@jineng/skill-matrix-shared";
 import { cors } from "@elysiajs/cors";
 import { openapi } from "@elysiajs/openapi";
 import { Elysia, t } from "elysia";
@@ -356,7 +362,10 @@ export const createApp = ({
       {
         body: t.Object({
           currentPassword: t.String({ minLength: 1, maxLength: 200 }),
-          newPassword: t.String({ minLength: 12, maxLength: 200 }),
+          newPassword: t.String({
+            minLength: minimumPasswordLength,
+            maxLength: maximumPasswordLength,
+          }),
         }),
         detail: {
           summary: "修改首次或当前密码",
@@ -475,7 +484,10 @@ export const createApp = ({
       },
       {
         body: t.Object({
-          temporaryPassword: t.String({ minLength: 12, maxLength: 200 }),
+          temporaryPassword: t.String({
+            minLength: minimumPasswordLength,
+            maxLength: maximumPasswordLength,
+          }),
         }),
         params: t.Object({
           accountId: t.String({ format: "uuid" }),

@@ -59,6 +59,39 @@ describe("application shell", () => {
     expect(html).not.toContain("我的技能差距");
   });
 
+  test("shows an eight-character minimum on password forms", () => {
+    const changePasswordHtml = renderToStaticMarkup(
+      <App
+        initialSession={{
+          accountId: "account-employee",
+          employeeId: "employee-employee",
+          employeeNumber: "E0001",
+          displayName: "员工",
+          role: "employee",
+          mustChangePassword: true,
+        }}
+      />,
+    );
+    const resetPasswordHtml = renderToStaticMarkup(
+      <App
+        initialSession={{
+          accountId: "account-admin",
+          employeeId: "employee-admin",
+          employeeNumber: "A0001",
+          displayName: "管理员",
+          role: "system_admin",
+          mustChangePassword: false,
+        }}
+      />,
+    );
+
+    expect(changePasswordHtml).toContain("新密码至少 8 位");
+    expect(changePasswordHtml.match(/minLength="8"/g)).toHaveLength(2);
+    expect(changePasswordHtml.match(/maxLength="200"/g)).toHaveLength(2);
+    expect(resetPasswordHtml).toContain('minLength="8"');
+    expect(resetPasswordHtml).toContain('maxLength="200"');
+  });
+
   test("shows employees only their own training and skill reminders", () => {
     const html = renderToStaticMarkup(
       <App

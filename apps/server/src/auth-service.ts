@@ -1,4 +1,11 @@
-import { hasPermission, type FixedRole, type Permission } from "@jineng/skill-matrix-shared";
+import {
+  hasPermission,
+  maximumPasswordLength,
+  minimumPasswordLength,
+  passwordLengthIsValid,
+  type FixedRole,
+  type Permission,
+} from "@jineng/skill-matrix-shared";
 import type {
   AccountSummary,
   AuthFailure,
@@ -123,8 +130,6 @@ const sessionView = (account: AuthAccount): SessionView => ({
 });
 
 const normalizeEmployeeNumber = (employeeNumber: string) => employeeNumber.trim().toUpperCase();
-
-const passwordIsValid = (password: string) => password.length >= 12 && password.length <= 200;
 
 export const createAuthService = ({
   repository,
@@ -350,8 +355,12 @@ export const createAuthService = ({
       if (!currentMatches) {
         return authFailure("INVALID_CURRENT_PASSWORD", "当前密码不正确", 401);
       }
-      if (!passwordIsValid(input.newPassword) || input.newPassword === input.currentPassword) {
-        return authFailure("WEAK_PASSWORD", "新密码至少 12 位且不能与当前密码相同", 409);
+      if (!passwordLengthIsValid(input.newPassword) || input.newPassword === input.currentPassword) {
+        return authFailure(
+          "WEAK_PASSWORD",
+          `新密码长度需为 ${minimumPasswordLength}–${maximumPasswordLength} 位，且不能与当前密码相同`,
+          409,
+        );
       }
 
       const passwordHash = await password.hash(input.newPassword);
@@ -398,8 +407,12 @@ export const createAuthService = ({
     ): Promise<ActionResult<{ accountId: string; mustChangePassword: true }>> {
       const authorized = await service.authorize(actorToken, "system:manage");
       if (!authorized.ok) return authorized;
-      if (!passwordIsValid(temporaryPassword)) {
-        return authFailure("WEAK_PASSWORD", "临时密码至少需要 12 位", 409);
+      if (!passwordLengthIsValid(temporaryPassword)) {
+        return authFailure(
+          "WEAK_PASSWORD",
+          `临时密码长度需为 ${minimumPasswordLength}–${maximumPasswordLength} 位`,
+          409,
+        );
       }
       const targetAccount = await repository.findAccountById(accountId);
       if (!targetAccount) {

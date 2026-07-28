@@ -1,5 +1,7 @@
 import {
   navigationForRole,
+  maximumPasswordLength,
+  minimumPasswordLength,
   assessmentMethodLabels,
   assessmentStatusLabels,
   skillCategoryLabels,
@@ -287,7 +289,9 @@ function PasswordChangePage({
         </span>
         <p className="eyebrow">首次登录保护</p>
         <h2>{session.displayName}，请先修改密码</h2>
-        <p className="auth-help">新密码至少 12 位。完成修改前不能进入业务页面。</p>
+        <p className="auth-help">
+          新密码至少 {minimumPasswordLength} 位，最多 {maximumPasswordLength} 位。完成修改前不能进入业务页面。
+        </p>
         <label>
           <span>当前密码</span>
           <input
@@ -301,7 +305,8 @@ function PasswordChangePage({
           <span>新密码</span>
           <input
             autoComplete="new-password"
-            minLength={12}
+            minLength={minimumPasswordLength}
+            maxLength={maximumPasswordLength}
             onChange={(event) => setNewPassword(event.target.value)}
             required
             type="password"
@@ -311,7 +316,8 @@ function PasswordChangePage({
           <span>再次输入新密码</span>
           <input
             autoComplete="new-password"
-            minLength={12}
+            minLength={minimumPasswordLength}
+            maxLength={maximumPasswordLength}
             onChange={(event) => setConfirmation(event.target.value)}
             required
             type="password"
@@ -466,8 +472,8 @@ function AdminResetPanel() {
         <label>
           临时密码
           <input
-            minLength={12}
-            maxLength={200}
+            minLength={minimumPasswordLength}
+            maxLength={maximumPasswordLength}
             required
             type="password"
             value={temporaryPassword}
