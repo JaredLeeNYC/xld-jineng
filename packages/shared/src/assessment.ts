@@ -55,3 +55,19 @@ export type SkillAssessmentView = {
   archivedAt?: string;
   createdAt: string;
 };
+
+export type CurrentSkillValidity = "effective" | "expiring_soon" | "expired" | "voided";
+
+export const calculateCurrentSkillValidity = (input: {
+  validUntil?: string;
+  voidedAt?: string;
+  now: Date;
+}): CurrentSkillValidity => {
+  if (input.voidedAt) return "voided";
+  if (!input.validUntil) return "effective";
+  const validUntil = new Date(input.validUntil);
+  if (validUntil < input.now) return "expired";
+  return validUntil.getTime() - input.now.getTime() <= 30 * 86_400_000
+    ? "expiring_soon"
+    : "effective";
+};

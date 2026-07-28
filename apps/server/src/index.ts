@@ -9,6 +9,7 @@ import { createMaterialService } from "./material-service";
 import { createFilesystemMaterialStorage } from "./material-storage";
 import { createTrainingService } from "./training-service";
 import { createAssessmentService } from "./assessment-service";
+import { createNotificationService } from "./notification-service";
 
 const config = parseServerConfig(process.env);
 const database = createDatabase(config);
@@ -67,6 +68,10 @@ const assessmentService = createAssessmentService({
   idSource: () => randomUUID(),
   now: () => new Date(),
 });
+const notificationService = createNotificationService({
+  repository: database.notificationRepository,
+  now: () => new Date(),
+});
 
 const app = createApp({
   appUrl: config.appUrl,
@@ -76,6 +81,7 @@ const app = createApp({
   materialService,
   trainingService,
   assessmentService,
+  notificationService,
   readinessProbe: database.readinessProbe,
   secureCookie: config.appUrl.startsWith("https://"),
 }).listen({
@@ -85,7 +91,15 @@ const app = createApp({
 
 console.log(`技能矩阵 API 已启动：http://${app.server?.hostname}:${app.server?.port}`);
 
+const notificationTimer = setInterval(
+  () =>
+    void notificationService.runScheduled().catch((error) => console.error("通知任务失败", error)),
+  60_000,
+);
+void notificationService.runScheduled().catch((error) => console.error("通知任务失败", error));
+
 const shutdown = async () => {
+  clearInterval(notificationTimer);
   await database.close();
   await app.stop();
   process.exit(0);

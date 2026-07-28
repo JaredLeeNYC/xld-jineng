@@ -8,6 +8,7 @@ import { createMaterialService } from "../../../apps/server/src/material-service
 import { createMemoryMaterialStorage } from "../../../apps/server/src/material-storage";
 import { createTrainingService } from "../../../apps/server/src/training-service";
 import { createAssessmentService } from "../../../apps/server/src/assessment-service";
+import { createNotificationService } from "../../../apps/server/src/notification-service";
 import {
   createDatabaseReadinessProbe,
   createPostgresAuthRepository,
@@ -16,6 +17,7 @@ import {
   createPostgresMaterialRepository,
   createPostgresTrainingRepository,
   createPostgresAssessmentRepository,
+  createPostgresNotificationRepository,
   migrationsFolder,
 } from "../src";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -226,6 +228,26 @@ try {
     idSource: () => randomUUID(),
     now: () => new Date(),
   });
+  const notificationRepository = createPostgresNotificationRepository(contractPool);
+  const wecomAttempts: Array<{ url: string; body: string }> = [];
+  let wecomShouldFail = false;
+  const notificationService = createNotificationService({
+    repository: notificationRepository,
+    fetcher: async (input, init) => {
+      wecomAttempts.push({
+        url: input,
+        body: typeof init?.body === "string" ? init.body : "",
+      });
+      return new Response(
+        JSON.stringify(
+          wecomShouldFail ? { errcode: 40001, errmsg: "invalid key" } : { errcode: 0 },
+        ),
+        { status: 200 },
+      );
+    },
+    now: () => new Date(),
+    idSource: () => randomUUID(),
+  });
   const app = createApp({
     authService,
     organizationService,
@@ -233,8 +255,14 @@ try {
     materialService,
     trainingService,
     assessmentService,
+    notificationService,
     readinessProbe,
   });
+  await contractPool.query(
+    `insert into webhook_channels (name,webhook_url,active,created_by_account_id)
+     values ('合同预置群','https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=1234567890-preconfigured',true,$1)`,
+    [accountIds.get("system_admin")!],
+  );
   try {
     await authService.login({
       employeeNumber: "DEBUG-UNKNOWN",
@@ -1764,6 +1792,51 @@ try {
     "manager-confirm",
     successfulConcurrentCookie,
   );
+  const assessmentHrReturn = await transitionAssessment(
+    passedAssessmentId,
+    "return",
+    roleLogins.get("hr_admin")!.cookie!,
+    { reason: "HR 要求补充复核记录" },
+  );
+  const assessmentSecondRevise = await app.handle(
+    new Request(`http://localhost/api/assessments/${passedAssessmentId}`, {
+      method: "PUT",
+      headers: {
+        cookie: evaluatorCookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        employeeId: assignment.employeeId,
+        skillId: createdSkills.get("S001")!,
+        method: "comprehensive",
+        level: 3,
+        passed: true,
+        reason: "已补充 HR 复核记录",
+        remediation: "持续按标准点检",
+        assessedAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    }),
+  );
+  const assessmentSecondResubmit = await transitionAssessment(
+    passedAssessmentId,
+    "submit",
+    evaluatorCookie,
+  );
+  const assessmentSecondManagerConfirm = await transitionAssessment(
+    passedAssessmentId,
+    "manager-confirm",
+    successfulConcurrentCookie,
+  );
+  const assessmentReminderVersions = await contractPool.query<{
+    pendingManager: number;
+    pendingHr: number;
+  }>(
+    `select
+       count(distinct event_key) filter (where event_type='assessment_pending_manager')::int as "pendingManager",
+       count(distinct event_key) filter (where event_type='assessment_pending_hr')::int as "pendingHr"
+     from notification_outbox where event_key like $1`,
+    [`%:${passedAssessmentId}:%`],
+  );
   const evaluatorSelfArchive = await transitionAssessment(
     passedAssessmentId,
     "archive",
@@ -1791,6 +1864,12 @@ try {
     assessmentResubmit.status !== 200 ||
     crossDepartmentConfirm.status !== 403 ||
     assessmentManagerConfirm.status !== 200 ||
+    assessmentHrReturn.status !== 200 ||
+    assessmentSecondRevise.status !== 200 ||
+    assessmentSecondResubmit.status !== 200 ||
+    assessmentSecondManagerConfirm.status !== 200 ||
+    assessmentReminderVersions.rows[0]?.pendingManager !== 3 ||
+    assessmentReminderVersions.rows[0]?.pendingHr !== 2 ||
     evaluatorSelfArchive.status !== 403 ||
     assessmentArchive.status !== 200 ||
     currentPassedAssessment.rows[0]?.assessmentId !== passedAssessmentId ||
@@ -1916,6 +1995,205 @@ try {
       typeof error === "object" && error !== null && "code" in error && error.code === "23514";
   }
   if (!formalAssessmentDeleteRejected) throw new Error("数据库允许物理删除已作废正式评定");
+
+  const invalidWebhook = await app.handle(
+    new Request("http://localhost/api/admin/webhook-channels", {
+      method: "POST",
+      headers: {
+        cookie: roleLogins.get("system_admin")!.cookie!,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "不安全地址",
+        webhookUrl: "http://127.0.0.1/internal",
+        active: true,
+      }),
+    }),
+  );
+  const hrWebhookAccess = await app.handle(
+    new Request("http://localhost/api/admin/webhook-channels", {
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const channelResponse = await app.handle(
+    new Request("http://localhost/api/admin/webhook-channels", {
+      method: "POST",
+      headers: {
+        cookie: roleLogins.get("system_admin")!.cookie!,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "管理群",
+        webhookUrl: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=1234567890-contract-key",
+        active: true,
+      }),
+    }),
+  );
+  const channelBody = (await channelResponse.json()) as { data?: { id: string } };
+  const channelList = await app.handle(
+    new Request("http://localhost/api/admin/webhook-channels", {
+      headers: { cookie: roleLogins.get("system_admin")!.cookie! },
+    }),
+  );
+  const channelListBody = (await channelList.json()) as {
+    data?: Array<{ maskedUrl: string; webhookUrl?: string }>;
+  };
+  const emptyWebhookUpdate = await app.handle(
+    new Request(`http://localhost/api/admin/webhook-channels/${channelBody.data!.id}`, {
+      method: "PATCH",
+      headers: {
+        cookie: roleLogins.get("system_admin")!.cookie!,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ webhookUrl: "" }),
+    }),
+  );
+  if (
+    invalidWebhook.status !== 400 ||
+    hrWebhookAccess.status !== 403 ||
+    channelResponse.status !== 200 ||
+    emptyWebhookUpdate.status !== 400 ||
+    channelListBody.data?.[0]?.webhookUrl ||
+    !channelListBody.data?.[0]?.maskedUrl.includes("***")
+  )
+    throw new Error("企业微信 Webhook 安全校验、掩码或系统管理员边界失败");
+
+  wecomShouldFail = true;
+  const webhookTest = await app.handle(
+    new Request(`http://localhost/api/admin/webhook-channels/${channelBody.data!.id}/test`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("system_admin")!.cookie! },
+    }),
+  );
+  const failedDelivery = await contractPool.query<{ id: string; attempts: number; status: string }>(
+    `select id,attempts,status from notification_outbox where event_type='webhook_test'
+     order by created_at desc limit 1`,
+  );
+  wecomShouldFail = false;
+  const retryDelivery = await app.handle(
+    new Request(
+      `http://localhost/api/admin/notification-deliveries/${failedDelivery.rows[0]!.id}/retry`,
+      {
+        method: "POST",
+        headers: { cookie: roleLogins.get("system_admin")!.cookie! },
+      },
+    ),
+  );
+  const retriedDelivery = await contractPool.query<{ attempts: number; status: string }>(
+    "select attempts,status from notification_outbox where id=$1",
+    [failedDelivery.rows[0]!.id],
+  );
+  if (
+    webhookTest.status !== 409 ||
+    failedDelivery.rows[0]?.status !== "failed" ||
+    failedDelivery.rows[0]?.attempts !== 1 ||
+    retryDelivery.status !== 200 ||
+    retriedDelivery.rows[0]?.status !== "sent" ||
+    retriedDelivery.rows[0]?.attempts !== 2
+  )
+    throw new Error("企业微信非零错误码、失败记录或人工重试失败");
+  const claimProbeId = await notificationRepository.enqueueTest(
+    channelBody.data!.id,
+    `claim_probe:${randomUUID()}`,
+  );
+  if (!claimProbeId) throw new Error("无法创建并发领取探针");
+  const firstClaim = await notificationRepository.claim(new Date(), claimProbeId);
+  const duplicateClaim = await notificationRepository.claim(new Date(), claimProbeId);
+  if (!firstClaim || duplicateClaim) throw new Error("通知 outbox 可被并发重复领取");
+  const staleReclaim = await notificationRepository.claim(
+    new Date(Date.now() + 6 * 60_000),
+    claimProbeId,
+  );
+  if (!staleReclaim) throw new Error("过期通知租约无法恢复");
+  await notificationRepository.complete(
+    claimProbeId,
+    staleReclaim.leaseToken,
+    { success: true },
+    new Date(),
+  );
+  await notificationRepository.complete(
+    claimProbeId,
+    firstClaim.leaseToken,
+    { success: false, error: "旧 worker 延迟失败" },
+    new Date(),
+  );
+  const leaseResult = await contractPool.query<{ status: string }>(
+    "select status from notification_outbox where id=$1",
+    [claimProbeId],
+  );
+  if (leaseResult.rows[0]?.status !== "sent") throw new Error("旧通知租约覆盖了新租约结果");
+  let deliveryDeleteRejected = false;
+  try {
+    await contractPool.query("delete from notification_outbox where id=$1", [claimProbeId]);
+  } catch (error) {
+    deliveryDeleteRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
+  if (!deliveryDeleteRejected) throw new Error("数据库允许物理删除通知发送记录");
+  const cappedId = await notificationRepository.enqueueTest(
+    channelBody.data!.id,
+    `retry_cap:${randomUUID()}`,
+  );
+  if (!cappedId) throw new Error("无法创建重试上限探针");
+  await contractPool.query(
+    "update notification_outbox set status='failed',attempts=5,next_attempt_at=now() where id=$1",
+    [cappedId],
+  );
+  const automaticAfterCap = await notificationRepository.claim(new Date(), cappedId);
+  const manualRetryAccepted = await notificationRepository.retry(cappedId);
+  const manualClaim = await notificationRepository.claim(new Date(), cappedId);
+  if (automaticAfterCap || !manualRetryAccepted || !manualClaim)
+    throw new Error("永久错误未停止自动重试，或人工重试无法恢复");
+  await notificationRepository.complete(
+    cappedId,
+    manualClaim.leaseToken,
+    { success: true },
+    new Date(),
+  );
+
+  const notificationAssessmentId = await createAssessment({
+    skillId: createdSkills.get("S003")!,
+    level: 2,
+    passed: true,
+  });
+  await transitionAssessment(notificationAssessmentId, "submit", evaluatorCookie);
+  wecomShouldFail = true;
+  await notificationService.runScheduled();
+  const pendingAssessment = await contractPool.query<{ status: string }>(
+    "select status from skill_assessments where id=$1",
+    [notificationAssessmentId],
+  );
+  const firstOutboxCount = await contractPool.query<{ count: number }>(
+    "select count(*)::int as count from notification_outbox",
+  );
+  await notificationService.runScheduled();
+  const secondOutboxCount = await contractPool.query<{ count: number }>(
+    "select count(*)::int as count from notification_outbox",
+  );
+  const employeeNotifications = await app.handle(
+    new Request("http://localhost/api/notifications", { headers: { cookie: importedCookie! } }),
+  );
+  const employeeNotificationsBody = (await employeeNotifications.json()) as {
+    data?: Array<{ type: string }>;
+  };
+  const trainingPendingOutbox = await contractPool.query(
+    "select 1 from notification_outbox where event_type='training_pending_confirmation' limit 1",
+  );
+  if (
+    pendingAssessment.rows[0]?.status !== "pending_manager" ||
+    firstOutboxCount.rows[0]?.count !== secondOutboxCount.rows[0]?.count ||
+    !employeeNotificationsBody.data?.some((item) => item.type === "assessment_archived") ||
+    !trainingPendingOutbox.rowCount ||
+    wecomAttempts.some((attempt) => attempt.url.includes("127.0.0.1"))
+  )
+    throw new Error("通知 outbox 故障隔离、扫描去重或站内通知失败");
+  const maximumReasonReturn = await transitionAssessment(
+    notificationAssessmentId,
+    "return",
+    successfulConcurrentCookie,
+    { reason: "退".repeat(500) },
+  );
+  if (maximumReasonReturn.status !== 200) throw new Error("合法的 500 字退回原因被通知写入回滚");
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",

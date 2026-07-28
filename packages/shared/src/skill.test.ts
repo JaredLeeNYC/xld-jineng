@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { calculateSkillStatus, skillLevelMeanings } from "./skill";
+import { calculateCurrentSkillValidity } from "./assessment";
 
 describe("skill matrix calculations", () => {
   test("uses the fixed 0-4 meanings", () => {
@@ -28,5 +29,24 @@ describe("skill matrix calculations", () => {
       status: "met",
       gap: 0,
     });
+  });
+});
+
+describe("current skill validity", () => {
+  const now = new Date("2026-07-01T00:00:00.000Z");
+  test("uses exact 30-day expiry boundaries and keeps void separate", () => {
+    expect(calculateCurrentSkillValidity({ now })).toBe("effective");
+    expect(calculateCurrentSkillValidity({ validUntil: "2026-07-31T00:00:00.000Z", now })).toBe(
+      "expiring_soon",
+    );
+    expect(calculateCurrentSkillValidity({ validUntil: "2026-08-01T00:00:00.000Z", now })).toBe(
+      "effective",
+    );
+    expect(calculateCurrentSkillValidity({ validUntil: "2026-06-30T23:59:59.000Z", now })).toBe(
+      "expired",
+    );
+    expect(calculateCurrentSkillValidity({ now, voidedAt: "2026-06-01T00:00:00.000Z" })).toBe(
+      "voided",
+    );
   });
 });

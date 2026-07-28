@@ -80,6 +80,7 @@ export type SkillMatrixCell = {
   required: boolean;
   currentLevel?: SkillLevel;
   validUntil?: string;
+  validityStatus?: "effective" | "expiring_soon" | "expired";
   assessmentId?: string;
   status: "met" | "gap" | "unassessed" | "expired";
   gap: number;

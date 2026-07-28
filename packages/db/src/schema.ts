@@ -511,6 +511,78 @@ export const employeeCurrentSkills = pgTable(
   ],
 );
 
+export const inAppNotifications = pgTable(
+  "in_app_notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    recipientAccountId: uuid("recipient_account_id")
+      .notNull()
+      .references(() => userAccounts.id, { onDelete: "restrict" }),
+    eventKey: varchar("event_key", { length: 200 }).notNull(),
+    type: varchar("type", { length: 50 }).notNull(),
+    title: varchar("title", { length: 150 }).notNull(),
+    message: varchar("message", { length: 500 }).notNull(),
+    entityType: varchar("entity_type", { length: 50 }),
+    entityId: uuid("entity_id"),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("in_app_notifications_recipient_event_unique").on(
+      table.recipientAccountId,
+      table.eventKey,
+    ),
+    index("in_app_notifications_recipient_created_idx").on(
+      table.recipientAccountId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const webhookChannels = pgTable(
+  "webhook_channels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: varchar("name", { length: 100 }).notNull(),
+    webhookUrl: varchar("webhook_url", { length: 2_000 }).notNull(),
+    active: boolean("active").notNull().default(true),
+    createdByAccountId: uuid("created_by_account_id")
+      .notNull()
+      .references(() => userAccounts.id, { onDelete: "restrict" }),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("webhook_channels_name_unique").on(table.name)],
+);
+
+export const notificationOutbox = pgTable(
+  "notification_outbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventKey: varchar("event_key", { length: 200 }).notNull(),
+    eventType: varchar("event_type", { length: 50 }).notNull(),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => webhookChannels.id, { onDelete: "restrict" }),
+    payload: jsonb("payload").$type<{ title: string; message: string }>().notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    leaseToken: uuid("lease_token"),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    errorMessage: varchar("error_message", { length: 500 }),
+    ...timestamps,
+  },
+  (table) => [
+    check(
+      "notification_outbox_status",
+      sql`${table.status} in ('pending','sending','sent','failed')`,
+    ),
+    uniqueIndex("notification_outbox_event_channel_unique").on(table.eventKey, table.channelId),
+    index("notification_outbox_pending_idx").on(table.status, table.nextAttemptAt),
+  ],
+);
+
 export const skillImportPreviews = pgTable("skill_import_previews", {
   id: uuid("id").primaryKey(),
   actorAccountId: uuid("actor_account_id")

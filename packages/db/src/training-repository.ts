@@ -5,6 +5,7 @@ import type {
   TrainingTaskView,
 } from "@jineng/skill-matrix-shared";
 import type { Pool, PoolClient } from "pg";
+import { emitInAppNotification, enqueueManagementWebhook } from "./notification-repository";
 
 const transaction = async <T>(pool: Pool, operation: (client: PoolClient) => Promise<T>) => {
   const client = await pool.connect();
@@ -307,6 +308,15 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
           (material_id,employee_id,source_type,source_reference) values ($1,$2,'training_task',$3)`,
           [row.material_id, employee.id, task.rows[0]!.id],
         );
+        await emitInAppNotification(client, {
+          employeeId: employee.id,
+          eventKey: `training_published:${task.rows[0]!.id}`,
+          type: "training_published",
+          title: "新的培训任务",
+          message: `你有新的培训“${row.title}”待完成`,
+          entityType: "training_task",
+          entityId: task.rows[0]!.id,
+        });
       }
       const status: TrainingPlanStatus =
         new Date(row.start_at) <= now ? "in_progress" : "published";
@@ -316,6 +326,12 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
       );
       await audit(client, actor.accountId, "training_plan.published", "training_plan", id, {
         taskCount: employees.rowCount,
+      });
+      await enqueueManagementWebhook(client, {
+        eventKey: `training_published:${id}`,
+        eventType: "training_published",
+        title: "新培训已发布",
+        message: `“${row.title}”已发布，共 ${employees.rowCount} 人`,
       });
       return { ok: true as const, taskCount: employees.rowCount, status };
     });
@@ -341,15 +357,26 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
 
   async submitTask(taskId: string, employeeId: string, now: Date, actorAccountId: string) {
     return transaction(pool, async (client) => {
-      const result = await client.query(
+      const result = await client.query<{ planId: string }>(
         `update training_tasks t set status='submitted',submitted_at=$3,returned_at=null,return_reason=null,updated_at=$3
          from training_plans p where t.id=$1 and t.employee_id=$2 and p.id=t.plan_id
            and p.status in ('published','in_progress') and p.start_at <= $3
-           and t.status in ('assigned','returned') returning t.id`,
+           and t.status in ('assigned','returned') returning t.plan_id as "planId"`,
         [taskId, employeeId, now],
       );
       if (!result.rowCount) return false;
       await audit(client, actorAccountId, "training_task.submitted", "training_task", taskId);
+      const detail = await client.query<{ title: string; employeeName: string }>(
+        `select p.title,e.display_name as "employeeName" from training_plans p
+         join employees e on e.id=$2 where p.id=$1`,
+        [result.rows[0]!.planId, employeeId],
+      );
+      await enqueueManagementWebhook(client, {
+        eventKey: `training_pending_confirmation:${taskId}:${now.toISOString()}`,
+        eventType: "training_pending_confirmation",
+        title: "培训任务待确认",
+        message: `${detail.rows[0]!.employeeName}已提交“${detail.rows[0]!.title}”`,
+      });
       return true;
     });
   },
@@ -383,13 +410,27 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
 
   async returnTask(taskId: string, reason: string, actorAccountId: string, now: Date) {
     return transaction(pool, async (client) => {
-      const result = await client.query(
-        "update training_tasks set status='returned',returned_at=$2,return_reason=$3,updated_at=$2 where id=$1 and status='submitted' returning id",
+      const result = await client.query<{ employeeId: string; planId: string }>(
+        `update training_tasks set status='returned',returned_at=$2,return_reason=$3,updated_at=$2
+         where id=$1 and status='submitted' returning employee_id as "employeeId",plan_id as "planId"`,
         [taskId, now, reason],
       );
       if (!result.rowCount) return false;
       await audit(client, actorAccountId, "training_task.returned", "training_task", taskId, {
         reason,
+      });
+      const plan = await client.query<{ title: string }>(
+        "select title from training_plans where id=$1",
+        [result.rows[0]!.planId],
+      );
+      await emitInAppNotification(client, {
+        employeeId: result.rows[0]!.employeeId,
+        eventKey: `training_returned:${taskId}:${now.toISOString()}`,
+        type: "training_returned",
+        title: "培训任务已退回",
+        message: `“${plan.rows[0]!.title}”已退回：${reason}`.slice(0, 500),
+        entityType: "training_task",
+        entityId: taskId,
       });
       return true;
     });

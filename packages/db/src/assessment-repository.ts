@@ -4,6 +4,7 @@ import type {
   SkillLevel,
 } from "@jineng/skill-matrix-shared";
 import type { Pool, PoolClient } from "pg";
+import { emitInAppNotification, enqueueManagementWebhook } from "./notification-repository";
 
 const transaction = async <T>(pool: Pool, operation: (client: PoolClient) => Promise<T>) => {
   const client = await pool.connect();
@@ -202,29 +203,43 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
 
   async submit(actor: AssessmentActor, id: string) {
     return transaction(pool, async (client) => {
-      const result = await client.query(
+      const result = await client.query<{ transitionedAt: Date }>(
         `update skill_assessments set status='pending_manager',updated_at=now()
          where id=$1 and assessor_account_id=$2 and status in ('draft','returned')
-           and method is not null and evidence_storage_key is not null returning id`,
+           and method is not null and evidence_storage_key is not null
+         returning updated_at as "transitionedAt"`,
         [id, actor.accountId],
       );
       if (!result.rowCount) return false;
       await audit(client, actor.accountId, "skill_assessment.submitted", id);
+      await enqueueManagementWebhook(client, {
+        eventKey: `assessment_pending_manager:${id}:${result.rows[0]!.transitionedAt.toISOString()}`,
+        eventType: "assessment_pending_manager",
+        title: "技能评定待主管确认",
+        message: "有新的技能评定等待部门主管确认",
+      });
       return true;
     });
   },
 
   async managerConfirm(actor: AssessmentActor, id: string, now: Date) {
     return transaction(pool, async (client) => {
-      const result = await client.query(
+      const result = await client.query<{ transitionedAt: Date }>(
         `update skill_assessments a set status='pending_hr',manager_confirmed_by_account_id=$2,
            manager_confirmed_at=$3,updated_at=now() from employees e
          where a.id=$1 and e.id=a.employee_id and a.status='pending_manager'
-           and e.department_id=$4::uuid and a.assessor_account_id<>$2 returning a.id`,
+           and e.department_id=$4::uuid and a.assessor_account_id<>$2
+         returning a.updated_at as "transitionedAt"`,
         [id, actor.accountId, now, actor.departmentId ?? null],
       );
       if (!result.rowCount) return false;
       await audit(client, actor.accountId, "skill_assessment.manager_confirmed", id);
+      await enqueueManagementWebhook(client, {
+        eventKey: `assessment_pending_hr:${id}:${result.rows[0]!.transitionedAt.toISOString()}`,
+        eventType: "assessment_pending_hr",
+        title: "技能评定待 HR 归档",
+        message: "主管已确认技能评定，请 HR 归档",
+      });
       return true;
     });
   },
@@ -232,14 +247,24 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
   async returnAssessment(actor: AssessmentActor, id: string, reason: string) {
     return transaction(pool, async (client) => {
       const expected = actor.role === "department_manager" ? "pending_manager" : "pending_hr";
-      const result = await client.query(
+      const result = await client.query<{ employeeId: string; returnedAt: Date }>(
         `update skill_assessments a set status='returned',returned_by_account_id=$2,return_reason=$3,
            updated_at=now() from employees e where a.id=$1 and e.id=a.employee_id and a.status=$4
-           and ($5='hr_admin' or ($5='department_manager' and e.department_id=$6::uuid)) returning a.id`,
+           and ($5='hr_admin' or ($5='department_manager' and e.department_id=$6::uuid))
+         returning a.employee_id as "employeeId",a.updated_at as "returnedAt"`,
         [id, actor.accountId, reason, expected, actor.role, actor.departmentId ?? null],
       );
       if (!result.rowCount) return false;
       await audit(client, actor.accountId, "skill_assessment.returned", id, { reason });
+      await emitInAppNotification(client, {
+        employeeId: result.rows[0]!.employeeId,
+        eventKey: `assessment_returned:${id}:${result.rows[0]!.returnedAt.toISOString()}`,
+        type: "assessment_returned",
+        title: "技能评定已退回",
+        message: `评定已退回：${reason}`.slice(0, 500),
+        entityType: "skill_assessment",
+        entityId: id,
+      });
       return true;
     });
   },
@@ -296,6 +321,15 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
       }
       await audit(client, actor.accountId, "skill_assessment.archived", id, {
         passed: row.passed,
+      });
+      await emitInAppNotification(client, {
+        employeeId: row.employeeId,
+        eventKey: `assessment_archived:${id}`,
+        type: "assessment_archived",
+        title: "技能评定结果已归档",
+        message: row.passed ? "技能评定已通过并更新技能档案" : "技能评定未通过，请查看整改建议",
+        entityType: "skill_assessment",
+        entityId: id,
       });
       return true;
     });

@@ -4,10 +4,12 @@ import {
   App,
   AssessmentPanel,
   OrganizationPanel,
+  NotificationPanel,
   SkillAdminPanel,
   SkillMatrixPanel,
   TrainingMaterialPanel,
   TrainingPlanPanel,
+  WebhookSettingsPanel,
 } from "./app";
 
 describe("application shell", () => {
@@ -121,6 +123,10 @@ describe("application shell", () => {
     );
     expect(renderToStaticMarkup(<AssessmentPanel session={employee} />)).toContain(
       "正在加载技能评定",
+    );
+    expect(renderToStaticMarkup(<NotificationPanel />)).toContain("正在加载消息通知");
+    expect(renderToStaticMarkup(<WebhookSettingsPanel />)).toContain(
+      "正在加载 Webhook 配置与发送记录",
     );
   });
 });

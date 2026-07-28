@@ -8,6 +8,7 @@ import type {
   SkillView,
 } from "@jineng/skill-matrix-shared";
 import { calculateSkillStatus } from "@jineng/skill-matrix-shared";
+import { calculateCurrentSkillValidity } from "@jineng/skill-matrix-shared";
 import type { Pool, PoolClient } from "pg";
 
 const transaction = async <T>(pool: Pool, operation: (client: PoolClient) => Promise<T>) => {
@@ -412,6 +413,14 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
         required: row.required,
         ...(currentLevel !== undefined ? { currentLevel } : {}),
         ...(validUntil ? { validUntil } : {}),
+        ...(currentLevel !== undefined
+          ? {
+              validityStatus: calculateCurrentSkillValidity({
+                ...(validUntil ? { validUntil } : {}),
+                now: input.now,
+              }) as "effective" | "expiring_soon" | "expired",
+            }
+          : {}),
         ...(row.assessmentId ? { assessmentId: row.assessmentId } : {}),
         ...calculateSkillStatus({
           requiredLevel: row.requiredLevel,

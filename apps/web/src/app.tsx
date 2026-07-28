@@ -1997,6 +1997,11 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
     unassessed: "未评定",
     expired: "已过期",
   } as const;
+  const validityLabel = {
+    effective: "有效",
+    expiring_soon: "30 天内到期",
+    expired: "已过期",
+  } as const;
   return (
     <div className="matrix-page">
       <section className="welcome">
@@ -2100,6 +2105,10 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
                               </strong>
                               <small>
                                 {statusLabel[cell.status]} ·{" "}
+                                {cell.validityStatus
+                                  ? validityLabel[cell.validityStatus]
+                                  : "未评定"}{" "}
+                                ·{" "}
                                 {cell.validUntil
                                   ? `有效至 ${cell.validUntil.slice(0, 10)}`
                                   : "长期有效"}
@@ -2137,6 +2146,7 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
                         {statusLabel[cell.status]}
                       </strong>
                       <small>
+                        {cell.validityStatus ? `${validityLabel[cell.validityStatus]} · ` : ""}
                         {cell.validUntil ? `有效至 ${cell.validUntil.slice(0, 10)}` : "长期有效"}
                         {cell.gap > 0 ? ` · 差 ${cell.gap} 级` : ""}
                       </small>
@@ -2165,6 +2175,324 @@ const taskStatusLabel: Record<TrainingTaskView["status"], string> = {
   confirmed: "已确认",
   cancelled: "已取消",
 };
+
+type NotificationItem = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  readAt?: string;
+  createdAt: string;
+};
+type WebhookChannel = { id: string; name: string; maskedUrl: string; active: boolean };
+type NotificationDelivery = {
+  id: string;
+  eventType: string;
+  channelName: string;
+  status: "pending" | "sending" | "sent" | "failed";
+  attempts: number;
+  lastAttemptAt?: string;
+  errorMessage?: string;
+};
+
+export function NotificationPanel() {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | { status: "ready"; items: NotificationItem[] }
+  >({ status: "loading" });
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const response = await request<NotificationItem[]>("/api/notifications");
+      setState(
+        response.result.ok
+          ? { status: "ready", items: response.result.data }
+          : { status: "error", message: response.result.error.message },
+      );
+    } catch {
+      setState({ status: "error", message: "暂时无法连接通知服务" });
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载消息通知…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" onClick={load} type="button">
+          重新加载
+        </button>
+      </section>
+    );
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>消息通知</h2>
+          <p>培训、评定与技能到期事项。</p>
+        </div>
+        <button
+          onClick={async () => {
+            await request("/api/notifications/read-all", { method: "PATCH" });
+            await load();
+          }}
+          type="button"
+        >
+          全部标为已读
+        </button>
+      </div>
+      {state.items.length === 0 ? (
+        <div className="empty-state">暂无消息通知</div>
+      ) : (
+        <div className="material-cards">
+          {state.items.map((item) => (
+            <article key={item.id}>
+              <header>
+                <strong>{item.title}</strong>
+                <span>{item.readAt ? "已读" : "未读"}</span>
+              </header>
+              <p>{item.message}</p>
+              <small>{new Date(item.createdAt).toLocaleString("zh-CN")}</small>
+              {!item.readAt && (
+                <button
+                  onClick={async () => {
+                    await request(`/api/notifications/${item.id}/read`, { method: "PATCH" });
+                    await load();
+                  }}
+                  type="button"
+                >
+                  标为已读
+                </button>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function WebhookSettingsPanel() {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | { status: "ready"; channels: WebhookChannel[]; deliveries: NotificationDelivery[] }
+  >({ status: "loading" });
+  const [form, setForm] = useState({ name: "", webhookUrl: "" });
+  const [notice, setNotice] = useState("");
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const [channels, deliveries] = await Promise.all([
+        request<WebhookChannel[]>("/api/admin/webhook-channels"),
+        request<NotificationDelivery[]>("/api/admin/notification-deliveries"),
+      ]);
+      if (!channels.result.ok) {
+        setState({ status: "error", message: channels.result.error.message });
+        return;
+      }
+      if (!deliveries.result.ok) {
+        setState({ status: "error", message: deliveries.result.error.message });
+        return;
+      }
+      setState({
+        status: "ready",
+        channels: channels.result.data,
+        deliveries: deliveries.result.data,
+      });
+    } catch {
+      setState({ status: "error", message: "暂时无法连接通知配置服务" });
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  const mutate = async (path: string, method = "POST", body?: unknown) => {
+    const response = await request(path, {
+      method,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    setNotice(response.result.ok ? "操作成功" : response.result.error.message);
+    await load();
+  };
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载 Webhook 配置与发送记录…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button onClick={load} type="button">
+          重新加载
+        </button>
+      </section>
+    );
+  return (
+    <div className="notification-settings-page">
+      {notice && (
+        <p className="organization-notice" role="status">
+          {notice}
+        </p>
+      )}
+      <form
+        className="panel compact-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          await mutate("/api/admin/webhook-channels", "POST", { ...form, active: true });
+          setForm({ name: "", webhookUrl: "" });
+        }}
+      >
+        <h2>企业微信群机器人</h2>
+        <input
+          required
+          placeholder="渠道名称"
+          value={form.name}
+          onChange={(event) => setForm({ ...form, name: event.target.value })}
+        />
+        <input
+          required
+          placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+          type="url"
+          value={form.webhookUrl}
+          onChange={(event) => setForm({ ...form, webhookUrl: event.target.value })}
+        />
+        <button className="primary-button" type="submit">
+          新增 Webhook
+        </button>
+      </form>
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Webhook 渠道</h2>
+            <p>完整地址和密钥不会显示在页面或普通日志中。</p>
+          </div>
+        </div>
+        {state.channels.length === 0 ? (
+          <div className="empty-state">暂无 Webhook 渠道</div>
+        ) : (
+          <div className="material-cards">
+            {state.channels.map((channel) => (
+              <article key={channel.id}>
+                <header>
+                  <strong>{channel.name}</strong>
+                  <span>{channel.active ? "启用" : "停用"}</span>
+                </header>
+                <p>{channel.maskedUrl}</p>
+                <div className="row-actions">
+                  <button
+                    onClick={() => mutate(`/api/admin/webhook-channels/${channel.id}/test`)}
+                    type="button"
+                  >
+                    测试
+                  </button>
+                  <button
+                    onClick={() =>
+                      mutate(`/api/admin/webhook-channels/${channel.id}`, "PATCH", {
+                        active: !channel.active,
+                      })
+                    }
+                    type="button"
+                  >
+                    {channel.active ? "停用" : "启用"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>发送记录</h2>
+            <p>展示成功、失败原因、尝试次数和最近尝试时间。</p>
+          </div>
+        </div>
+        {state.deliveries.length === 0 ? (
+          <div className="empty-state">暂无发送记录</div>
+        ) : (
+          <>
+            <div className="material-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>事件 / 渠道</th>
+                    <th>状态</th>
+                    <th>尝试</th>
+                    <th>错误</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.deliveries.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <strong>{item.eventType}</strong>
+                        <small>{item.channelName}</small>
+                      </td>
+                      <td>{item.status}</td>
+                      <td>
+                        {item.attempts}
+                        <small>
+                          {item.lastAttemptAt
+                            ? new Date(item.lastAttemptAt).toLocaleString("zh-CN")
+                            : "尚未发送"}
+                        </small>
+                      </td>
+                      <td>{item.errorMessage ?? "-"}</td>
+                      <td>
+                        {item.status === "failed" && (
+                          <button
+                            onClick={() =>
+                              mutate(`/api/admin/notification-deliveries/${item.id}/retry`)
+                            }
+                            type="button"
+                          >
+                            重试
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="material-cards">
+              {state.deliveries.map((item) => (
+                <article key={item.id}>
+                  <header>
+                    <strong>{item.eventType}</strong>
+                    <span>{item.status}</span>
+                  </header>
+                  <p>
+                    {item.channelName} · 已尝试 {item.attempts} 次
+                  </p>
+                  <small>
+                    {item.errorMessage ??
+                      (item.lastAttemptAt
+                        ? `最近：${new Date(item.lastAttemptAt).toLocaleString("zh-CN")}`
+                        : "尚未发送")}
+                  </small>
+                  {item.status === "failed" && (
+                    <button
+                      onClick={() => mutate(`/api/admin/notification-deliveries/${item.id}/retry`)}
+                      type="button"
+                    >
+                      重试
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
 
 export function AssessmentPanel({ session }: { session: Session }) {
   const canAssess = session.role === "hr_admin" || session.role === "department_manager";
@@ -3532,6 +3860,10 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             </div>
           ) : activeNavigation === "assessments" || activeNavigation === "my-assessments" ? (
             <AssessmentPanel session={session} />
+          ) : activeNavigation === "notifications" ? (
+            <NotificationPanel />
+          ) : activeNavigation === "settings" ? (
+            <WebhookSettingsPanel />
           ) : (
             <>
               <section className="welcome">

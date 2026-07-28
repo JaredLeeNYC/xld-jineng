@@ -12,6 +12,7 @@ import type { SkillService } from "./skill-service";
 import type { MaterialService } from "./material-service";
 import type { TrainingService } from "./training-service";
 import type { AssessmentService } from "./assessment-service";
+import type { NotificationService } from "./notification-service";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -146,6 +147,7 @@ type AppDependencies = {
   materialService?: MaterialService;
   trainingService?: TrainingService;
   assessmentService?: AssessmentService;
+  notificationService?: NotificationService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
 };
@@ -214,6 +216,7 @@ export const createApp = ({
   materialService,
   trainingService,
   assessmentService,
+  notificationService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
 }: AppDependencies = {}) =>
@@ -1277,6 +1280,223 @@ export const createApp = ({
           positionId: t.Optional(t.String({ format: "uuid" })),
           skillId: t.Optional(t.String({ format: "uuid" })),
         }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/notifications",
+      async ({ request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.list(authenticated.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .patch(
+      "/api/notifications/read-all",
+      async ({ request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.markRead(authenticated.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .patch(
+      "/api/notifications/:id/read",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.markRead(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/admin/webhook-channels",
+      async ({ request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.listChannels(authenticated.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .post(
+      "/api/admin/webhook-channels",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.createChannel(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          name: t.String({ maxLength: 100 }),
+          webhookUrl: t.String({ maxLength: 2000 }),
+          active: t.Boolean(),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .patch(
+      "/api/admin/webhook-channels/:id",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.updateChannel(
+          authenticated.actor,
+          params.id,
+          body,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          name: t.Optional(t.String({ maxLength: 100 })),
+          webhookUrl: t.Optional(t.String({ maxLength: 2000 })),
+          active: t.Optional(t.Boolean()),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/admin/webhook-channels/:id/test",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.testChannel(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/admin/notification-deliveries",
+      async ({ request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.listDeliveries(authenticated.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .post(
+      "/api/admin/notification-deliveries/:id/retry",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!notificationService) {
+          set.status = 503;
+          return failure("NOTIFICATION_SERVICE_UNAVAILABLE", "通知服务暂不可用");
+        }
+        const result = await notificationService.retry(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )
