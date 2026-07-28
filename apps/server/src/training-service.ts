@@ -26,13 +26,19 @@ const validDate = (value: string) => {
 };
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const safeFilename = (value: string) =>
-  value.length > 0 && value.length <= 255 && !value.includes("..") && !/[\\/]/.test(value);
+  value.length > 0 &&
+  value.length <= 255 &&
+  !value.includes("..") &&
+  !value.includes("\\") &&
+  !value.includes("/") &&
+  !value.includes(String.fromCharCode(0));
 const evidenceSignature = (mime: string, bytes: Uint8Array) => {
   const starts = (...values: number[]) => values.every((value, index) => bytes[index] === value);
   if (mime === "application/pdf") return starts(0x25, 0x50, 0x44, 0x46);
   if (mime === "image/png") return starts(0x89, 0x50, 0x4e, 0x47);
   if (mime === "image/jpeg") return starts(0xff, 0xd8, 0xff);
-  if (mime === "image/webp") return starts(0x52, 0x49, 0x46, 0x46);
+  if (mime === "image/webp")
+    return starts(0x52, 0x49, 0x46, 0x46) && bytes.slice(8, 12).toString() === "87,69,66,80";
   return false;
 };
 
@@ -156,15 +162,18 @@ export const createTrainingService = (dependencies: {
       };
     },
     async submitTask(actor: SessionView, id: string) {
-      if (actor.role !== "employee") return fail("FORBIDDEN", "仅员工本人可以提交培训任务", 403);
+      if (!["employee", "department_manager"].includes(actor.role))
+        return fail("FORBIDDEN", "仅参训员工本人可以提交培训任务", 403);
       return (await repository.submitTask(id, actor.employeeId, now(), actor.accountId))
         ? { ok: true as const, data: { id, status: "submitted" as const } }
         : fail("TASK_SUBMIT_REJECTED", "任务不存在、已取消或当前状态不可提交", 409);
     },
     async confirmTask(actor: SessionView, id: string) {
       if (!manager(actor)) return fail("FORBIDDEN", "无权确认培训任务", 403);
-      if (!(await repository.taskAuthorization(id, actorScope(actor))))
-        return fail("TASK_NOT_FOUND", "任务不存在或超出管理范围", 404);
+      const authorization = await repository.taskAuthorization(id, actorScope(actor));
+      if (!authorization) return fail("TASK_NOT_FOUND", "任务不存在或超出管理范围", 404);
+      if (authorization.employeeId === actor.employeeId)
+        return fail("SELF_CONFIRM_FORBIDDEN", "培训任务必须由另一名负责人或主管确认", 403);
       if (!(await repository.confirmTask(id, actor.accountId, now())))
         return fail("TASK_CONFIRM_REJECTED", "仅员工已提交的任务可以确认", 409);
       try {
@@ -178,8 +187,10 @@ export const createTrainingService = (dependencies: {
       if (!manager(actor)) return fail("FORBIDDEN", "无权退回培训任务", 403);
       if (!reason.trim() || reason.trim().length > 500)
         return fail("RETURN_REASON_REQUIRED", "退回原因必填且不得超过 500 字", 400);
-      if (!(await repository.taskAuthorization(id, actorScope(actor))))
-        return fail("TASK_NOT_FOUND", "任务不存在或超出管理范围", 404);
+      const authorization = await repository.taskAuthorization(id, actorScope(actor));
+      if (!authorization) return fail("TASK_NOT_FOUND", "任务不存在或超出管理范围", 404);
+      if (authorization.employeeId === actor.employeeId)
+        return fail("SELF_CONFIRM_FORBIDDEN", "不能退回本人的培训任务", 403);
       return (await repository.returnTask(id, reason.trim(), actor.accountId, now()))
         ? { ok: true as const, data: { id, status: "returned" as const } }
         : fail("TASK_RETURN_REJECTED", "仅员工已提交的任务可以退回", 409);

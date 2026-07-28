@@ -2549,7 +2549,9 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                         <td>
                           <input
                             type="checkbox"
-                            disabled={task.status === "confirmed"}
+                            disabled={
+                              task.status === "confirmed" || task.employeeId === session.employeeId
+                            }
                             checked={selectedTasks.includes(task.id)}
                             onChange={(event) =>
                               setSelectedTasks(
@@ -2593,7 +2595,7 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                             查看证据
                           </button>
                         ))}
-                        {!canManage && (
+                        {task.employeeId === session.employeeId && (
                           <button
                             type="button"
                             onClick={() =>
@@ -2607,38 +2609,43 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                             查看资料
                           </button>
                         )}
-                        {!canManage && ["assigned", "returned"].includes(task.status) && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => void mutate(`/api/training-tasks/${task.id}/submit`)}
-                            >
-                              提交完成
-                            </button>
-                          </>
-                        )}
-                        {canManage && task.status === "submitted" && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => void mutate(`/api/training-tasks/${task.id}/confirm`)}
-                            >
-                              确认
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const reason = window.prompt("请输入退回原因");
-                                if (reason)
-                                  void mutate(`/api/training-tasks/${task.id}/return`, "POST", {
-                                    reason,
-                                  });
-                              }}
-                            >
-                              退回
-                            </button>
-                          </>
-                        )}
+                        {task.employeeId === session.employeeId &&
+                          ["assigned", "returned"].includes(task.status) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void mutate(`/api/training-tasks/${task.id}/submit`)}
+                              >
+                                提交完成
+                              </button>
+                            </>
+                          )}
+                        {canManage &&
+                          task.employeeId !== session.employeeId &&
+                          task.status === "submitted" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void mutate(`/api/training-tasks/${task.id}/confirm`)
+                                }
+                              >
+                                确认
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const reason = window.prompt("请输入退回原因");
+                                  if (reason)
+                                    void mutate(`/api/training-tasks/${task.id}/return`, "POST", {
+                                      reason,
+                                    });
+                                }}
+                              >
+                                退回
+                              </button>
+                            </>
+                          )}
                       </td>
                     </tr>
                   ))}
@@ -2671,7 +2678,7 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                       查看签到证据
                     </button>
                   ))}
-                  {!canManage && (
+                  {task.employeeId === session.employeeId && (
                     <button
                       type="button"
                       onClick={() =>
@@ -2685,15 +2692,16 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                       查看培训资料
                     </button>
                   )}
-                  {!canManage && ["assigned", "returned"].includes(task.status) && (
-                    <button
-                      className="primary-button"
-                      type="button"
-                      onClick={() => void mutate(`/api/training-tasks/${task.id}/submit`)}
-                    >
-                      提交完成
-                    </button>
-                  )}
+                  {task.employeeId === session.employeeId &&
+                    ["assigned", "returned"].includes(task.status) && (
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={() => void mutate(`/api/training-tasks/${task.id}/submit`)}
+                      >
+                        提交完成
+                      </button>
+                    )}
                 </article>
               ))}
             </div>

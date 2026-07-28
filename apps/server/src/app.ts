@@ -1736,6 +1736,20 @@ export const createApp = ({
           set.status = 400;
           return failure("INVALID_TASKS", "参训员工格式无效");
         }
+        if (
+          !Array.isArray(taskIds) ||
+          taskIds.length === 0 ||
+          taskIds.some(
+            (id) =>
+              typeof id !== "string" ||
+              !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+                id,
+              ),
+          )
+        ) {
+          set.status = 400;
+          return failure("INVALID_TASKS", "参训员工格式无效");
+        }
         const result = await trainingService.batchConfirm(authenticated.actor, {
           planId: params.id,
           taskIds,

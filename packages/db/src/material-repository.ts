@@ -213,7 +213,11 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
   },
   async hasHistoricalAccess(materialId: string, employeeId: string) {
     const result = await pool.query(
-      "select 1 from training_material_access_grants where material_id=$1 and employee_id=$2 limit 1",
+      `select 1 from training_material_access_grants g
+       where g.material_id=$1 and g.employee_id=$2 and
+         (g.source_type<>'training_task' or exists (
+           select 1 from training_tasks t where t.id::text=g.source_reference and t.status<>'cancelled'
+         )) limit 1`,
       [materialId, employeeId],
     );
     return Boolean(result.rowCount);

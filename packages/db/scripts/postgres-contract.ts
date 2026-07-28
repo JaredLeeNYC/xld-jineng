@@ -1195,6 +1195,42 @@ try {
     scopeType: "employees",
     scopeEmployeeIds: [importedEmployee.rows[0]!.id],
   };
+  const unrelatedSkill = await contractPool.query<{ id: string }>(
+    "insert into skills (code,name,category) values ('CROSS_SCOPE','跨部门资料技能','professional') returning id",
+  );
+  const unrelatedMaterialResponse = await app.handle(
+    new Request("http://localhost/api/training-materials/link", {
+      method: "POST",
+      headers: {
+        cookie: roleLogins.get("hr_admin")!.cookie!,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        title: "其他部门资料",
+        category: "隔离测试",
+        externalUrl: "https://example.com/cross-scope",
+        skillIds: [unrelatedSkill.rows[0]!.id],
+      }),
+    }),
+  );
+  const unrelatedMaterialBody = (await unrelatedMaterialResponse.json()) as {
+    data?: { id: string };
+  };
+  const managerCrossScopePlan = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      method: "POST",
+      headers: { cookie: successfulConcurrentCookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        ...planPayload,
+        materialId: unrelatedMaterialBody.data!.id,
+        scopeType: "department",
+        scopeDepartmentId: department.rows[0]!.id,
+        scopeEmployeeIds: undefined,
+      }),
+    }),
+  );
+  if (unrelatedMaterialResponse.status !== 200 || managerCrossScopePlan.status !== 409)
+    throw new Error("部门主管可绕过资料业务范围创建培训计划");
   const employeeCreatePlan = await app.handle(
     new Request("http://localhost/api/training-plans", {
       method: "POST",
@@ -1323,10 +1359,27 @@ try {
       headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
     }),
   );
-  const batchTasks = await contractPool.query<{ id: string }>(
-    "select id from training_tasks where plan_id=$1 order by id",
+  const batchTasks = await contractPool.query<{ id: string; employeeId: string }>(
+    'select id,employee_id as "employeeId" from training_tasks where plan_id=$1 order by id',
     [batchPlanBody.data!.id],
   );
+  const managerTask = batchTasks.rows.find(
+    (row) => row.employeeId === employeeIds.get("department_manager"),
+  )!;
+  const managerSelfSubmit = await app.handle(
+    new Request(`http://localhost/api/training-tasks/${managerTask.id}/submit`, {
+      method: "POST",
+      headers: { cookie: successfulConcurrentCookie },
+    }),
+  );
+  const managerSelfConfirm = await app.handle(
+    new Request(`http://localhost/api/training-tasks/${managerTask.id}/confirm`, {
+      method: "POST",
+      headers: { cookie: successfulConcurrentCookie },
+    }),
+  );
+  if (managerSelfSubmit.status !== 200 || managerSelfConfirm.status !== 403)
+    throw new Error("主管不能提交本人任务或可自行完成双确认");
   const attendance = new FormData();
   attendance.set("taskIds", JSON.stringify(batchTasks.rows.map((row) => row.id)));
   attendance.set(
@@ -1352,6 +1405,12 @@ try {
     "select id from training_evidence where plan_id=$1",
     [batchPlanBody.data!.id],
   );
+  const evidenceStorage = await contractPool.query<{ storageKey: string }>(
+    'select storage_key::text as "storageKey" from training_evidence where id=$1',
+    [evidence.rows[0]!.id],
+  );
+  if (!(await materialRepository.storageKeys()).includes(evidenceStorage.rows[0]!.storageKey))
+    throw new Error("孤儿清理引用集合遗漏正式培训证据");
   const employeeEvidenceResponse = await app.handle(
     new Request(`http://localhost/api/training-evidence/${evidence.rows[0]!.id}/content`, {
       headers: { cookie: importedCookie! },
@@ -1365,6 +1424,55 @@ try {
   if (employeeEvidenceResponse.status !== 200 || systemEvidenceResponse.status !== 403)
     throw new Error("培训证据查看权限失败");
 
+  const futurePlanResponse = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      method: "POST",
+      headers: {
+        cookie: roleLogins.get("hr_admin")!.cookie!,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ...planPayload,
+        title: "未来集中培训",
+        startAt: new Date(Date.now() + 86_400_000).toISOString(),
+        dueAt: new Date(Date.now() + 172_800_000).toISOString(),
+      }),
+    }),
+  );
+  const futurePlanBody = (await futurePlanResponse.json()) as { data?: { id: string } };
+  await app.handle(
+    new Request(`http://localhost/api/training-plans/${futurePlanBody.data!.id}/publish`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const futureTasks = await contractPool.query<{ id: string }>(
+    "select id from training_tasks where plan_id=$1",
+    [futurePlanBody.data!.id],
+  );
+  const futureAttendance = new FormData();
+  futureAttendance.set("taskIds", JSON.stringify(futureTasks.rows.map((row) => row.id)));
+  futureAttendance.set(
+    "file",
+    new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 1])], "未来签到.pdf", {
+      type: "application/pdf",
+    }),
+  );
+  const prematureBatch = await app.handle(
+    new Request(`http://localhost/api/training-plans/${futurePlanBody.data!.id}/batch-confirm`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      body: futureAttendance,
+    }),
+  );
+  if (prematureBatch.status !== 409) throw new Error("集中培训可在计划开始前形成正式履历");
+  await app.handle(
+    new Request(`http://localhost/api/training-plans/${futurePlanBody.data!.id}/cancel`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+
   const overduePlanResponse = await app.handle(
     new Request("http://localhost/api/training-plans", {
       method: "POST",
@@ -1375,6 +1483,7 @@ try {
       body: JSON.stringify({
         ...planPayload,
         title: "逾期取消培训",
+        materialId: unrelatedMaterialBody.data!.id,
         startAt: new Date(Date.now() - 172_800_000).toISOString(),
         dueAt: new Date(Date.now() - 86_400_000).toISOString(),
       }),
@@ -1428,6 +1537,24 @@ try {
     cancelledTask.rows[0]?.status !== "cancelled"
   )
     throw new Error("培训逾期计算、取消保留或状态排除失败");
+  await app.handle(
+    new Request(
+      `http://localhost/api/training-materials/${unrelatedMaterialBody.data!.id}/deactivate`,
+      {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      },
+    ),
+  );
+  const cancelledGrantContent = await app.handle(
+    new Request(
+      `http://localhost/api/training-materials/${unrelatedMaterialBody.data!.id}/content`,
+      {
+        headers: { cookie: importedCookie! },
+      },
+    ),
+  );
+  if (cancelledGrantContent.status !== 404) throw new Error("已取消培训仍保留停用资料的历史访问权");
   const employeeMaterialResponse = await app.handle(
     new Request(`http://localhost/api/training-materials/${materialUploadBody.data.id}/content`, {
       headers: { cookie: importedCookie! },
@@ -1461,8 +1588,17 @@ try {
       headers: { cookie: importedCookie! },
     }),
   );
-  if (deactivateMaterialResponse.status !== 200 || inactiveMaterialResponse.status !== 200) {
-    throw new Error("真实培训任务未保留停用资料的历史读取能力");
+  const managerInactiveMaterialResponse = await app.handle(
+    new Request(`http://localhost/api/training-materials/${materialUploadBody.data.id}/content`, {
+      headers: { cookie: successfulConcurrentCookie },
+    }),
+  );
+  if (
+    deactivateMaterialResponse.status !== 200 ||
+    inactiveMaterialResponse.status !== 200 ||
+    managerInactiveMaterialResponse.status !== 200
+  ) {
+    throw new Error("真实培训任务未为员工或主管本人保留停用资料的历史读取能力");
   }
   if (
     !(await materialRepository.canRead({

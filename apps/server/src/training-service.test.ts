@@ -85,6 +85,9 @@ describe("training service", () => {
     expect(await service.submitTask(actor("employee"), "task")).toMatchObject({
       data: { status: "submitted" },
     });
+    expect(await service.submitTask(actor("department_manager"), "task")).toMatchObject({
+      data: { status: "submitted" },
+    });
     expect(await service.confirmTask(actor("department_manager"), "task")).toMatchObject({
       data: { status: "confirmed" },
     });

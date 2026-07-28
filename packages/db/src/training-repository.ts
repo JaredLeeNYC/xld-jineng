@@ -130,8 +130,14 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
 
   async validateDraft(input: PlanInput, actor: ActorScope) {
     const material = await pool.query(
-      "select 1 from training_materials where id=$1 and active=true",
-      [input.materialId],
+      `select 1 from training_materials m where m.id=$1 and m.active=true and
+       ($2='hr_admin' or exists (
+         select 1 from training_material_skills ms
+         join position_skill_requirements psr on psr.skill_id=ms.skill_id
+         join position_assignments pa on pa.position_id=psr.position_id and pa.ended_at is null
+         where ms.material_id=m.id and ms.active=true and pa.department_id=$3::uuid
+       ))`,
+      [input.materialId, actor.role, actor.departmentId ?? null],
     );
     const owner = await pool.query<{ departmentId?: string }>(
       'select department_id as "departmentId" from employees where id=$1 and active=true',
@@ -259,8 +265,14 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
       const row = plan.rows[0];
       if (!row) return { ok: false as const, reason: "state" as const };
       const material = await client.query(
-        "select 1 from training_materials where id=$1 and active=true",
-        [row.material_id],
+        `select 1 from training_materials m where m.id=$1 and m.active=true and
+         ($2='hr_admin' or exists (
+           select 1 from training_material_skills ms
+           join position_skill_requirements psr on psr.skill_id=ms.skill_id
+           join position_assignments pa on pa.position_id=psr.position_id and pa.ended_at is null
+           where ms.material_id=m.id and ms.active=true and pa.department_id=$3::uuid
+         ))`,
+        [row.material_id, actor.role, actor.departmentId ?? null],
       );
       if (!material.rowCount) return { ok: false as const, reason: "material" as const };
       let employees;
@@ -344,13 +356,13 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
 
   async taskAuthorization(taskId: string, actor: ActorScope) {
     const result = await pool.query(
-      `select t.status,p.owner_employee_id as "ownerEmployeeId",e.department_id as "departmentId"
+      `select t.status,t.employee_id as "employeeId",p.owner_employee_id as "ownerEmployeeId",e.department_id as "departmentId"
        from training_tasks t join training_plans p on p.id=t.plan_id join employees e on e.id=t.employee_id
        where t.id=$1 and ($2='hr_admin' or p.owner_employee_id=(select employee_id from user_accounts where id=$3)
          or e.department_id=$4::uuid)`,
       [taskId, actor.role, actor.accountId, actor.departmentId ?? null],
     );
-    return result.rows[0] as { status: string } | undefined;
+    return result.rows[0] as { status: string; employeeId: string } | undefined;
   },
 
   async confirmTask(taskId: string, actorAccountId: string, now: Date) {
@@ -431,7 +443,9 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
         `select t.id from training_tasks t join training_plans p on p.id=t.plan_id
          join employees e on e.id=t.employee_id
          where t.plan_id=$1 and t.id=any($2::uuid[]) and t.status in ('assigned','submitted','returned')
+           and p.status in ('published','in_progress') and p.start_at <= $6
            and ($3='hr_admin' or p.owner_employee_id=$4::uuid or e.department_id=$5::uuid)
+           and t.employee_id<>$4::uuid
          for update`,
         [
           input.planId,
@@ -439,6 +453,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
           input.actorRole,
           input.actorEmployeeId,
           input.actorDepartmentId ?? null,
+          input.now,
         ],
       );
       if (tasks.rowCount !== new Set(input.taskIds).size || !tasks.rowCount) return false;

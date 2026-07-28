@@ -215,7 +215,7 @@ export const createMaterialService = (dependencies: {
         ...(actor.departmentId ? { departmentId: actor.departmentId } : {}),
       });
       const historicalAuthorized =
-        actor.role === "employee" &&
+        (actor.role === "employee" || actor.role === "department_manager") &&
         (await repository.hasHistoricalAccess(material.id, actor.employeeId));
       if (
         actor.role !== "hr_admin" &&
