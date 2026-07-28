@@ -197,6 +197,27 @@ export const skillAssessments = pgTable(
   ],
 );
 
+export const validSkillAssessments = pgTable(
+  "valid_skill_assessments",
+  {
+    assessmentId: uuid("assessment_id").primaryKey(),
+    employeeId: uuid("employee_id").notNull(),
+    skillId: uuid("skill_id").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.assessmentId, table.employeeId, table.skillId],
+      foreignColumns: [skillAssessments.id, skillAssessments.employeeId, skillAssessments.skillId],
+      name: "valid_skill_assessments_identity_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("valid_skill_assessments_identity_unique").on(
+      table.assessmentId,
+      table.employeeId,
+      table.skillId,
+    ),
+  ],
+);
+
 export const employeeCurrentSkills = pgTable(
   "employee_current_skills",
   {
@@ -217,6 +238,15 @@ export const employeeCurrentSkills = pgTable(
       columns: [table.assessmentId, table.employeeId, table.skillId],
       foreignColumns: [skillAssessments.id, skillAssessments.employeeId, skillAssessments.skillId],
       name: "employee_current_skills_assessment_identity_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.assessmentId, table.employeeId, table.skillId],
+      foreignColumns: [
+        validSkillAssessments.assessmentId,
+        validSkillAssessments.employeeId,
+        validSkillAssessments.skillId,
+      ],
+      name: "employee_current_skills_valid_assessment_fk",
     }).onDelete("restrict"),
     uniqueIndex("employee_current_skills_employee_skill_unique").on(
       table.employeeId,

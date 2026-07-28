@@ -57,6 +57,13 @@
       "when": 1785210725241,
       "tag": "0007_stormy_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785211552013,
+      "tag": "0008_amusing_kid_colt",
+      "breakpoints": true
     }
   ]
 }

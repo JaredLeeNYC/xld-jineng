@@ -880,7 +880,7 @@ try {
     );
   } catch (error) {
     currentAssessmentInvalidationRejected =
-      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+      typeof error === "object" && error !== null && "code" in error && error.code === "23503";
   }
   const invalidAssessment = await contractPool.query<{ id: string }>(
     `insert into skill_assessments (
@@ -899,10 +899,63 @@ try {
     );
   } catch (error) {
     invalidAssessmentPointerRejected =
-      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+      typeof error === "object" && error !== null && "code" in error && error.code === "23503";
   }
   if (!currentAssessmentInvalidationRejected || !invalidAssessmentPointerRejected) {
     throw new Error("数据库未强制当前技能指向通过、归档且未作废的评定");
+  }
+  const concurrentEmployee = await contractPool.query<{ id: string }>(
+    "select id from employees where employee_number = 'E1002'",
+  );
+  const concurrentAssessment = await contractPool.query<{ id: string }>(
+    `insert into skill_assessments (
+       employee_id, skill_id, level, status, passed, source_type,
+       source_reference, assessed_at, archived_at
+     ) values ($1, $2, 2, 'archived', true, 'contract_concurrency', '并发合同', now(), now())
+     returning id`,
+    [concurrentEmployee.rows[0]!.id, createdSkills.get("S001")],
+  );
+  const pointerClient = await contractPool.connect();
+  const invalidationClient = await contractPool.connect();
+  try {
+    await pointerClient.query("begin");
+    await invalidationClient.query("begin");
+    await pointerClient.query(
+      `insert into employee_current_skills (employee_id, skill_id, assessment_id)
+       values ($1, $2, $3)`,
+      [concurrentEmployee.rows[0]!.id, createdSkills.get("S001"), concurrentAssessment.rows[0]!.id],
+    );
+    let invalidationSettled = false;
+    const invalidation = invalidationClient
+      .query(`update skill_assessments set status = 'voided', voided_at = now() where id = $1`, [
+        concurrentAssessment.rows[0]!.id,
+      ])
+      .then(() => {
+        invalidationSettled = true;
+        return undefined;
+      })
+      .catch((error: unknown) => {
+        invalidationSettled = true;
+        return error;
+      });
+    await Bun.sleep(50);
+    if (invalidationSettled) throw new Error("评定作废未等待并发中的当前技能指针事务");
+    await pointerClient.query("commit");
+    const invalidationError = await invalidation;
+    if (
+      typeof invalidationError !== "object" ||
+      invalidationError === null ||
+      !("code" in invalidationError) ||
+      invalidationError.code !== "23503"
+    ) {
+      throw new Error(`并发评定作废未被有效技能标记外键阻止：${String(invalidationError)}`);
+    }
+    await invalidationClient.query("rollback");
+  } finally {
+    await pointerClient.query("rollback").catch(() => undefined);
+    await invalidationClient.query("rollback").catch(() => undefined);
+    pointerClient.release();
+    invalidationClient.release();
   }
   let mismatchedPointerRejected = false;
   try {
