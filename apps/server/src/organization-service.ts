@@ -115,15 +115,10 @@ export const createOrganizationService = (dependencies: {
   const { repository, passwordHash, temporaryPassword, idSource, now } = dependencies;
   return {
     async listDepartments(actor: SessionView, includeInactive = false) {
-      if (
-        !["hr_admin", "department_manager", "executive_viewer", "employee"].includes(actor.role)
-      ) {
+      if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role)) {
         return failure("FORBIDDEN", "无权查看组织数据", 403);
       }
-      if (
-        (actor.role === "department_manager" || actor.role === "employee") &&
-        !actor.departmentId
-      ) {
+      if (actor.role === "department_manager" && !actor.departmentId) {
         return failure("FORBIDDEN", "账号未关联有效部门", 403);
       }
       const departments = await repository.listDepartments(
@@ -132,7 +127,7 @@ export const createOrganizationService = (dependencies: {
       return {
         ok: true as const,
         data:
-          actor.role === "department_manager" || actor.role === "employee"
+          actor.role === "department_manager"
             ? departments.filter((item) => item.id === actor.departmentId)
             : departments,
       };
@@ -185,23 +180,16 @@ export const createOrganizationService = (dependencies: {
     },
 
     async listPositions(actor: SessionView, includeInactive = false) {
-      if (
-        !["hr_admin", "department_manager", "executive_viewer", "employee"].includes(actor.role)
-      ) {
+      if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role)) {
         return failure("FORBIDDEN", "无权查看岗位", 403);
       }
-      if (
-        (actor.role === "department_manager" || actor.role === "employee") &&
-        !actor.departmentId
-      ) {
+      if (actor.role === "department_manager" && !actor.departmentId) {
         return failure("FORBIDDEN", "账号未关联有效部门", 403);
       }
       return {
         ok: true as const,
         data: await repository.listPositions({
-          ...(actor.role === "department_manager" || actor.role === "employee"
-            ? { departmentId: actor.departmentId }
-            : {}),
+          ...(actor.role === "department_manager" ? { departmentId: actor.departmentId } : {}),
           includeInactive: actor.role === "hr_admin" && includeInactive,
         }),
       };

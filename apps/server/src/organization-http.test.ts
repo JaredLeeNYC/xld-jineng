@@ -126,4 +126,34 @@ describe("organization HTTP API", () => {
       error: { code: "FORBIDDEN" },
     });
   });
+
+  test("does not expose the department position catalog to an employee", async () => {
+    const organizationService = createOrganizationService({
+      repository: {
+        listPositions: async () => {
+          throw new Error("an employee position query must not reach the repository");
+        },
+      } as never,
+      passwordHash: async (value) => value,
+      temporaryPassword: () => "unused",
+      idSource: () => crypto.randomUUID(),
+      now: () => new Date("2026-07-28T00:00:00.000Z"),
+    });
+    const response = await createApp({
+      authService: {
+        getSession: async () => ({ ok: true, data: { ...hrSession, role: "employee" as const } }),
+      },
+      organizationService,
+    } as never).handle(
+      new Request("http://localhost/api/organization/positions", {
+        headers: { cookie: "skill_matrix_session=employee-token" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+  });
 });

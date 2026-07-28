@@ -182,6 +182,10 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
         `update positions p set name = $2, department_id = $3, updated_at = now()
          where p.id = $1 and exists (
            select 1 from departments d where d.id = $3 and d.active = true
+         ) and (
+           p.department_id = $3 or not exists (
+             select 1 from position_assignments pa where pa.position_id = p.id
+           )
          ) returning p.id`,
         [input.id, input.name, input.departmentId],
       );
@@ -246,7 +250,13 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
        where ($1::uuid is null or e.department_id = $1)
          and ($2::uuid is null or e.id = $2)
          and ($3::boolean is null or (e.active and a.active) = $3)
-         and ($4::text is null or e.employee_number ilike '%' || $4 || '%' or e.display_name ilike '%' || $4 || '%')
+         and ($4::text is null
+           or e.employee_number ilike '%' || $4 || '%'
+           or e.display_name ilike '%' || $4 || '%'
+           or d.code ilike '%' || $4 || '%'
+           or d.name ilike '%' || $4 || '%'
+           or p.code ilike '%' || $4 || '%'
+           or p.name ilike '%' || $4 || '%')
        order by e.employee_number`,
       [
         input.departmentId ?? null,
@@ -296,7 +306,10 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
   }): Promise<boolean> {
     return withTransaction(pool, async (client) => {
       const result = await client.query(
-        `update employees set display_name = $2, hire_date = $3, phone = $4, updated_at = now()
+        `update employees set display_name = $2,
+           hire_date = coalesce($3, hire_date),
+           phone = coalesce($4, phone),
+           updated_at = now()
          where id = $1 returning id`,
         [input.id, input.displayName, input.hireDate ?? null, input.phone ?? null],
       );

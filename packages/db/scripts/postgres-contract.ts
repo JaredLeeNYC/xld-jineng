@@ -179,8 +179,9 @@ try {
     dummyPasswordHash: passwordHash,
   });
   let temporarySequence = 0;
+  const organizationRepository = createPostgresOrganizationRepository(contractPool);
   const organizationService = createOrganizationService({
-    repository: createPostgresOrganizationRepository(contractPool),
+    repository: organizationRepository,
     passwordHash: (value) =>
       Bun.password.hash(value, {
         algorithm: "argon2id",
@@ -609,6 +610,45 @@ try {
     );
   }
 
+  const originalEmployeeDetails = await contractPool.query<{ hireDate: string; phone: string }>(
+    `select hire_date::text as "hireDate", phone from employees where id = $1`,
+    [assignment.employeeId],
+  );
+  const partialUpdateResponse = await app.handle(
+    new Request(`http://localhost/api/organization/employees/${assignment.employeeId}`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        cookie: roleLogins.get("hr_admin")!.cookie!,
+      },
+      body: JSON.stringify({ displayName: "只改姓名" }),
+    }),
+  );
+  const updatedEmployeeDetails = await contractPool.query<{ hireDate: string; phone: string }>(
+    `select hire_date::text as "hireDate", phone from employees where id = $1`,
+    [assignment.employeeId],
+  );
+  if (
+    partialUpdateResponse.status !== 200 ||
+    updatedEmployeeDetails.rows[0]?.hireDate !== originalEmployeeDetails.rows[0]?.hireDate ||
+    updatedEmployeeDetails.rows[0]?.phone !== originalEmployeeDetails.rows[0]?.phone
+  ) {
+    throw new Error("员工部分更新意外清空入职日期或手机号");
+  }
+
+  const alternateDepartment = await contractPool.query<{ id: string }>(
+    `insert into departments (code, name) values ('D099', '备用部门') returning id`,
+  );
+  const movedReferencedPosition = await organizationRepository.updatePosition({
+    id: assignment.positionId,
+    name: "机加工",
+    departmentId: alternateDepartment.rows[0]!.id,
+    actorAccountId: accountIds.get("hr_admin")!,
+  });
+  if (movedReferencedPosition) {
+    throw new Error("已被任职履历引用的岗位仍可跨部门移动");
+  }
+
   const managerEmployees = await app.handle(
     new Request("http://localhost/api/organization/employees", {
       headers: { cookie: successfulConcurrentCookie },
@@ -659,15 +699,30 @@ try {
   }
 
   const exportResponse = await app.handle(
-    new Request("http://localhost/api/organization/employees/export.xlsx?active=true", {
-      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
-    }),
+    new Request(
+      "http://localhost/api/organization/employees/export.xlsx?active=true&query=%E5%90%88%E5%90%8C%E6%B5%8B%E8%AF%95%E9%83%A8%E9%97%A8",
+      {
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      },
+    ),
   );
   const exportedBytes = new Uint8Array(await exportResponse.arrayBuffer());
   const exportedText = new TextDecoder().decode(exportedBytes);
+  const filteredEmployeesResponse = await app.handle(
+    new Request(
+      "http://localhost/api/organization/employees?active=true&query=%E5%90%88%E5%90%8C%E6%B5%8B%E8%AF%95%E9%83%A8%E9%97%A8",
+      { headers: { cookie: roleLogins.get("hr_admin")!.cookie! } },
+    ),
+  );
+  const filteredEmployeesBody = (await filteredEmployeesResponse.json()) as {
+    data?: Array<{ employeeNumber: string }>;
+  };
   if (
     exportResponse.status !== 200 ||
     !exportResponse.headers.get("content-type")?.includes("spreadsheetml") ||
+    exportedBytes.length < 1_000 ||
+    filteredEmployeesResponse.status !== 200 ||
+    (filteredEmployeesBody.data?.length ?? 0) < 50 ||
     exportedText.includes(firstCredential.temporaryPassword)
   ) {
     throw new Error("组织人员 Excel 导出失败或泄露初始凭证");

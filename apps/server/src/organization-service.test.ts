@@ -161,6 +161,15 @@ describe("organization service", () => {
       ok: true,
       data: [{ id: "employee-self" }],
     });
+    const employee = { ...manager, role: "employee" as const, employeeId: "employee-self" };
+    expect(await service.listDepartments(employee)).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+    expect(await service.listPositions(employee)).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
   });
 
   test("fails closed when a manager has no department scope", async () => {

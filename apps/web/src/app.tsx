@@ -503,6 +503,20 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
   const load = async () => {
     setState({ status: "loading" });
     try {
+      if (!canManage) {
+        const employees = await request<Employee[]>("/api/organization/employees");
+        if (!employees.result.ok) {
+          setState({ status: "error", message: employees.result.error.message });
+          return;
+        }
+        setState({
+          status: "ready",
+          departments: [],
+          positions: [],
+          employees: employees.result.data,
+        });
+        return;
+      }
       const [departments, positions, employees] = await Promise.all([
         request<Department[]>("/api/organization/departments?includeInactive=true"),
         request<Position[]>("/api/organization/positions?includeInactive=true"),
