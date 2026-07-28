@@ -5,6 +5,7 @@ import {
   boolean,
   char,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -39,7 +40,29 @@ export const departments = pgTable(
     active: boolean("active").notNull().default(true),
     ...timestamps,
   },
-  (table) => [uniqueIndex("departments_code_unique").on(table.code)],
+  (table) => [
+    check("departments_code_canonical", sql`${table.code} = upper(trim(${table.code}))`),
+    uniqueIndex("departments_code_unique").on(table.code),
+  ],
+);
+
+export const positions = pgTable(
+  "positions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: varchar("code", { length: 30 }).notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    departmentId: uuid("department_id")
+      .notNull()
+      .references(() => departments.id, { onDelete: "restrict" }),
+    active: boolean("active").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    check("positions_code_canonical", sql`${table.code} = upper(trim(${table.code}))`),
+    uniqueIndex("positions_code_unique").on(table.code),
+    index("positions_department_idx").on(table.departmentId),
+  ],
 );
 
 export const employees = pgTable(
@@ -51,6 +74,8 @@ export const employees = pgTable(
     departmentId: uuid("department_id").references(() => departments.id, {
       onDelete: "restrict",
     }),
+    hireDate: date("hire_date"),
+    phone: varchar("phone", { length: 30 }),
     active: boolean("active").notNull().default(true),
     ...timestamps,
   },
@@ -61,6 +86,32 @@ export const employees = pgTable(
     ),
     uniqueIndex("employees_number_unique").on(table.employeeNumber),
     index("employees_department_idx").on(table.departmentId),
+  ],
+);
+
+export const positionAssignments = pgTable(
+  "position_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    departmentId: uuid("department_id")
+      .notNull()
+      .references(() => departments.id, { onDelete: "restrict" }),
+    positionId: uuid("position_id")
+      .notNull()
+      .references(() => positions.id, { onDelete: "restrict" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    reason: varchar("reason", { length: 300 }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("position_assignments_current_employee_unique")
+      .on(table.employeeId)
+      .where(sql`${table.endedAt} is null`),
+    index("position_assignments_employee_idx").on(table.employeeId, table.startedAt),
   ],
 );
 
@@ -127,5 +178,36 @@ export const securityEvents = pgTable(
   (table) => [
     index("security_events_account_idx").on(table.accountId),
     index("security_events_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const importPreviews = pgTable("import_previews", {
+  id: uuid("id").primaryKey(),
+  actorAccountId: uuid("actor_account_id")
+    .notNull()
+    .references(() => userAccounts.id, { onDelete: "cascade" }),
+  rows: jsonb("rows").$type<Array<Record<string, unknown>>>().notNull(),
+  errors: jsonb("errors").$type<Array<Record<string, unknown>>>().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    actorAccountId: uuid("actor_account_id").references(() => userAccounts.id, {
+      onDelete: "set null",
+    }),
+    action: varchar("action", { length: 80 }).notNull(),
+    objectType: varchar("object_type", { length: 80 }).notNull(),
+    objectId: varchar("object_id", { length: 100 }).notNull(),
+    summary: jsonb("summary").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("audit_logs_actor_idx").on(table.actorAccountId),
+    index("audit_logs_created_at_idx").on(table.createdAt),
   ],
 );

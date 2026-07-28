@@ -5,6 +5,7 @@ export type SessionView = {
   employeeId: string;
   employeeNumber: string;
   displayName: string;
+  departmentId?: string;
   role: FixedRole;
   mustChangePassword: boolean;
 };

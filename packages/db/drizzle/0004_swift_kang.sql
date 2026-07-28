@@ -1,0 +1,2 @@
+ALTER TABLE "departments" ADD CONSTRAINT "departments_code_canonical" CHECK ("departments"."code" = upper(trim("departments"."code")));--> statement-breakpoint
+ALTER TABLE "positions" ADD CONSTRAINT "positions_code_canonical" CHECK ("positions"."code" = upper(trim("positions"."code")));

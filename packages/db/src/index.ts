@@ -4,6 +4,7 @@ import type { ServerConfig } from "@jineng/skill-matrix-config";
 import { createDatabaseReadinessProbe } from "./readiness";
 import * as schema from "./schema";
 import { createPostgresAuthRepository } from "./auth-repository";
+import { createPostgresOrganizationRepository } from "./organization-repository";
 
 export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
   const pool = new Pool({ connectionString: config.databaseUrl });
@@ -12,9 +13,11 @@ export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
     query: async (sql) => pool.query(sql),
   });
   const authRepository = createPostgresAuthRepository(pool);
+  const organizationRepository = createPostgresOrganizationRepository(pool);
 
   return {
     authRepository,
+    organizationRepository,
     db,
     pool,
     readinessProbe,
@@ -25,3 +28,4 @@ export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
 export * from "./readiness";
 export * from "./schema";
 export * from "./auth-repository";
+export * from "./organization-repository";

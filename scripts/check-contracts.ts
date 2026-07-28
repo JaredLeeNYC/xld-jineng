@@ -34,6 +34,15 @@ for (const [path, method, statuses] of [
   ["/api/employees/{employeeId}/profile", "get", ["200", "403"]],
   ["/api/admin/accounts", "get", ["200", "403"]],
   ["/api/admin/accounts/{accountId}/reset-password", "post", ["200", "403"]],
+  ["/api/organization/departments", "get", ["200", "403"]],
+  ["/api/organization/departments", "post", ["200", "403", "409"]],
+  ["/api/organization/positions", "get", ["200", "403"]],
+  ["/api/organization/positions", "post", ["200", "403", "409"]],
+  ["/api/organization/employees", "get", ["200", "403"]],
+  ["/api/organization/employees", "post", ["200", "403", "409"]],
+  ["/api/organization/employees/{id}/assignment", "post", ["200", "403", "409"]],
+  ["/api/organization/employees/import/dry-run", "post", ["200", "403"]],
+  ["/api/organization/employees/import/{previewId}/confirm", "post", ["200", "403", "409"]],
 ] as const) {
   const responses = specification.paths?.[path]?.[method]?.responses;
   if (!responses || statuses.some((status) => !responses[status])) {

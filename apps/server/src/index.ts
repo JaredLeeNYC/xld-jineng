@@ -3,6 +3,7 @@ import { createDatabase } from "@jineng/skill-matrix-db";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createApp } from "./app";
 import { createAuthService } from "./auth-service";
+import { createOrganizationService } from "./organization-service";
 
 const config = parseServerConfig(process.env);
 const database = createDatabase(config);
@@ -27,10 +28,23 @@ const authService = createAuthService({
     timeCost: 3,
   }),
 });
+const organizationService = createOrganizationService({
+  repository: database.organizationRepository,
+  passwordHash: (value) =>
+    Bun.password.hash(value, {
+      algorithm: "argon2id",
+      memoryCost: 65_536,
+      timeCost: 3,
+    }),
+  temporaryPassword: () => `Tmp-${randomBytes(12).toString("base64url")}!`,
+  idSource: () => randomUUID(),
+  now: () => new Date(),
+});
 
 const app = createApp({
   appUrl: config.appUrl,
   authService,
+  organizationService,
   readinessProbe: database.readinessProbe,
   secureCookie: config.appUrl.startsWith("https://"),
 }).listen({

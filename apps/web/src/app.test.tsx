@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { App } from "./app";
+import { App, OrganizationPanel } from "./app";
 
 describe("application shell", () => {
   test("exposes the phase-one factory management areas", () => {
@@ -84,5 +84,10 @@ describe("application shell", () => {
     expect(html).toContain("重置密码");
     expect(html).toContain("旧会话失效");
     expect(html).toContain("正在加载账号");
+  });
+
+  test("organization list has an explicit loading state before data arrives", () => {
+    const html = renderToStaticMarkup(<OrganizationPanel canManage />);
+    expect(html).toContain("正在加载组织人员");
   });
 });

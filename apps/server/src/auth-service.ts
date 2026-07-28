@@ -117,6 +117,7 @@ const sessionView = (account: AuthAccount): SessionView => ({
   employeeId: account.employeeId,
   employeeNumber: account.employeeNumber,
   displayName: account.displayName,
+  ...(account.departmentId ? { departmentId: account.departmentId } : {}),
   role: account.role,
   mustChangePassword: account.mustChangePassword,
 });

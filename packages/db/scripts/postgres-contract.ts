@@ -1,8 +1,11 @@
 import { createApp } from "../../../apps/server/src/app";
 import { createAuthService } from "../../../apps/server/src/auth-service";
+import { createOrganizationService } from "../../../apps/server/src/organization-service";
+import { createEmployeeImportWorkbook } from "../../../apps/server/src/organization-excel";
 import {
   createDatabaseReadinessProbe,
   createPostgresAuthRepository,
+  createPostgresOrganizationRepository,
   migrationsFolder,
 } from "../src";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -102,6 +105,16 @@ try {
     ["V0001", "高层查看者", "executive_viewer", false],
     ["A0001", "系统管理员", "system_admin", false],
   ] as const;
+  for (const [code, name] of [
+    ["P001", "装配工"],
+    ["P002", "机加工"],
+    ["P003", "质量检验"],
+  ]) {
+    await contractPool.query(
+      `insert into positions (code, name, department_id) values ($1, $2, $3) returning id`,
+      [code, name, department.rows[0]!.id],
+    );
+  }
   const contractPassword = "Contract-Password-123";
   const passwordHash = await Bun.password.hash(contractPassword, {
     algorithm: "argon2id",
@@ -165,7 +178,20 @@ try {
     tokenSource: () => randomBytes(32).toString("base64url"),
     dummyPasswordHash: passwordHash,
   });
-  const app = createApp({ authService, readinessProbe });
+  let temporarySequence = 0;
+  const organizationService = createOrganizationService({
+    repository: createPostgresOrganizationRepository(contractPool),
+    passwordHash: (value) =>
+      Bun.password.hash(value, {
+        algorithm: "argon2id",
+        memoryCost: 4_096,
+        timeCost: 1,
+      }),
+    temporaryPassword: () => `Contract-Temporary-${++temporarySequence}-Password`,
+    idSource: () => randomUUID(),
+    now: () => new Date(),
+  });
+  const app = createApp({ authService, organizationService, readinessProbe });
   try {
     await authService.login({
       employeeNumber: "DEBUG-UNKNOWN",
@@ -407,6 +433,191 @@ try {
     throw new Error("越权拒绝未完整记录安全事件");
   }
 
+  const employeeWorkbook = async (invalidLastRow: boolean) => {
+    const rows = [];
+    for (let index = 1; index <= 50; index += 1) {
+      rows.push({
+        employeeNumber: `E${String(1000 + index)}`,
+        displayName: `样例员工${index}`,
+        departmentCode: invalidLastRow && index === 50 ? "D999" : "D001",
+        positionCode: `P00${((index - 1) % 3) + 1}`,
+        hireDate: "2026-07-01",
+        phone: `1380000${String(index).padStart(4, "0")}`,
+      });
+    }
+    return createEmployeeImportWorkbook(rows);
+  };
+  const uploadPreview = async (invalidLastRow: boolean) => {
+    const form = new FormData();
+    form.set(
+      "file",
+      new File([await employeeWorkbook(invalidLastRow)], "employees.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const response = await app.handle(
+      new Request("http://localhost/api/organization/employees/import/dry-run", {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+        body: form,
+      }),
+    );
+    return {
+      response,
+      body: (await response.json()) as {
+        ok: boolean;
+        data?: {
+          previewId: string;
+          totalRows: number;
+          validRows: number;
+          errors: Array<{ rowNumber: number; code: string }>;
+        };
+      },
+    };
+  };
+
+  const invalidPreview = await uploadPreview(true);
+  if (
+    invalidPreview.response.status !== 200 ||
+    invalidPreview.body.data?.totalRows !== 50 ||
+    invalidPreview.body.data.validRows !== 49 ||
+    invalidPreview.body.data.errors[0]?.code !== "INVALID_DEPARTMENT"
+  ) {
+    throw new Error(`50 人 Excel 错误预检失败：${JSON.stringify(invalidPreview.body)}`);
+  }
+  const blockedImport = await app.handle(
+    new Request(
+      `http://localhost/api/organization/employees/import/${invalidPreview.body.data.previewId}/confirm`,
+      {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      },
+    ),
+  );
+  if (blockedImport.status !== 409) {
+    throw new Error("含错误的 Excel 预检仍被正式导入");
+  }
+
+  const validPreview = await uploadPreview(false);
+  if (
+    validPreview.response.status !== 200 ||
+    validPreview.body.data?.validRows !== 50 ||
+    validPreview.body.data.errors.length !== 0
+  ) {
+    throw new Error(`修正后的 50 人 Excel 预检失败：${JSON.stringify(validPreview.body)}`);
+  }
+  const confirmResponse = await app.handle(
+    new Request(
+      `http://localhost/api/organization/employees/import/${validPreview.body.data.previewId}/confirm`,
+      {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      },
+    ),
+  );
+  const confirmBody = (await confirmResponse.json()) as {
+    ok: boolean;
+    data?: {
+      imported: number;
+      credentials: Array<{ employeeNumber: string; temporaryPassword: string }>;
+    };
+  };
+  if (
+    confirmResponse.status !== 200 ||
+    confirmBody.data?.imported !== 50 ||
+    confirmBody.data.credentials.length !== 50
+  ) {
+    throw new Error(`50 人事务性正式导入失败：${JSON.stringify(confirmBody)}`);
+  }
+  const importedCounts = await contractPool.query<{
+    employees: number;
+    accounts: number;
+    assignments: number;
+  }>(
+    `select
+       (select count(*)::integer from employees where employee_number like 'E1%') as employees,
+       (select count(*)::integer from user_accounts a join employees e on e.id = a.employee_id where e.employee_number like 'E1%') as accounts,
+       (select count(*)::integer from position_assignments pa join employees e on e.id = pa.employee_id where e.employee_number like 'E1%' and pa.ended_at is null) as assignments`,
+  );
+  if (
+    importedCounts.rows[0]?.employees !== 50 ||
+    importedCounts.rows[0]?.accounts !== 50 ||
+    importedCounts.rows[0]?.assignments !== 50
+  ) {
+    throw new Error(`组织导入留下半成功数据：${JSON.stringify(importedCounts.rows[0])}`);
+  }
+
+  const managerEmployees = await app.handle(
+    new Request("http://localhost/api/organization/employees", {
+      headers: { cookie: successfulConcurrentCookie },
+    }),
+  );
+  const managerEmployeesBody = (await managerEmployees.json()) as {
+    data?: Array<{ departmentId?: string }>;
+  };
+  if (
+    managerEmployees.status !== 200 ||
+    managerEmployeesBody.data?.some((employee) => employee.departmentId !== department.rows[0]!.id)
+  ) {
+    throw new Error(
+      `部门主管读取到其他部门员工或请求失败：status=${managerEmployees.status} body=${JSON.stringify(managerEmployeesBody)}`,
+    );
+  }
+
+  const firstCredential = confirmBody.data.credentials[0]!;
+  const importedLogin = await login(
+    firstCredential.employeeNumber,
+    firstCredential.temporaryPassword,
+  );
+  const importedChange = await app.handle(
+    new Request("http://localhost/api/auth/change-password", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: importedLogin.cookie! },
+      body: JSON.stringify({
+        currentPassword: firstCredential.temporaryPassword,
+        newPassword: "Imported-Employee-Password-456",
+      }),
+    }),
+  );
+  const importedCookie = importedChange.headers.get("set-cookie")?.split(";")[0];
+  const importedSelfResponse = await app.handle(
+    new Request("http://localhost/api/organization/employees", {
+      headers: { cookie: importedCookie! },
+    }),
+  );
+  const importedSelfBody = (await importedSelfResponse.json()) as {
+    data?: Array<{ employeeNumber: string }>;
+  };
+  if (
+    importedSelfResponse.status !== 200 ||
+    importedSelfBody.data?.length !== 1 ||
+    importedSelfBody.data[0]?.employeeNumber !== firstCredential.employeeNumber
+  ) {
+    throw new Error("员工组织查询未限制为本人");
+  }
+
+  const exportResponse = await app.handle(
+    new Request("http://localhost/api/organization/employees/export.xlsx?active=true", {
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const exportedBytes = new Uint8Array(await exportResponse.arrayBuffer());
+  const exportedText = new TextDecoder().decode(exportedBytes);
+  if (
+    exportResponse.status !== 200 ||
+    !exportResponse.headers.get("content-type")?.includes("spreadsheetml") ||
+    exportedText.includes(firstCredential.temporaryPassword)
+  ) {
+    throw new Error("组织人员 Excel 导出失败或泄露初始凭证");
+  }
+  const organizationAudit = await contractPool.query<{ count: number }>(
+    `select count(*)::integer as count from audit_logs
+     where action in ('employees.imported', 'employees.exported')`,
+  );
+  if ((organizationAudit.rows[0]?.count ?? 0) < 2) {
+    throw new Error("组织导入与导出未写入审计日志");
+  }
+
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",
   );
@@ -415,7 +626,7 @@ try {
     throw new Error("就绪探针未识别迁移 hash 不一致");
   }
 
-  console.log("PostgreSQL 空库、认证事务、五角色越权及迁移 hash 合同测试通过");
+  console.log("PostgreSQL 空库、认证事务、五角色越权、50 人组织导入及迁移 hash 合同测试通过");
 } finally {
   if (contractPool) {
     await contractPool.end();

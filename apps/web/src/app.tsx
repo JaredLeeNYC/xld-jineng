@@ -28,6 +28,7 @@ export type Session = {
   employeeId: string;
   employeeNumber: string;
   displayName: string;
+  departmentId?: string;
   role: FixedRole;
   mustChangePassword: boolean;
 };
@@ -41,6 +42,34 @@ type AccountSummary = {
   mustChangePassword: boolean;
 };
 
+type Department = { id: string; code: string; name: string; active: boolean };
+type Position = {
+  id: string;
+  code: string;
+  name: string;
+  departmentId: string;
+  departmentName: string;
+  active: boolean;
+};
+type Employee = {
+  id: string;
+  employeeNumber: string;
+  displayName: string;
+  departmentId?: string;
+  departmentName?: string;
+  positionId?: string;
+  positionName?: string;
+  hireDate?: string;
+  phone?: string;
+  active: boolean;
+};
+type ImportPreview = {
+  previewId: string;
+  totalRows: number;
+  validRows: number;
+  errors: Array<{ rowNumber: number; field: string; message: string }>;
+};
+
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 
 const request = async <T,>(
@@ -48,7 +77,7 @@ const request = async <T,>(
   init?: RequestInit,
 ): Promise<{ status: number; result: ApiResult<T> }> => {
   const headers = new Headers(init?.headers);
-  if (init?.body && !headers.has("content-type")) {
+  if (typeof init?.body === "string" && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
   }
   const response = await fetch(path, {
@@ -312,12 +341,21 @@ const departments = [
   { name: "装配二部", people: 71, rate: 73, color: "var(--coral)" },
 ];
 
-function NavigationButton({ item }: { item: NavigationItem }) {
+function NavigationButton({
+  active,
+  item,
+  onSelect,
+}: {
+  active: boolean;
+  item: NavigationItem;
+  onSelect: () => void;
+}) {
   const Icon = iconByNavigation[item.id] ?? LayoutDashboard;
   return (
     <button
       aria-label={item.label}
-      className={`nav-item${item === navigationForRole("employee")[0] || item.id === "dashboard" || item.id === "accounts" ? " active" : ""}`}
+      className={`nav-item${active ? " active" : ""}`}
+      onClick={onSelect}
       type="button"
     >
       <Icon size={19} />
@@ -421,8 +459,522 @@ function AdminResetPanel() {
   );
 }
 
+export function OrganizationPanel({ canManage }: { canManage: boolean }) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | { status: "ready"; departments: Department[]; positions: Position[]; employees: Employee[] }
+  >({ status: "loading" });
+  const [query, setQuery] = useState("");
+  const [notice, setNotice] = useState("");
+  const [departmentForm, setDepartmentForm] = useState({ code: "", name: "" });
+  const [positionForm, setPositionForm] = useState({ code: "", name: "", departmentId: "" });
+  const [employeeForm, setEmployeeForm] = useState({
+    employeeNumber: "",
+    displayName: "",
+    departmentCode: "",
+    positionCode: "",
+  });
+  const [editing, setEditing] = useState<Employee>();
+  const [assignment, setAssignment] = useState({ departmentId: "", positionId: "", reason: "" });
+  const [importFile, setImportFile] = useState<File>();
+  const [preview, setPreview] = useState<ImportPreview>();
+  const [credentials, setCredentials] = useState<
+    Array<{ employeeNumber: string; temporaryPassword: string }>
+  >([]);
+
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const [departments, positions, employees] = await Promise.all([
+        request<Department[]>("/api/organization/departments?includeInactive=true"),
+        request<Position[]>("/api/organization/positions?includeInactive=true"),
+        request<Employee[]>("/api/organization/employees"),
+      ]);
+      if (!departments.result.ok || !positions.result.ok || !employees.result.ok) {
+        const failed = [departments.result, positions.result, employees.result].find(
+          (result) => !result.ok,
+        );
+        setState({
+          status: "error",
+          message: failed && !failed.ok ? failed.error.message : "组织数据加载失败",
+        });
+        return;
+      }
+      const departmentRows = departments.result.data;
+      setState({
+        status: "ready",
+        departments: departmentRows,
+        positions: positions.result.data,
+        employees: employees.result.data,
+      });
+      setPositionForm((current) => ({
+        ...current,
+        departmentId: current.departmentId || departmentRows[0]?.id || "",
+      }));
+    } catch {
+      setState({ status: "error", message: "暂时无法连接组织服务" });
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const mutate = async (path: string, method: string, body?: unknown) => {
+    setNotice("");
+    try {
+      const { result } = await request(path, {
+        method,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      if (!result.ok) {
+        setNotice(result.error.message);
+        return false;
+      }
+      setNotice("保存成功");
+      await load();
+      return true;
+    } catch {
+      setNotice("操作失败，请稍后再试");
+      return false;
+    }
+  };
+
+  const dryRun = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!importFile) return;
+    const form = new FormData();
+    form.set("file", importFile);
+    const { result } = await request<ImportPreview>("/api/organization/employees/import/dry-run", {
+      method: "POST",
+      body: form,
+    });
+    if (result.ok) setPreview(result.data);
+    else setNotice(result.error.message);
+  };
+
+  const confirmImport = async () => {
+    if (!preview) return;
+    const { result } = await request<{
+      imported: number;
+      credentials: Array<{ employeeNumber: string; temporaryPassword: string }>;
+    }>(`/api/organization/employees/import/${preview.previewId}/confirm`, { method: "POST" });
+    if (!result.ok) {
+      setNotice(result.error.message);
+      return;
+    }
+    setCredentials(result.data.credentials);
+    setPreview(undefined);
+    setNotice(`已导入 ${result.data.imported} 名员工；临时凭证仅在本页显示一次。`);
+    await load();
+  };
+
+  if (state.status === "loading") {
+    return <section className="panel list-state-panel">正在加载组织人员…</section>;
+  }
+  if (state.status === "error") {
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" onClick={load} type="button">
+          重新加载
+        </button>
+      </section>
+    );
+  }
+
+  const filteredEmployees = state.employees.filter((employee) =>
+    `${employee.employeeNumber} ${employee.displayName} ${employee.departmentName ?? ""} ${employee.positionName ?? ""}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+  const activePositions = state.positions.filter(
+    (position) =>
+      position.active &&
+      (!assignment.departmentId || position.departmentId === assignment.departmentId),
+  );
+
+  return (
+    <div className="organization-page">
+      <section className="welcome organization-heading">
+        <div>
+          <p className="eyebrow">组织与人员</p>
+          <h1>工厂人员与岗位</h1>
+          <p>维护稳定业务编码、当前岗位与可追溯任职履历。</p>
+        </div>
+        <a className="primary-button export-link" href="/api/organization/employees/export.xlsx">
+          导出当前数据
+        </a>
+      </section>
+
+      {notice && <p className="organization-notice">{notice}</p>}
+      {credentials.length > 0 && (
+        <section className="panel credential-panel">
+          <h2>一次性初始凭证</h2>
+          <p>请安全交付员工，离开本页后系统不再提供明文密码。</p>
+          {credentials.map((item) => (
+            <code key={item.employeeNumber}>
+              {item.employeeNumber}　{item.temporaryPassword}
+            </code>
+          ))}
+          <button type="button" onClick={() => setCredentials([])}>
+            已完成交付
+          </button>
+        </section>
+      )}
+
+      {canManage && (
+        <section className="organization-form-grid">
+          <form
+            className="panel compact-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (await mutate("/api/organization/departments", "POST", departmentForm)) {
+                setDepartmentForm({ code: "", name: "" });
+              }
+            }}
+          >
+            <h2>新增部门</h2>
+            <input
+              placeholder="部门编码"
+              required
+              value={departmentForm.code}
+              onChange={(event) =>
+                setDepartmentForm({ ...departmentForm, code: event.target.value })
+              }
+            />
+            <input
+              placeholder="部门名称"
+              required
+              value={departmentForm.name}
+              onChange={(event) =>
+                setDepartmentForm({ ...departmentForm, name: event.target.value })
+              }
+            />
+            <button className="primary-button" type="submit">
+              保存部门
+            </button>
+          </form>
+          <form
+            className="panel compact-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (await mutate("/api/organization/positions", "POST", positionForm)) {
+                setPositionForm({
+                  code: "",
+                  name: "",
+                  departmentId: state.departments[0]?.id ?? "",
+                });
+              }
+            }}
+          >
+            <h2>新增岗位</h2>
+            <input
+              placeholder="岗位编码"
+              required
+              value={positionForm.code}
+              onChange={(event) => setPositionForm({ ...positionForm, code: event.target.value })}
+            />
+            <input
+              placeholder="岗位名称"
+              required
+              value={positionForm.name}
+              onChange={(event) => setPositionForm({ ...positionForm, name: event.target.value })}
+            />
+            <select
+              required
+              value={positionForm.departmentId}
+              onChange={(event) =>
+                setPositionForm({ ...positionForm, departmentId: event.target.value })
+              }
+            >
+              {state.departments
+                .filter((item) => item.active)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.code} · {item.name}
+                  </option>
+                ))}
+            </select>
+            <button className="primary-button" type="submit">
+              保存岗位
+            </button>
+          </form>
+          <form
+            className="panel compact-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (await mutate("/api/organization/employees", "POST", employeeForm)) {
+                setEmployeeForm({
+                  employeeNumber: "",
+                  displayName: "",
+                  departmentCode: "",
+                  positionCode: "",
+                });
+              }
+            }}
+          >
+            <h2>新增员工</h2>
+            <input
+              placeholder="工号"
+              required
+              value={employeeForm.employeeNumber}
+              onChange={(event) =>
+                setEmployeeForm({ ...employeeForm, employeeNumber: event.target.value })
+              }
+            />
+            <input
+              placeholder="姓名"
+              required
+              value={employeeForm.displayName}
+              onChange={(event) =>
+                setEmployeeForm({ ...employeeForm, displayName: event.target.value })
+              }
+            />
+            <input
+              placeholder="部门编码"
+              required
+              value={employeeForm.departmentCode}
+              onChange={(event) =>
+                setEmployeeForm({ ...employeeForm, departmentCode: event.target.value })
+              }
+            />
+            <input
+              placeholder="岗位编码"
+              required
+              value={employeeForm.positionCode}
+              onChange={(event) =>
+                setEmployeeForm({ ...employeeForm, positionCode: event.target.value })
+              }
+            />
+            <button className="primary-button" type="submit">
+              创建并生成账号
+            </button>
+          </form>
+        </section>
+      )}
+
+      {canManage && (
+        <form className="panel import-panel" onSubmit={dryRun}>
+          <div>
+            <h2>Excel 批量导入</h2>
+            <p>先预检，全部通过后才能事务性写入。</p>
+          </div>
+          <input
+            accept=".xlsx"
+            onChange={(event) => setImportFile(event.target.files?.[0])}
+            type="file"
+          />
+          <button className="primary-button" disabled={!importFile} type="submit">
+            预检文件
+          </button>
+          {preview && (
+            <div className="import-preview">
+              <strong>
+                {preview.totalRows} 行，{preview.validRows} 行有效
+              </strong>
+              {preview.errors.length === 0 ? (
+                <button className="primary-button" onClick={confirmImport} type="button">
+                  确认正式导入
+                </button>
+              ) : (
+                <ul>
+                  {preview.errors.slice(0, 20).map((error) => (
+                    <li key={`${error.rowNumber}-${error.field}`}>
+                      第 {error.rowNumber} 行：{error.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </form>
+      )}
+
+      {editing && canManage && (
+        <section className="panel edit-employee-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>编辑 {editing.employeeNumber}</h2>
+              <p>基本资料和岗位变更分别留痕</p>
+            </div>
+            <button type="button" onClick={() => setEditing(undefined)}>
+              关闭
+            </button>
+          </div>
+          <form
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (
+                await mutate(`/api/organization/employees/${editing.id}`, "PATCH", {
+                  displayName: editing.displayName,
+                  hireDate: editing.hireDate,
+                  phone: editing.phone,
+                })
+              )
+                setEditing(undefined);
+            }}
+          >
+            <input
+              value={editing.displayName}
+              onChange={(event) => setEditing({ ...editing, displayName: event.target.value })}
+            />
+            <input
+              placeholder="入职日期 YYYY-MM-DD"
+              value={editing.hireDate ?? ""}
+              onChange={(event) => setEditing({ ...editing, hireDate: event.target.value })}
+            />
+            <input
+              placeholder="手机号"
+              value={editing.phone ?? ""}
+              onChange={(event) => setEditing({ ...editing, phone: event.target.value })}
+            />
+            <button className="primary-button" type="submit">
+              保存资料
+            </button>
+          </form>
+          <form
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (
+                await mutate(
+                  `/api/organization/employees/${editing.id}/assignment`,
+                  "POST",
+                  assignment,
+                )
+              ) {
+                setEditing(undefined);
+                setAssignment({ departmentId: "", positionId: "", reason: "" });
+              }
+            }}
+          >
+            <select
+              required
+              value={assignment.departmentId}
+              onChange={(event) =>
+                setAssignment({
+                  departmentId: event.target.value,
+                  positionId: "",
+                  reason: assignment.reason,
+                })
+              }
+            >
+              <option value="">选择部门</option>
+              {state.departments
+                .filter((item) => item.active)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+            </select>
+            <select
+              required
+              value={assignment.positionId}
+              onChange={(event) => setAssignment({ ...assignment, positionId: event.target.value })}
+            >
+              <option value="">选择岗位</option>
+              {activePositions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <input
+              placeholder="岗位变更原因"
+              required
+              value={assignment.reason}
+              onChange={(event) => setAssignment({ ...assignment, reason: event.target.value })}
+            />
+            <button className="primary-button" type="submit">
+              变更岗位
+            </button>
+          </form>
+        </section>
+      )}
+
+      <section className="panel employee-list-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>员工列表</h2>
+            <p>{filteredEmployees.length} 名员工</p>
+          </div>
+          <input
+            className="table-filter"
+            placeholder="筛选工号、姓名、部门或岗位"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        {filteredEmployees.length === 0 ? (
+          <p className="list-state">当前筛选没有员工</p>
+        ) : (
+          <div className="employee-table-wrap">
+            <table className="employee-table">
+              <thead>
+                <tr>
+                  <th>工号 / 姓名</th>
+                  <th>部门</th>
+                  <th>岗位</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEmployees.map((employee) => (
+                  <tr key={employee.id}>
+                    <td>
+                      <strong>{employee.employeeNumber}</strong>
+                      <small>{employee.displayName}</small>
+                    </td>
+                    <td>{employee.departmentName ?? "未分配"}</td>
+                    <td>{employee.positionName ?? "未分配"}</td>
+                    <td>{employee.active ? "在职" : "已停用"}</td>
+                    <td>
+                      {canManage && employee.active && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditing(employee);
+                              setAssignment({
+                                departmentId: employee.departmentId ?? "",
+                                positionId: employee.positionId ?? "",
+                                reason: "",
+                              });
+                            }}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void mutate(
+                                `/api/organization/employees/${employee.id}/deactivate`,
+                                "POST",
+                              )
+                            }
+                          >
+                            停用
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session: Session }) {
   const navigation = navigationForRole(session.role);
+  const [activeNavigation, setActiveNavigation] = useState(navigation[0]?.id ?? "dashboard");
   const statistics = statisticsForRole(session.role);
   const isManagement = ["department_manager", "hr_admin", "executive_viewer"].includes(
     session.role,
@@ -448,7 +1000,12 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
         <nav aria-label="主导航">
           <p className="nav-caption">我的菜单</p>
           {navigation.map((item) => (
-            <NavigationButton item={item} key={item.id} />
+            <NavigationButton
+              active={activeNavigation === item.id}
+              item={item}
+              key={item.id}
+              onSelect={() => setActiveNavigation(item.id)}
+            />
           ))}
         </nav>
         <div className="sidebar-foot">
@@ -495,100 +1052,109 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
         </header>
 
         <div className="content">
-          <section className="welcome">
-            <div>
-              <p className="eyebrow">技能与培训工作空间</p>
-              <h1>早上好，{session.displayName}</h1>
-              <p>
-                {session.role === "employee"
-                  ? "查看你的培训安排、技能差距和最新评定。"
-                  : "这里是你当前权限范围内的工厂技能概况。"}
-              </p>
-            </div>
-            {session.role !== "executive_viewer" && (
-              <button className="primary-button" type="button">
-                <ClipboardCheck size={18} />
-                查看待办
-              </button>
-            )}
-          </section>
-
-          <section className="stat-grid" aria-label="关键指标">
-            {statistics.map((item) => (
-              <article className="stat-card" key={item.label}>
-                <div className={`metric-icon ${item.tone}`}>
-                  <TrendingUp size={18} />
-                </div>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-                <small>{item.note}</small>
-              </article>
-            ))}
-          </section>
-
-          {isManagement ? (
-            <div className="dashboard-grid">
-              <section className="panel matrix-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>部门技能达标概况</h2>
-                    <p>按部门查看当前在岗员工达标情况</p>
-                  </div>
-                  <button type="button">
-                    查看完整矩阵 <ChevronRight size={16} />
-                  </button>
-                </div>
-                <div className="department-list">
-                  {departments.map((department) => (
-                    <div className="department-row" key={department.name}>
-                      <span className="department-icon">
-                        <Factory size={18} />
-                      </span>
-                      <div className="department-copy">
-                        <div>
-                          <strong>{department.name}</strong>
-                          <small>{department.people} 人</small>
-                          <b>{department.rate}%</b>
-                        </div>
-                        <div className="progress">
-                          <i
-                            style={{ width: `${department.rate}%`, background: department.color }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-              <TodoPanel mode={session.role === "executive_viewer" ? "viewer" : "management"} />
-            </div>
-          ) : session.role === "employee" ? (
-            <div className="dashboard-grid">
-              <section className="panel matrix-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>我的技能差距</h2>
-                    <p>当前岗位要求与有效能力等级</p>
-                  </div>
-                  <button type="button">
-                    查看技能档案 <ChevronRight size={16} />
-                  </button>
-                </div>
-                <div className="skill-gap">
-                  <strong>岗位达标 8 / 12</strong>
-                  <div className="progress">
-                    <i style={{ width: "67%", background: "var(--green)" }} />
-                  </div>
-                  <p>建议优先完成“设备点检规范”培训，并申请焊接操作复评。</p>
-                </div>
-              </section>
-              <TodoPanel mode="employee" />
-            </div>
+          {activeNavigation === "organization" || activeNavigation === "employees" ? (
+            <OrganizationPanel canManage={session.role === "hr_admin"} />
           ) : (
-            <div className="dashboard-grid">
-              <AdminResetPanel />
-              <TodoPanel mode="system" />
-            </div>
+            <>
+              <section className="welcome">
+                <div>
+                  <p className="eyebrow">技能与培训工作空间</p>
+                  <h1>早上好，{session.displayName}</h1>
+                  <p>
+                    {session.role === "employee"
+                      ? "查看你的培训安排、技能差距和最新评定。"
+                      : "这里是你当前权限范围内的工厂技能概况。"}
+                  </p>
+                </div>
+                {session.role !== "executive_viewer" && (
+                  <button className="primary-button" type="button">
+                    <ClipboardCheck size={18} />
+                    查看待办
+                  </button>
+                )}
+              </section>
+
+              <section className="stat-grid" aria-label="关键指标">
+                {statistics.map((item) => (
+                  <article className="stat-card" key={item.label}>
+                    <div className={`metric-icon ${item.tone}`}>
+                      <TrendingUp size={18} />
+                    </div>
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                    <small>{item.note}</small>
+                  </article>
+                ))}
+              </section>
+
+              {isManagement ? (
+                <div className="dashboard-grid">
+                  <section className="panel matrix-panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>部门技能达标概况</h2>
+                        <p>按部门查看当前在岗员工达标情况</p>
+                      </div>
+                      <button type="button">
+                        查看完整矩阵 <ChevronRight size={16} />
+                      </button>
+                    </div>
+                    <div className="department-list">
+                      {departments.map((department) => (
+                        <div className="department-row" key={department.name}>
+                          <span className="department-icon">
+                            <Factory size={18} />
+                          </span>
+                          <div className="department-copy">
+                            <div>
+                              <strong>{department.name}</strong>
+                              <small>{department.people} 人</small>
+                              <b>{department.rate}%</b>
+                            </div>
+                            <div className="progress">
+                              <i
+                                style={{
+                                  width: `${department.rate}%`,
+                                  background: department.color,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                  <TodoPanel mode={session.role === "executive_viewer" ? "viewer" : "management"} />
+                </div>
+              ) : session.role === "employee" ? (
+                <div className="dashboard-grid">
+                  <section className="panel matrix-panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>我的技能差距</h2>
+                        <p>当前岗位要求与有效能力等级</p>
+                      </div>
+                      <button type="button">
+                        查看技能档案 <ChevronRight size={16} />
+                      </button>
+                    </div>
+                    <div className="skill-gap">
+                      <strong>岗位达标 8 / 12</strong>
+                      <div className="progress">
+                        <i style={{ width: "67%", background: "var(--green)" }} />
+                      </div>
+                      <p>建议优先完成“设备点检规范”培训，并申请焊接操作复评。</p>
+                    </div>
+                  </section>
+                  <TodoPanel mode="employee" />
+                </div>
+              ) : (
+                <div className="dashboard-grid">
+                  <AdminResetPanel />
+                  <TodoPanel mode="system" />
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>

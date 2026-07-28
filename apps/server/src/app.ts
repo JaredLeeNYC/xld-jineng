@@ -4,6 +4,9 @@ import { openapi } from "@elysiajs/openapi";
 import { Elysia, t } from "elysia";
 import { isIP } from "node:net";
 import type { AuthHttpService } from "./auth-contract";
+import type { SessionView } from "./auth-contract";
+import { createEmployeeExport, parseEmployeeWorkbook } from "./organization-excel";
+import type { OrganizationService } from "./organization-service";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -36,6 +39,7 @@ const sessionDataResponse = t.Object({
   employeeId: t.String(),
   employeeNumber: t.String(),
   displayName: t.String(),
+  departmentId: t.Optional(t.String()),
   role: t.Union([
     t.Literal("employee"),
     t.Literal("department_manager"),
@@ -88,11 +92,83 @@ const accountListEnvelopeResponse = t.Object({
   data: t.Array(accountSummaryResponse),
 });
 
+const departmentResponse = t.Object({
+  id: t.String(),
+  code: t.String(),
+  name: t.String(),
+  active: t.Boolean(),
+});
+
+const positionResponse = t.Object({
+  id: t.String(),
+  code: t.String(),
+  name: t.String(),
+  departmentId: t.String(),
+  departmentName: t.String(),
+  active: t.Boolean(),
+});
+
+const employeeResponse = t.Object({
+  id: t.String(),
+  employeeNumber: t.String(),
+  displayName: t.String(),
+  departmentId: t.Optional(t.String()),
+  departmentName: t.Optional(t.String()),
+  positionId: t.Optional(t.String()),
+  positionName: t.Optional(t.String()),
+  hireDate: t.Optional(t.String()),
+  phone: t.Optional(t.String()),
+  role: sessionDataResponse.properties.role,
+  active: t.Boolean(),
+});
+
+const organizationErrorResponses = {
+  400: errorResponse,
+  401: errorResponse,
+  403: errorResponse,
+  404: errorResponse,
+  409: errorResponse,
+  422: errorResponse,
+  500: errorResponse,
+  503: errorResponse,
+};
+
 type AppDependencies = {
   appUrl?: string;
   authService?: AuthHttpService;
+  organizationService?: OrganizationService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
+};
+
+const organizationActor = async (
+  authService: AuthHttpService | undefined,
+  request: Request,
+): Promise<
+  | { ok: true; actor: SessionView }
+  | { ok: false; status: 401 | 403 | 503; code: string; message: string }
+> => {
+  if (!authService) {
+    return { ok: false, status: 503, code: "AUTH_UNAVAILABLE", message: "登录服务暂不可用" };
+  }
+  const session = await authService.getSession(readSessionToken(request));
+  if (!session.ok) {
+    return {
+      ok: false,
+      status: session.error.status === 503 ? 503 : 401,
+      code: session.error.code,
+      message: session.error.message,
+    };
+  }
+  if (session.data.mustChangePassword) {
+    return {
+      ok: false,
+      status: 403,
+      code: "PASSWORD_CHANGE_REQUIRED",
+      message: "首次登录必须先修改密码",
+    };
+  }
+  return { ok: true, actor: session.data };
 };
 
 const defaultReadinessProbe: ReadinessProbe = async () => ({
@@ -124,6 +200,7 @@ const expiredSessionCookie = (secureCookie: boolean) =>
 export const createApp = ({
   appUrl = "http://localhost:3101",
   authService,
+  organizationService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
 }: AppDependencies = {}) =>
@@ -145,7 +222,7 @@ export const createApp = ({
         origin: appUrl,
       }),
     )
-    .onError({ as: "global" }, ({ code, set }) => {
+    .onError({ as: "global" }, ({ code, error, set }) => {
       if (code === "NOT_FOUND") {
         set.status = 404;
         return failure("NOT_FOUND", "接口不存在");
@@ -155,6 +232,7 @@ export const createApp = ({
         return failure("VALIDATION_ERROR", "请求参数无效");
       }
 
+      console.error("unhandled API error", error);
       set.status = 500;
       return failure("INTERNAL_ERROR", "服务暂时不可用");
     })
@@ -392,6 +470,522 @@ export const createApp = ({
           500: errorResponse,
           503: errorResponse,
         },
+      },
+    )
+    .get(
+      "/api/organization/departments",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.listDepartments(
+          authenticated.actor,
+          query.includeInactive === "true",
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({ includeInactive: t.Optional(t.String()) }),
+        response: {
+          200: t.Object({ ok: t.Literal(true), data: t.Array(departmentResponse) }),
+          ...organizationErrorResponses,
+        },
+      },
+    )
+    .post(
+      "/api/organization/departments",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.createDepartment(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          code: t.String({ minLength: 1, maxLength: 30 }),
+          name: t.String({ minLength: 1, maxLength: 100 }),
+        }),
+        response: {
+          200: t.Object({ ok: t.Literal(true), data: departmentResponse }),
+          ...organizationErrorResponses,
+        },
+      },
+    )
+    .patch(
+      "/api/organization/departments/:id",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.updateDepartment(
+          authenticated.actor,
+          params.id,
+          body,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ name: t.String({ minLength: 1, maxLength: 100 }) }),
+        response: {
+          200: t.Object({ ok: t.Literal(true), data: departmentResponse }),
+          ...organizationErrorResponses,
+        },
+      },
+    )
+    .post(
+      "/api/organization/departments/:id/deactivate",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.deactivateDepartment(
+          authenticated.actor,
+          params.id,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/organization/positions",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.listPositions(
+          authenticated.actor,
+          query.includeInactive === "true",
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({ includeInactive: t.Optional(t.String()) }),
+        response: {
+          200: t.Object({ ok: t.Literal(true), data: t.Array(positionResponse) }),
+          ...organizationErrorResponses,
+        },
+      },
+    )
+    .post(
+      "/api/organization/positions",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.createPosition(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          code: t.String({ minLength: 1, maxLength: 30 }),
+          name: t.String({ minLength: 1, maxLength: 100 }),
+          departmentId: t.String({ format: "uuid" }),
+        }),
+        response: {
+          200: t.Object({ ok: t.Literal(true), data: positionResponse }),
+          ...organizationErrorResponses,
+        },
+      },
+    )
+    .patch(
+      "/api/organization/positions/:id",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.updatePosition(
+          authenticated.actor,
+          params.id,
+          body,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          name: t.String({ minLength: 1, maxLength: 100 }),
+          departmentId: t.String({ format: "uuid" }),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/organization/positions/:id/deactivate",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.deactivatePosition(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/organization/employees",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.listEmployees(authenticated.actor, {
+          ...(query.active === "true"
+            ? { active: true }
+            : query.active === "false"
+              ? { active: false }
+              : {}),
+          ...(query.query ? { query: query.query } : {}),
+        });
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({
+          active: t.Optional(t.String()),
+          query: t.Optional(t.String({ maxLength: 100 })),
+        }),
+        response: {
+          200: t.Object({ ok: t.Literal(true), data: t.Array(employeeResponse) }),
+          ...organizationErrorResponses,
+        },
+      },
+    )
+    .get(
+      "/api/organization/employees/:id/assignments",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.listAssignments(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/organization/employees",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.createEmployee(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          employeeNumber: t.String({ minLength: 1, maxLength: 50 }),
+          displayName: t.String({ minLength: 1, maxLength: 100 }),
+          departmentCode: t.String({ minLength: 1, maxLength: 30 }),
+          positionCode: t.String({ minLength: 1, maxLength: 30 }),
+          hireDate: t.Optional(t.String()),
+          phone: t.Optional(t.String({ maxLength: 30 })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .patch(
+      "/api/organization/employees/:id",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.updateEmployee(
+          authenticated.actor,
+          params.id,
+          body,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          displayName: t.String({ minLength: 1, maxLength: 100 }),
+          hireDate: t.Optional(t.String()),
+          phone: t.Optional(t.String({ maxLength: 30 })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/organization/employees/:id/assignment",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.changeAssignment(
+          authenticated.actor,
+          params.id,
+          body,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          departmentId: t.String({ format: "uuid" }),
+          positionId: t.String({ format: "uuid" }),
+          reason: t.String({ minLength: 1, maxLength: 300 }),
+          effectiveAt: t.Optional(t.String()),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/organization/employees/:id/deactivate",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.deactivateEmployee(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/organization/employees/import/dry-run",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        let rows;
+        try {
+          rows = await parseEmployeeWorkbook(await body.file.arrayBuffer());
+        } catch (error) {
+          set.status = 400;
+          return failure("INVALID_WORKBOOK", `Excel 文件无法读取：${String(error)}`);
+        }
+        const result = await organizationService.dryRunImport(authenticated.actor, rows);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({ file: t.File({ maxSize: "10m" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/organization/employees/import/:previewId/confirm",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.confirmImport(
+          authenticated.actor,
+          params.previewId,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ previewId: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/organization/employees/export.xlsx",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.exportEmployees(authenticated.actor, {
+          ...(query.active === "true"
+            ? { active: true }
+            : query.active === "false"
+              ? { active: false }
+              : {}),
+          ...(query.query ? { query: query.query } : {}),
+        });
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        const workbook = await createEmployeeExport(result.data);
+        return new Response(workbook, {
+          headers: {
+            "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "content-disposition": "attachment; filename=employees.xlsx",
+          },
+        });
+      },
+      {
+        query: t.Object({
+          active: t.Optional(t.String()),
+          query: t.Optional(t.String({ maxLength: 100 })),
+        }),
       },
     )
     .get(
