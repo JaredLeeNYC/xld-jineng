@@ -1224,17 +1224,46 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
           ) : history.assignments.length === 0 ? (
             <p className="list-state">暂无岗位履历</p>
           ) : (
-            history.assignments.map((item) => (
-              <div className="history-row" key={item.id}>
-                <strong>
-                  {item.departmentName} · {item.positionName}
-                </strong>
-                <span>
-                  {item.startedAt.slice(0, 10)} 至 {item.endedAt?.slice(0, 10) ?? "当前"}
-                </span>
-                <small>{item.reason}</small>
+            <>
+              <div className="history-table-wrap">
+                <table className="history-table">
+                  <thead>
+                    <tr>
+                      <th>部门 / 岗位</th>
+                      <th>开始</th>
+                      <th>结束</th>
+                      <th>变更原因</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.assignments.map((item) => (
+                      <tr key={item.id}>
+                        <td>
+                          {item.departmentName} · {item.positionName}
+                        </td>
+                        <td>{item.startedAt.slice(0, 10)}</td>
+                        <td>{item.endedAt?.slice(0, 10) ?? "当前"}</td>
+                        <td>{item.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))
+              <div className="history-cards">
+                {history.assignments.map((item) => (
+                  <article className="history-card" key={item.id}>
+                    <header>
+                      <strong>{item.positionName}</strong>
+                      <span>{item.departmentName}</span>
+                    </header>
+                    <p>
+                      {item.startedAt.slice(0, 10)} 至 {item.endedAt?.slice(0, 10) ?? "当前"}
+                    </p>
+                    <small>{item.reason}</small>
+                  </article>
+                ))}
+              </div>
+            </>
           )}
         </section>
       )}

@@ -850,24 +850,6 @@ main {
   align-content: start;
   gap: 6px;
 }
-.history-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-  padding: 11px 0;
-}
-.history-row strong,
-.history-row small {
-  display: block;
-}
-.history-row span,
-.history-row small {
-  color: var(--muted);
-  font-size: 11px;
-  font-style: normal;
-}
 .master-table-wrap {
   overflow-x: auto;
 }
@@ -925,11 +907,45 @@ main {
 .assignment-history {
   display: grid;
 }
-.history-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+.history-table-wrap {
+  overflow-x: auto;
 }
-.history-row small {
-  grid-column: 1 / -1;
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.history-table th,
+.history-table td {
+  border-top: 1px solid var(--line);
+  padding: 10px 7px;
+  text-align: left;
+}
+.history-table th {
+  color: var(--muted);
+  font-size: 10px;
+}
+.history-cards {
+  display: none;
+}
+.history-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 13px;
+}
+.history-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.history-card header span,
+.history-card p,
+.history-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.history-card p {
+  margin: 8px 0;
 }
 .employee-cards {
   display: none;
@@ -1138,6 +1154,13 @@ main {
     display: none;
   }
   .master-cards {
+    display: grid;
+    gap: 10px;
+  }
+  .history-table-wrap {
+    display: none;
+  }
+  .history-cards {
     display: grid;
     gap: 10px;
   }
