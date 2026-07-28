@@ -871,6 +871,39 @@ try {
      where a.employee_id = $1 and s.code = 'S001'`,
     [assignment.employeeId],
   );
+  let currentAssessmentInvalidationRejected = false;
+  try {
+    await contractPool.query(
+      `update skill_assessments set status = 'voided', voided_at = now()
+       where id = $1`,
+      [baselineAssessment.rows[0]!.id],
+    );
+  } catch (error) {
+    currentAssessmentInvalidationRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
+  const invalidAssessment = await contractPool.query<{ id: string }>(
+    `insert into skill_assessments (
+       employee_id, skill_id, level, status, passed, source_type,
+       source_reference, assessed_at, archived_at
+     ) values ($1, $2, 1, 'archived', false, 'contract_invalid', '不得成为当前技能', now(), now())
+     returning id`,
+    [assignment.employeeId, createdSkills.get("S002")],
+  );
+  let invalidAssessmentPointerRejected = false;
+  try {
+    await contractPool.query(
+      `insert into employee_current_skills (employee_id, skill_id, assessment_id)
+       values ($1, $2, $3)`,
+      [assignment.employeeId, createdSkills.get("S002"), invalidAssessment.rows[0]!.id],
+    );
+  } catch (error) {
+    invalidAssessmentPointerRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
+  if (!currentAssessmentInvalidationRejected || !invalidAssessmentPointerRejected) {
+    throw new Error("数据库未强制当前技能指向通过、归档且未作废的评定");
+  }
   let mismatchedPointerRejected = false;
   try {
     await contractPool.query(
@@ -883,7 +916,7 @@ try {
       typeof error === "object" &&
       error !== null &&
       "code" in error &&
-      ["23503", "23505"].includes(String(error.code));
+      ["23503", "23505", "23514"].includes(String(error.code));
   }
   if (!mismatchedPointerRejected) throw new Error("数据库未阻止当前技能指向其他员工或技能的评定");
 

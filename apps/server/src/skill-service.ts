@@ -220,6 +220,13 @@ export const createSkillService = (dependencies: {
             code: "REQUIRED",
             message: "来源说明不能为空",
           });
+        else if (row.sourceReference.length > 300)
+          errors.push({
+            rowNumber: row.rowNumber,
+            field: "sourceReference",
+            code: "INVALID_VALUE",
+            message: "来源说明不能超过 300 个字符",
+          });
         const employeeId = employees.get(row.employeeNumber);
         const skillId = skills.get(row.skillCode);
         if (row.employeeNumber && !employeeId)
@@ -320,7 +327,12 @@ export const createSkillService = (dependencies: {
 
     async matrix(
       actor: SessionView,
-      filters: { departmentId?: string; positionId?: string; skillId?: string } = {},
+      filters: {
+        departmentId?: string;
+        employeeId?: string;
+        positionId?: string;
+        skillId?: string;
+      } = {},
     ) {
       if (actor.role === "system_admin") return fail("FORBIDDEN", "无权查看业务技能矩阵", 403);
       if (actor.role === "department_manager" && !actor.departmentId)

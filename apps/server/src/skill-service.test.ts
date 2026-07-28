@@ -98,6 +98,24 @@ describe("skill service", () => {
     });
   });
 
+  test("rejects an empty level and an oversized source during baseline preview", async () => {
+    const { service } = fixture();
+    const result = await service.dryRunBaseline(hr, [
+      {
+        rowNumber: 2,
+        employeeNumber: "E0001",
+        skillCode: "S001",
+        level: Number.NaN,
+        assessedAt: "2026-07-01",
+        sourceReference: "x".repeat(301),
+      },
+    ]);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { errors: [{ code: "INVALID_VALUE" }, { code: "INVALID_LEVEL" }] },
+    });
+  });
+
   test("forces manager and employee matrix scopes", async () => {
     const { service, getMatrixInput } = fixture();
     await service.matrix(

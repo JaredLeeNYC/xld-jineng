@@ -1813,18 +1813,46 @@ export function SkillAdminPanel() {
         {state.requirements.length === 0 ? (
           <p className="list-state">尚未配置岗位要求</p>
         ) : (
-          <div className="requirement-cards">
-            {state.requirements.map((item) => (
-              <article key={item.id}>
-                <strong>
-                  {item.positionName} · {item.skillName}
-                </strong>
-                <span>
-                  要求 {item.requiredLevel} 级 · {item.required ? "必备" : "非必备"}
-                </span>
-              </article>
-            ))}
-          </div>
+          <>
+            <div className="requirement-table-wrap">
+              <table className="skill-table">
+                <thead>
+                  <tr>
+                    <th>岗位</th>
+                    <th>技能</th>
+                    <th>等级</th>
+                    <th>类型</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.requirements.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        {item.positionCode} · {item.positionName}
+                      </td>
+                      <td>
+                        {item.skillCode} · {item.skillName}
+                      </td>
+                      <td>{item.requiredLevel}</td>
+                      <td>{item.required ? "必备" : "非必备"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="requirement-cards">
+              {state.requirements.map((item) => (
+                <article key={item.id}>
+                  <strong>
+                    {item.positionName} · {item.skillName}
+                  </strong>
+                  <span>
+                    要求 {item.requiredLevel} 级 · {item.required ? "必备" : "非必备"}
+                  </span>
+                </article>
+              ))}
+            </div>
+          </>
         )}
       </section>
       <form
@@ -1895,10 +1923,25 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
     | { status: "ready"; rows: SkillMatrixCell[] }
   >({ status: "loading" });
   const [query, setQuery] = useState("");
-  const load = async () => {
+  const [filterOptions, setFilterOptions] = useState<SkillMatrixCell[]>([]);
+  const [filters, setFilters] = useState({
+    departmentId: "",
+    employeeId: "",
+    positionId: "",
+    skillId: "",
+  });
+  const load = async (activeFilters = filters) => {
     setState({ status: "loading" });
     try {
-      const { result } = await request<SkillMatrixCell[]>("/api/skill-matrix");
+      const parameters = new URLSearchParams(
+        Object.entries(activeFilters).filter((entry): entry is [string, string] =>
+          Boolean(entry[1]),
+        ),
+      );
+      const { result } = await request<SkillMatrixCell[]>(
+        `/api/skill-matrix${parameters.size > 0 ? `?${parameters}` : ""}`,
+      );
+      if (result.ok && parameters.size === 0) setFilterOptions(result.data);
       setState(
         result.ok
           ? { status: "ready", rows: result.data }
@@ -1909,7 +1952,7 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
     }
   };
   useEffect(() => {
-    void load();
+    void load({ departmentId: "", employeeId: "", positionId: "", skillId: "" });
   }, []);
   if (state.status === "loading")
     return <section className="panel list-state-panel">正在加载技能矩阵…</section>;
@@ -1917,7 +1960,7 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
     return (
       <section className="panel list-state-panel" role="alert">
         <p>{state.message}</p>
-        <button className="primary-button" type="button" onClick={load}>
+        <button className="primary-button" type="button" onClick={() => void load()}>
           重新加载
         </button>
       </section>
@@ -1929,6 +1972,16 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
   );
   const employees = [...new Map(rows.map((item) => [item.employeeId, item])).values()];
   const skills = [...new Map(rows.map((item) => [item.skillId, item])).values()];
+  const departmentOptions = [
+    ...new Map(filterOptions.map((item) => [item.departmentId, item])).values(),
+  ];
+  const employeeOptions = [
+    ...new Map(filterOptions.map((item) => [item.employeeId, item])).values(),
+  ];
+  const positionOptions = [
+    ...new Map(filterOptions.map((item) => [item.positionId, item])).values(),
+  ];
+  const skillOptions = [...new Map(filterOptions.map((item) => [item.skillId, item])).values()];
   const statusLabel = {
     met: "达标",
     gap: "有差距",
@@ -1945,6 +1998,57 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
         </div>
       </section>
       <section className="panel matrix-filter">
+        {!personal && (
+          <>
+            <select
+              value={filters.departmentId}
+              onChange={(event) => setFilters({ ...filters, departmentId: event.target.value })}
+            >
+              <option value="">全部部门</option>
+              {departmentOptions.map((item) => (
+                <option key={item.departmentId} value={item.departmentId}>
+                  {item.departmentName}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filters.positionId}
+              onChange={(event) => setFilters({ ...filters, positionId: event.target.value })}
+            >
+              <option value="">全部岗位</option>
+              {positionOptions.map((item) => (
+                <option key={item.positionId} value={item.positionId}>
+                  {item.positionName}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filters.employeeId}
+              onChange={(event) => setFilters({ ...filters, employeeId: event.target.value })}
+            >
+              <option value="">全部员工</option>
+              {employeeOptions.map((item) => (
+                <option key={item.employeeId} value={item.employeeId}>
+                  {item.employeeNumber} · {item.employeeName}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filters.skillId}
+              onChange={(event) => setFilters({ ...filters, skillId: event.target.value })}
+            >
+              <option value="">全部技能</option>
+              {skillOptions.map((item) => (
+                <option key={item.skillId} value={item.skillId}>
+                  {item.skillName}
+                </option>
+              ))}
+            </select>
+            <button className="primary-button" type="button" onClick={() => void load()}>
+              应用筛选
+            </button>
+          </>
+        )}
         <input
           className="table-filter"
           placeholder="筛选员工、岗位或技能"
@@ -1962,10 +2066,7 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
                 <tr>
                   <th>员工 / 岗位</th>
                   {skills.map((skill) => (
-                    <th key={skill.skillId}>
-                      {skill.skillName}
-                      <small>要求 {skill.requiredLevel}</small>
-                    </th>
+                    <th key={skill.skillId}>{skill.skillName}</th>
                   ))}
                 </tr>
               </thead>
@@ -1988,7 +2089,13 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
                               <strong>
                                 {cell.currentLevel ?? "—"} / {cell.requiredLevel}
                               </strong>
-                              <small>{statusLabel[cell.status]}</small>
+                              <small>
+                                {statusLabel[cell.status]} ·{" "}
+                                {cell.validUntil
+                                  ? `有效至 ${cell.validUntil.slice(0, 10)}`
+                                  : "长期有效"}
+                                {cell.gap > 0 ? ` · 差 ${cell.gap} 级` : ""}
+                              </small>
                             </>
                           ) : (
                             "—"

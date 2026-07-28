@@ -1264,6 +1264,7 @@ export const createApp = ({
       {
         query: t.Object({
           departmentId: t.Optional(t.String({ format: "uuid" })),
+          employeeId: t.Optional(t.String({ format: "uuid" })),
           positionId: t.Optional(t.String({ format: "uuid" })),
           skillId: t.Optional(t.String({ format: "uuid" })),
         }),

@@ -43,7 +43,7 @@ export const parseSkillBaselineWorkbook = async (buffer: ArrayBuffer) => {
       rowNumber,
       employeeNumber: values[0]!,
       skillCode: values[1]!,
-      level: Number(values[2]),
+      level: values[2] ? Number(values[2]) : Number.NaN,
       assessedAt: values[3]!,
       sourceReference: values[4]!,
     });

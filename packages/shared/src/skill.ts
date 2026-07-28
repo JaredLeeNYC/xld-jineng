@@ -60,6 +60,7 @@ export type SkillImportError = {
     | "INVALID_SKILL"
     | "INVALID_LEVEL"
     | "INVALID_DATE"
+    | "INVALID_VALUE"
     | "ALREADY_ASSESSED";
   message: string;
 };
