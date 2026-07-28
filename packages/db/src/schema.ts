@@ -1,4 +1,4 @@
-import { fixedRoles } from "@jineng/skill-matrix-shared";
+import { fixedRoles, skillCategories } from "@jineng/skill-matrix-shared";
 import { sql } from "drizzle-orm";
 import {
   bigserial,
@@ -6,11 +6,13 @@ import {
   char,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -24,6 +26,7 @@ const timestamps = {
 };
 
 export const fixedRoleEnum = pgEnum("fixed_role", fixedRoles);
+export const skillCategoryEnum = pgEnum("skill_category", skillCategories);
 
 export const systemMetadata = pgTable("system_metadata", {
   key: text("key").primaryKey(),
@@ -118,6 +121,122 @@ export const positionAssignments = pgTable(
     index("position_assignments_employee_idx").on(table.employeeId, table.startedAt),
   ],
 );
+
+export const skills = pgTable(
+  "skills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: varchar("code", { length: 30 }).notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    category: skillCategoryEnum("category").notNull(),
+    reassessmentRequired: boolean("reassessment_required").notNull().default(false),
+    validityMonths: smallint("validity_months"),
+    active: boolean("active").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    check("skills_code_canonical", sql`${table.code} = upper(trim(${table.code}))`),
+    check(
+      "skills_validity_policy",
+      sql`(${table.reassessmentRequired} = false and ${table.validityMonths} is null) or (${table.reassessmentRequired} = true and ${table.validityMonths} between 1 and 120)`,
+    ),
+    uniqueIndex("skills_code_unique").on(table.code),
+  ],
+);
+
+export const positionSkillRequirements = pgTable(
+  "position_skill_requirements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    positionId: uuid("position_id")
+      .notNull()
+      .references(() => positions.id, { onDelete: "restrict" }),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "restrict" }),
+    requiredLevel: smallint("required_level").notNull(),
+    required: boolean("required").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    check("position_skill_requirements_level", sql`${table.requiredLevel} between 0 and 4`),
+    uniqueIndex("position_skill_requirements_current_unique").on(table.positionId, table.skillId),
+  ],
+);
+
+export const skillAssessments = pgTable(
+  "skill_assessments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "restrict" }),
+    level: smallint("level").notNull(),
+    status: varchar("status", { length: 20 }).notNull(),
+    passed: boolean("passed").notNull(),
+    sourceType: varchar("source_type", { length: 30 }).notNull(),
+    sourceReference: varchar("source_reference", { length: 300 }).notNull(),
+    assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull(),
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }).notNull(),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    check("skill_assessments_level", sql`${table.level} between 0 and 4`),
+    check("skill_assessments_archived_status", sql`${table.status} in ('archived', 'voided')`),
+    uniqueIndex("skill_assessments_identity_unique").on(table.id, table.employeeId, table.skillId),
+    index("skill_assessments_employee_skill_idx").on(
+      table.employeeId,
+      table.skillId,
+      table.assessedAt,
+    ),
+  ],
+);
+
+export const employeeCurrentSkills = pgTable(
+  "employee_current_skills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "restrict" }),
+    assessmentId: uuid("assessment_id")
+      .notNull()
+      .references(() => skillAssessments.id, { onDelete: "restrict" }),
+    ...timestamps,
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.assessmentId, table.employeeId, table.skillId],
+      foreignColumns: [skillAssessments.id, skillAssessments.employeeId, skillAssessments.skillId],
+      name: "employee_current_skills_assessment_identity_fk",
+    }).onDelete("restrict"),
+    uniqueIndex("employee_current_skills_employee_skill_unique").on(
+      table.employeeId,
+      table.skillId,
+    ),
+    uniqueIndex("employee_current_skills_assessment_unique").on(table.assessmentId),
+  ],
+);
+
+export const skillImportPreviews = pgTable("skill_import_previews", {
+  id: uuid("id").primaryKey(),
+  actorAccountId: uuid("actor_account_id")
+    .notNull()
+    .references(() => userAccounts.id, { onDelete: "cascade" }),
+  rows: jsonb("rows").$type<Array<Record<string, unknown>>>().notNull(),
+  errors: jsonb("errors").$type<Array<Record<string, unknown>>>().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const userAccounts = pgTable(
   "user_accounts",

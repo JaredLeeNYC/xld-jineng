@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createApp } from "./app";
 import { createAuthService } from "./auth-service";
 import { createOrganizationService } from "./organization-service";
+import { createSkillService } from "./skill-service";
 
 const config = parseServerConfig(process.env);
 const database = createDatabase(config);
@@ -40,11 +41,17 @@ const organizationService = createOrganizationService({
   idSource: () => randomUUID(),
   now: () => new Date(),
 });
+const skillService = createSkillService({
+  repository: database.skillRepository,
+  idSource: () => randomUUID(),
+  now: () => new Date(),
+});
 
 const app = createApp({
   appUrl: config.appUrl,
   authService,
   organizationService,
+  skillService,
   readinessProbe: database.readinessProbe,
   secureCookie: config.appUrl.startsWith("https://"),
 }).listen({

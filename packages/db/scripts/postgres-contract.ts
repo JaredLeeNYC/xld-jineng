@@ -2,10 +2,13 @@ import { createApp } from "../../../apps/server/src/app";
 import { createAuthService } from "../../../apps/server/src/auth-service";
 import { createOrganizationService } from "../../../apps/server/src/organization-service";
 import { createEmployeeImportWorkbook } from "../../../apps/server/src/organization-excel";
+import { createSkillBaselineWorkbook } from "../../../apps/server/src/skill-excel";
+import { createSkillService } from "../../../apps/server/src/skill-service";
 import {
   createDatabaseReadinessProbe,
   createPostgresAuthRepository,
   createPostgresOrganizationRepository,
+  createPostgresSkillRepository,
   migrationsFolder,
 } from "../src";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -192,7 +195,12 @@ try {
     idSource: () => randomUUID(),
     now: () => new Date(),
   });
-  const app = createApp({ authService, organizationService, readinessProbe });
+  const skillService = createSkillService({
+    repository: createPostgresSkillRepository(contractPool),
+    idSource: () => randomUUID(),
+    now: () => new Date(),
+  });
+  const app = createApp({ authService, organizationService, skillService, readinessProbe });
   try {
     await authService.login({
       employeeNumber: "DEBUG-UNKNOWN",
@@ -649,6 +657,236 @@ try {
     throw new Error("已被任职履历引用的岗位仍可跨部门移动");
   }
 
+  const createdSkills = new Map<string, string>();
+  for (const definition of [
+    {
+      code: "S001",
+      name: "设备点检",
+      category: "professional",
+      reassessmentRequired: true,
+      validityMonths: 12,
+    },
+    { code: "S002", name: "安全作业", category: "core", reassessmentRequired: false },
+    {
+      code: "S003",
+      name: "旧设备操作",
+      category: "professional",
+      reassessmentRequired: true,
+      validityMonths: 1,
+    },
+    { code: "S004", name: "质量自检", category: "general", reassessmentRequired: false },
+    { code: "S099", name: "待停用技能", category: "general", reassessmentRequired: false },
+  ] as const) {
+    const response = await app.handle(
+      new Request("http://localhost/api/skills", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: roleLogins.get("hr_admin")!.cookie!,
+        },
+        body: JSON.stringify(definition),
+      }),
+    );
+    const body = (await response.json()) as { data?: { id: string; code: string } };
+    if (response.status !== 200 || !body.data)
+      throw new Error(`创建技能失败：${JSON.stringify(body)}`);
+    createdSkills.set(body.data.code, body.data.id);
+  }
+  const updateSkillResponse = await app.handle(
+    new Request(`http://localhost/api/skills/${createdSkills.get("S004")}`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        cookie: roleLogins.get("hr_admin")!.cookie!,
+      },
+      body: JSON.stringify({
+        name: "质量自主检查",
+        category: "general",
+        reassessmentRequired: false,
+      }),
+    }),
+  );
+  const deactivateSkillResponse = await app.handle(
+    new Request(`http://localhost/api/skills/${createdSkills.get("S099")}/deactivate`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  if (updateSkillResponse.status !== 200 || deactivateSkillResponse.status !== 200) {
+    throw new Error("技能编辑或停用合同失败");
+  }
+  for (const [code, level] of [
+    ["S001", 3],
+    ["S002", 2],
+    ["S003", 1],
+    ["S004", 2],
+  ] as const) {
+    const response = await app.handle(
+      new Request("http://localhost/api/position-skill-requirements", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          cookie: roleLogins.get("hr_admin")!.cookie!,
+        },
+        body: JSON.stringify({
+          positionId: assignment.positionId,
+          skillId: createdSkills.get(code),
+          requiredLevel: level,
+          required: code !== "S004",
+        }),
+      }),
+    );
+    if (response.status !== 200) throw new Error(`保存岗位技能要求失败：${await response.text()}`);
+  }
+  const copyPosition = await contractPool.query<{ id: string }>(
+    "select id from positions where code = 'P003'",
+  );
+  const copyResponse = await app.handle(
+    new Request("http://localhost/api/position-skill-requirements/copy", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: roleLogins.get("hr_admin")!.cookie! },
+      body: JSON.stringify({
+        sourcePositionId: assignment.positionId,
+        targetPositionId: copyPosition.rows[0]!.id,
+        levelDelta: -1,
+      }),
+    }),
+  );
+  const copyBody = (await copyResponse.json()) as { data?: { copied: number } };
+  if (copyResponse.status !== 200 || copyBody.data?.copied !== 4)
+    throw new Error(`复制岗位技能要求失败：${JSON.stringify(copyBody)}`);
+
+  const baselinePreview = async (
+    rows: Array<{
+      employeeNumber: string;
+      skillCode: string;
+      level: number;
+      assessedAt: string;
+      sourceReference: string;
+    }>,
+  ) => {
+    const form = new FormData();
+    form.set(
+      "file",
+      new File([await createSkillBaselineWorkbook(rows)], "skill-baseline.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const response = await app.handle(
+      new Request("http://localhost/api/skill-baselines/import/dry-run", {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+        body: form,
+      }),
+    );
+    return {
+      response,
+      body: (await response.json()) as {
+        data?: { previewId: string; validRows: number; errors: Array<{ code: string }> };
+      },
+    };
+  };
+  const invalidBaseline = await baselinePreview([
+    {
+      employeeNumber: "E1001",
+      skillCode: "UNKNOWN",
+      level: 5,
+      assessedAt: "2026-02-30",
+      sourceReference: "",
+    },
+  ]);
+  if (
+    invalidBaseline.response.status !== 200 ||
+    invalidBaseline.body.data?.validRows !== 0 ||
+    (invalidBaseline.body.data.errors.length ?? 0) < 3
+  )
+    throw new Error(`初始技能错误预检失败：${JSON.stringify(invalidBaseline.body)}`);
+  const today = new Date().toISOString().slice(0, 10);
+  const validBaseline = await baselinePreview([
+    {
+      employeeNumber: "E1001",
+      skillCode: "S001",
+      level: 2,
+      assessedAt: today,
+      sourceReference: "纸质档案 A-1",
+    },
+    {
+      employeeNumber: "E1001",
+      skillCode: "S003",
+      level: 1,
+      assessedAt: "2020-01-01",
+      sourceReference: "历史证书 B-1",
+    },
+    {
+      employeeNumber: "E1001",
+      skillCode: "S004",
+      level: 3,
+      assessedAt: today,
+      sourceReference: "纸质档案 C-1",
+    },
+  ]);
+  if (
+    validBaseline.response.status !== 200 ||
+    validBaseline.body.data?.validRows !== 3 ||
+    validBaseline.body.data.errors.length !== 0
+  )
+    throw new Error(`初始技能有效预检失败：${JSON.stringify(validBaseline.body)}`);
+  const baselineConfirm = await app.handle(
+    new Request(
+      `http://localhost/api/skill-baselines/import/${validBaseline.body.data.previewId}/confirm`,
+      { method: "POST", headers: { cookie: roleLogins.get("hr_admin")!.cookie! } },
+    ),
+  );
+  if (baselineConfirm.status !== 200)
+    throw new Error(`初始技能归档失败：${await baselineConfirm.text()}`);
+  const matrixResponse = await app.handle(
+    new Request("http://localhost/api/skill-matrix", {
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const matrixBody = (await matrixResponse.json()) as {
+    data?: Array<{ employeeNumber: string; skillCode: string; status: string }>;
+  };
+  const firstEmployeeStatuses = new Map(
+    matrixBody.data
+      ?.filter((row) => row.employeeNumber === "E1001")
+      .map((row) => [row.skillCode, row.status]),
+  );
+  if (
+    matrixResponse.status !== 200 ||
+    firstEmployeeStatuses.get("S001") !== "gap" ||
+    firstEmployeeStatuses.get("S002") !== "unassessed" ||
+    firstEmployeeStatuses.get("S003") !== "expired" ||
+    firstEmployeeStatuses.get("S004") !== "met"
+  )
+    throw new Error(`技能矩阵边界计算失败：${JSON.stringify([...firstEmployeeStatuses])}`);
+  const baselineCounts = await contractPool.query<{ assessments: number; current: number }>(
+    `select (select count(*)::integer from skill_assessments where employee_id = $1 and status = 'archived' and passed = true) as assessments, (select count(*)::integer from employee_current_skills where employee_id = $1) as current`,
+    [assignment.employeeId],
+  );
+  if (baselineCounts.rows[0]?.assessments !== 3 || baselineCounts.rows[0]?.current !== 3)
+    throw new Error(`基线评定来源指针不一致：${JSON.stringify(baselineCounts.rows[0])}`);
+  const baselineAssessment = await contractPool.query<{ id: string }>(
+    `select a.id from skill_assessments a join skills s on s.id = a.skill_id
+     where a.employee_id = $1 and s.code = 'S001'`,
+    [assignment.employeeId],
+  );
+  let mismatchedPointerRejected = false;
+  try {
+    await contractPool.query(
+      `insert into employee_current_skills (employee_id, skill_id, assessment_id)
+       values ($1, $2, $3)`,
+      [assignment.employeeId, createdSkills.get("S002"), baselineAssessment.rows[0]!.id],
+    );
+  } catch (error) {
+    mismatchedPointerRejected =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      ["23503", "23505"].includes(String(error.code));
+  }
+  if (!mismatchedPointerRejected) throw new Error("数据库未阻止当前技能指向其他员工或技能的评定");
+
   const managerEmployees = await app.handle(
     new Request("http://localhost/api/organization/employees", {
       headers: { cookie: successfulConcurrentCookie },
@@ -664,6 +902,20 @@ try {
     throw new Error(
       `部门主管读取到其他部门员工或请求失败：status=${managerEmployees.status} body=${JSON.stringify(managerEmployeesBody)}`,
     );
+  }
+  const managerMatrixResponse = await app.handle(
+    new Request("http://localhost/api/skill-matrix", {
+      headers: { cookie: successfulConcurrentCookie },
+    }),
+  );
+  const managerMatrixBody = (await managerMatrixResponse.json()) as {
+    data?: Array<{ departmentId: string }>;
+  };
+  if (
+    managerMatrixResponse.status !== 200 ||
+    managerMatrixBody.data?.some((row) => row.departmentId !== department.rows[0]!.id)
+  ) {
+    throw new Error("部门主管技能矩阵越出本部门范围");
   }
 
   const firstCredential = confirmBody.data.credentials[0]!;
@@ -696,6 +948,19 @@ try {
     importedSelfBody.data[0]?.employeeNumber !== firstCredential.employeeNumber
   ) {
     throw new Error("员工组织查询未限制为本人");
+  }
+  const employeeMatrixResponse = await app.handle(
+    new Request("http://localhost/api/skill-matrix", { headers: { cookie: importedCookie! } }),
+  );
+  const employeeMatrixBody = (await employeeMatrixResponse.json()) as {
+    data?: Array<{ employeeNumber: string }>;
+  };
+  if (
+    employeeMatrixResponse.status !== 200 ||
+    employeeMatrixBody.data?.length !== 4 ||
+    employeeMatrixBody.data.some((row) => row.employeeNumber !== firstCredential.employeeNumber)
+  ) {
+    throw new Error("员工技能矩阵未限制为本人岗位要求");
   }
 
   const exportResponse = await app.handle(
@@ -734,6 +999,14 @@ try {
   if ((organizationAudit.rows[0]?.count ?? 0) < 2) {
     throw new Error("组织导入与导出未写入审计日志");
   }
+  const skillAudit = await contractPool.query<{ count: number }>(
+    `select count(*)::integer as count from audit_logs
+     where action in ('skill.created', 'position_skill_requirement.saved',
+       'position_skill_requirements.copied', 'skill_baselines.imported')`,
+  );
+  if ((skillAudit.rows[0]?.count ?? 0) < 10) {
+    throw new Error("技能、岗位要求、复制与基线归档未完整写入审计日志");
+  }
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",
@@ -743,7 +1016,9 @@ try {
     throw new Error("就绪探针未识别迁移 hash 不一致");
   }
 
-  console.log("PostgreSQL 空库、认证事务、五角色越权、50 人组织导入及迁移 hash 合同测试通过");
+  console.log(
+    "PostgreSQL 空库、认证事务、五角色越权、50 人组织导入、技能基线与矩阵及迁移 hash 合同测试通过",
+  );
 } finally {
   if (contractPool) {
     await contractPool.end();

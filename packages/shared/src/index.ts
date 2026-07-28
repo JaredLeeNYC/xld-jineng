@@ -117,3 +117,4 @@ export const failure = (code: string, message: string): ApiError => ({
 });
 
 export * from "./organization";
+export * from "./skill";

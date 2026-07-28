@@ -43,6 +43,20 @@
       "when": 1785208806401,
       "tag": "0005_medical_hellfire_club",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785210185598,
+      "tag": "0006_dashing_sersi",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785210725241,
+      "tag": "0007_stormy_bruce_banner",
+      "breakpoints": true
     }
   ]
 }

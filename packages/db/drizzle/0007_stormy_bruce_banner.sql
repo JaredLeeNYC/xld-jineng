@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "skill_assessments_identity_unique" ON "skill_assessments" USING btree ("id","employee_id","skill_id");--> statement-breakpoint
+ALTER TABLE "employee_current_skills" ADD CONSTRAINT "employee_current_skills_assessment_identity_fk" FOREIGN KEY ("assessment_id","employee_id","skill_id") REFERENCES "public"."skill_assessments"("id","employee_id","skill_id") ON DELETE restrict ON UPDATE no action;

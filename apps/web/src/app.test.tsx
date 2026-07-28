@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { App, OrganizationPanel } from "./app";
+import { App, OrganizationPanel, SkillAdminPanel, SkillMatrixPanel } from "./app";
 
 describe("application shell", () => {
   test("exposes the phase-one factory management areas", () => {
@@ -89,5 +89,10 @@ describe("application shell", () => {
   test("organization list has an explicit loading state before data arrives", () => {
     const html = renderToStaticMarkup(<OrganizationPanel canManage />);
     expect(html).toContain("正在加载组织人员");
+  });
+
+  test("skill lists expose loading states before data arrives", () => {
+    expect(renderToStaticMarkup(<SkillAdminPanel />)).toContain("正在加载技能标准");
+    expect(renderToStaticMarkup(<SkillMatrixPanel personal />)).toContain("正在加载技能矩阵");
   });
 });

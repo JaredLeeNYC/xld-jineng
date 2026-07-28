@@ -7,6 +7,8 @@ import type { AuthHttpService } from "./auth-contract";
 import type { SessionView } from "./auth-contract";
 import { createEmployeeExport, parseEmployeeWorkbook } from "./organization-excel";
 import type { OrganizationService } from "./organization-service";
+import { parseSkillBaselineWorkbook } from "./skill-excel";
+import type { SkillService } from "./skill-service";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -137,6 +139,7 @@ type AppDependencies = {
   appUrl?: string;
   authService?: AuthHttpService;
   organizationService?: OrganizationService;
+  skillService?: SkillService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
 };
@@ -201,6 +204,7 @@ export const createApp = ({
   appUrl = "http://localhost:3101",
   authService,
   organizationService,
+  skillService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
 }: AppDependencies = {}) =>
@@ -986,6 +990,284 @@ export const createApp = ({
           active: t.Optional(t.String()),
           query: t.Optional(t.String({ maxLength: 100 })),
         }),
+      },
+    )
+    .get(
+      "/api/skills",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.listSkills(authenticated.actor, {
+          includeInactive: query.includeInactive === "true",
+          ...(query.query ? { query: query.query } : {}),
+        });
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({
+          includeInactive: t.Optional(t.String()),
+          query: t.Optional(t.String({ maxLength: 100 })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/skills",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.createSkill(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          code: t.String({ maxLength: 30 }),
+          name: t.String({ maxLength: 100 }),
+          category: t.Union([t.Literal("general"), t.Literal("professional"), t.Literal("core")]),
+          reassessmentRequired: t.Boolean(),
+          validityMonths: t.Optional(t.Integer({ minimum: 1, maximum: 120 })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .patch(
+      "/api/skills/:id",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.updateSkill(authenticated.actor, params.id, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          name: t.String({ maxLength: 100 }),
+          category: t.Union([t.Literal("general"), t.Literal("professional"), t.Literal("core")]),
+          reassessmentRequired: t.Boolean(),
+          validityMonths: t.Optional(t.Integer({ minimum: 1, maximum: 120 })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/skills/:id/deactivate",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.deactivateSkill(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/position-skill-requirements",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.listRequirements(authenticated.actor, query.positionId);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({ positionId: t.Optional(t.String({ format: "uuid" })) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .put(
+      "/api/position-skill-requirements",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.saveRequirement(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          positionId: t.String({ format: "uuid" }),
+          skillId: t.String({ format: "uuid" }),
+          requiredLevel: t.Integer({ minimum: 0, maximum: 4 }),
+          required: t.Boolean(),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/position-skill-requirements/copy",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.copyRequirements(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          sourcePositionId: t.String({ format: "uuid" }),
+          targetPositionId: t.String({ format: "uuid" }),
+          levelDelta: t.Integer({ minimum: -4, maximum: 4 }),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/skill-baselines/import/dry-run",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        let rows;
+        try {
+          rows = await parseSkillBaselineWorkbook(await body.file.arrayBuffer());
+        } catch (error) {
+          set.status = 400;
+          return failure("INVALID_WORKBOOK", `Excel 文件无法读取：${String(error)}`);
+        }
+        const result = await skillService.dryRunBaseline(authenticated.actor, rows);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({ file: t.File({ maxSize: "10m" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/skill-baselines/import/:previewId/confirm",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.confirmBaseline(authenticated.actor, params.previewId);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ previewId: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/skill-matrix",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("SKILL_SERVICE_UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.matrix(authenticated.actor, query);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({
+          departmentId: t.Optional(t.String({ format: "uuid" })),
+          positionId: t.Optional(t.String({ format: "uuid" })),
+          skillId: t.Optional(t.String({ format: "uuid" })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )
     .get(

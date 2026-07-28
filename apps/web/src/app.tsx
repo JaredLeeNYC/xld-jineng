@@ -1,7 +1,13 @@
 import {
   navigationForRole,
+  skillCategoryLabels,
+  skillLevelMeanings,
   type FixedRole,
   type NavigationItem,
+  type PositionSkillRequirementView,
+  type SkillCategory,
+  type SkillMatrixCell,
+  type SkillView,
 } from "@jineng/skill-matrix-shared";
 import {
   Bell,
@@ -1344,6 +1350,691 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
   );
 }
 
+export function SkillAdminPanel() {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | {
+        status: "ready";
+        skills: SkillView[];
+        positions: Position[];
+        requirements: PositionSkillRequirementView[];
+      }
+  >({ status: "loading" });
+  const [query, setQuery] = useState("");
+  const [notice, setNotice] = useState("");
+  const [skillForm, setSkillForm] = useState<{
+    code: string;
+    name: string;
+    category: SkillCategory;
+    reassessmentRequired: boolean;
+    validityMonths: number;
+  }>({
+    code: "",
+    name: "",
+    category: "professional",
+    reassessmentRequired: false,
+    validityMonths: 12,
+  });
+  const [requirement, setRequirement] = useState({
+    positionId: "",
+    skillId: "",
+    requiredLevel: 2,
+    required: true,
+  });
+  const [copyForm, setCopyForm] = useState({
+    sourcePositionId: "",
+    targetPositionId: "",
+    levelDelta: 0,
+  });
+  const [file, setFile] = useState<File>();
+  const [preview, setPreview] = useState<ImportPreview>();
+  const [editingSkill, setEditingSkill] = useState<SkillView>();
+
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const [skills, positions, requirements] = await Promise.all([
+        request<SkillView[]>("/api/skills?includeInactive=true"),
+        request<Position[]>("/api/organization/positions?includeInactive=true"),
+        request<PositionSkillRequirementView[]>("/api/position-skill-requirements"),
+      ]);
+      const failed = [skills.result, positions.result, requirements.result].find(
+        (item) => !item.ok,
+      );
+      if (failed && !failed.ok) {
+        setState({ status: "error", message: failed.error.message });
+        return;
+      }
+      if (!skills.result.ok || !positions.result.ok || !requirements.result.ok) return;
+      setState({
+        status: "ready",
+        skills: skills.result.data,
+        positions: positions.result.data,
+        requirements: requirements.result.data,
+      });
+      const firstPosition = positions.result.data.find((item) => item.active)?.id ?? "";
+      const firstSkill = skills.result.data.find((item) => item.active)?.id ?? "";
+      setRequirement((current) => ({
+        ...current,
+        positionId: current.positionId || firstPosition,
+        skillId: current.skillId || firstSkill,
+      }));
+      setCopyForm((current) => ({
+        ...current,
+        sourcePositionId: current.sourcePositionId || firstPosition,
+        targetPositionId: current.targetPositionId || firstPosition,
+      }));
+    } catch {
+      setState({ status: "error", message: "暂时无法连接技能服务" });
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const mutate = async (path: string, method: string, body?: unknown) => {
+    const { result } = await request(path, {
+      method,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    if (!result.ok) {
+      setNotice(result.error.message);
+      return false;
+    }
+    setNotice("保存成功");
+    await load();
+    return true;
+  };
+
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载技能标准…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" onClick={load} type="button">
+          重新加载
+        </button>
+      </section>
+    );
+  const filtered = state.skills.filter((item) =>
+    `${item.code} ${item.name} ${skillCategoryLabels[item.category]}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+  const activePositions = state.positions.filter((item) => item.active);
+  const activeSkills = state.skills.filter((item) => item.active);
+
+  return (
+    <div className="skill-page">
+      <section className="welcome">
+        <div>
+          <p className="eyebrow">技能标准</p>
+          <h1>岗位技能标准</h1>
+          <p>使用固定三级分类与 0–4 级定义，维护岗位达标口径。</p>
+        </div>
+      </section>
+      {notice && <p className="organization-notice">{notice}</p>}
+      <section className="skill-form-grid">
+        <form
+          className="panel compact-form"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (
+              await mutate("/api/skills", "POST", {
+                ...skillForm,
+                ...(skillForm.reassessmentRequired ? {} : { validityMonths: undefined }),
+              })
+            )
+              setSkillForm({
+                code: "",
+                name: "",
+                category: "professional",
+                reassessmentRequired: false,
+                validityMonths: 12,
+              });
+          }}
+        >
+          <h2>新增技能</h2>
+          <input
+            required
+            placeholder="技能编码"
+            value={skillForm.code}
+            onChange={(event) => setSkillForm({ ...skillForm, code: event.target.value })}
+          />
+          <input
+            required
+            placeholder="技能名称"
+            value={skillForm.name}
+            onChange={(event) => setSkillForm({ ...skillForm, name: event.target.value })}
+          />
+          <select
+            value={skillForm.category}
+            onChange={(event) =>
+              setSkillForm({ ...skillForm, category: event.target.value as SkillCategory })
+            }
+          >
+            {Object.entries(skillCategoryLabels).map(([value, label]) => (
+              <option value={value} key={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <label>
+            <input
+              type="checkbox"
+              checked={skillForm.reassessmentRequired}
+              onChange={(event) =>
+                setSkillForm({ ...skillForm, reassessmentRequired: event.target.checked })
+              }
+            />
+            需要复评
+          </label>
+          {skillForm.reassessmentRequired && (
+            <input
+              type="number"
+              min={1}
+              max={120}
+              value={skillForm.validityMonths}
+              onChange={(event) =>
+                setSkillForm({ ...skillForm, validityMonths: Number(event.target.value) })
+              }
+            />
+          )}
+          <button className="primary-button" type="submit">
+            保存技能
+          </button>
+        </form>
+        <form
+          className="panel compact-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void mutate("/api/position-skill-requirements", "PUT", requirement);
+          }}
+        >
+          <h2>岗位要求</h2>
+          <select
+            required
+            value={requirement.positionId}
+            onChange={(event) => setRequirement({ ...requirement, positionId: event.target.value })}
+          >
+            {activePositions.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.code} · {item.name}
+              </option>
+            ))}
+          </select>
+          <select
+            required
+            value={requirement.skillId}
+            onChange={(event) => setRequirement({ ...requirement, skillId: event.target.value })}
+          >
+            {activeSkills.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.code} · {item.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={requirement.requiredLevel}
+            onChange={(event) =>
+              setRequirement({ ...requirement, requiredLevel: Number(event.target.value) })
+            }
+          >
+            {Object.entries(skillLevelMeanings).map(([level, meaning]) => (
+              <option key={level} value={level}>
+                {level} · {meaning}
+              </option>
+            ))}
+          </select>
+          <label>
+            <input
+              type="checkbox"
+              checked={requirement.required}
+              onChange={(event) =>
+                setRequirement({ ...requirement, required: event.target.checked })
+              }
+            />
+            必备技能
+          </label>
+          <button className="primary-button" type="submit">
+            保存要求
+          </button>
+        </form>
+        <form
+          className="panel compact-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void mutate("/api/position-skill-requirements/copy", "POST", copyForm);
+          }}
+        >
+          <h2>复制岗位要求</h2>
+          <select
+            value={copyForm.sourcePositionId}
+            onChange={(event) => setCopyForm({ ...copyForm, sourcePositionId: event.target.value })}
+          >
+            {activePositions.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={copyForm.targetPositionId}
+            onChange={(event) => setCopyForm({ ...copyForm, targetPositionId: event.target.value })}
+          >
+            {activePositions.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <label>
+            统一调整等级
+            <input
+              type="number"
+              min={-4}
+              max={4}
+              value={copyForm.levelDelta}
+              onChange={(event) =>
+                setCopyForm({ ...copyForm, levelDelta: Number(event.target.value) })
+              }
+            />
+          </label>
+          <button className="primary-button" type="submit">
+            复制并调整
+          </button>
+        </form>
+      </section>
+      <section className="panel skill-catalog">
+        <div className="panel-heading">
+          <div>
+            <h2>技能目录</h2>
+            <p>共 {filtered.length} 项</p>
+          </div>
+          <input
+            className="table-filter"
+            placeholder="筛选编码、名称或分类"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        {filtered.length === 0 ? (
+          <p className="list-state">当前筛选暂无技能</p>
+        ) : (
+          <>
+            <div className="skill-table-wrap">
+              <table className="skill-table">
+                <thead>
+                  <tr>
+                    <th>编码 / 名称</th>
+                    <th>分类</th>
+                    <th>复评</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((skill) => (
+                    <tr key={skill.id}>
+                      <td>
+                        {skill.code} · {skill.name}
+                      </td>
+                      <td>{skillCategoryLabels[skill.category]}</td>
+                      <td>
+                        {skill.reassessmentRequired ? `${skill.validityMonths} 个月` : "无需"}
+                      </td>
+                      <td>{skill.active ? "启用" : "停用"}</td>
+                      <td>
+                        {skill.active && (
+                          <>
+                            <button type="button" onClick={() => setEditingSkill(skill)}>
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void mutate(`/api/skills/${skill.id}/deactivate`, "POST")
+                              }
+                            >
+                              停用
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="skill-cards">
+              {filtered.map((skill) => (
+                <article className="skill-card" key={skill.id}>
+                  <header>
+                    <strong>{skill.name}</strong>
+                    <span>{skill.code}</span>
+                  </header>
+                  <p>
+                    {skillCategoryLabels[skill.category]} ·{" "}
+                    {skill.reassessmentRequired ? `${skill.validityMonths} 个月复评` : "无需复评"} ·{" "}
+                    {skill.active ? "启用" : "停用"}
+                  </p>
+                  {skill.active && (
+                    <footer>
+                      <button type="button" onClick={() => setEditingSkill(skill)}>
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void mutate(`/api/skills/${skill.id}/deactivate`, "POST")}
+                      >
+                        停用
+                      </button>
+                    </footer>
+                  )}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+      {editingSkill && (
+        <form
+          className="panel inline-editor"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (
+              await mutate(`/api/skills/${editingSkill.id}`, "PATCH", {
+                name: editingSkill.name,
+                category: editingSkill.category,
+                reassessmentRequired: editingSkill.reassessmentRequired,
+                ...(editingSkill.reassessmentRequired
+                  ? { validityMonths: editingSkill.validityMonths ?? 12 }
+                  : {}),
+              })
+            )
+              setEditingSkill(undefined);
+          }}
+        >
+          <strong>编辑技能 {editingSkill.code}</strong>
+          <input
+            value={editingSkill.name}
+            onChange={(event) => setEditingSkill({ ...editingSkill, name: event.target.value })}
+          />
+          <select
+            value={editingSkill.category}
+            onChange={(event) =>
+              setEditingSkill({ ...editingSkill, category: event.target.value as SkillCategory })
+            }
+          >
+            {Object.entries(skillCategoryLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <label>
+            <input
+              type="checkbox"
+              checked={editingSkill.reassessmentRequired}
+              onChange={(event) =>
+                setEditingSkill({ ...editingSkill, reassessmentRequired: event.target.checked })
+              }
+            />
+            需要复评
+          </label>
+          {editingSkill.reassessmentRequired && (
+            <input
+              type="number"
+              min={1}
+              max={120}
+              value={editingSkill.validityMonths ?? 12}
+              onChange={(event) =>
+                setEditingSkill({ ...editingSkill, validityMonths: Number(event.target.value) })
+              }
+            />
+          )}
+          <button className="primary-button" type="submit">
+            保存
+          </button>
+          <button type="button" onClick={() => setEditingSkill(undefined)}>
+            取消
+          </button>
+        </form>
+      )}
+      <section className="panel requirement-list">
+        <div className="panel-heading">
+          <div>
+            <h2>当前岗位要求</h2>
+            <p>{state.requirements.length} 条唯一要求</p>
+          </div>
+        </div>
+        {state.requirements.length === 0 ? (
+          <p className="list-state">尚未配置岗位要求</p>
+        ) : (
+          <div className="requirement-cards">
+            {state.requirements.map((item) => (
+              <article key={item.id}>
+                <strong>
+                  {item.positionName} · {item.skillName}
+                </strong>
+                <span>
+                  要求 {item.requiredLevel} 级 · {item.required ? "必备" : "非必备"}
+                </span>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+      <form
+        className="panel import-panel"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!file) return;
+          const body = new FormData();
+          body.set("file", file);
+          const { result } = await request<ImportPreview>("/api/skill-baselines/import/dry-run", {
+            method: "POST",
+            body,
+          });
+          if (result.ok) setPreview(result.data);
+          else setNotice(result.error.message);
+        }}
+      >
+        <div>
+          <h2>初始技能 Excel</h2>
+          <p>每行必须包含档案来源，预检通过后才归档。</p>
+        </div>
+        <input type="file" accept=".xlsx" onChange={(event) => setFile(event.target.files?.[0])} />
+        <button className="primary-button" disabled={!file} type="submit">
+          预检基线
+        </button>
+        {preview && (
+          <div className="import-preview">
+            <strong>
+              {preview.totalRows} 行，{preview.validRows} 行有效
+            </strong>
+            {preview.errors.length === 0 ? (
+              <button
+                className="primary-button"
+                type="button"
+                onClick={async () => {
+                  const { result } = await request<{ imported: number }>(
+                    `/api/skill-baselines/import/${preview.previewId}/confirm`,
+                    { method: "POST" },
+                  );
+                  if (result.ok) {
+                    setNotice(`已归档 ${result.data.imported} 条初始技能`);
+                    setPreview(undefined);
+                  } else setNotice(result.error.message);
+                }}
+              >
+                确认归档
+              </button>
+            ) : (
+              <ul>
+                {preview.errors.slice(0, 20).map((item) => (
+                  <li key={`${item.rowNumber}-${item.field}`}>
+                    第 {item.rowNumber} 行：{item.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </form>
+    </div>
+  );
+}
+
+export function SkillMatrixPanel({ personal }: { personal: boolean }) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | { status: "ready"; rows: SkillMatrixCell[] }
+  >({ status: "loading" });
+  const [query, setQuery] = useState("");
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const { result } = await request<SkillMatrixCell[]>("/api/skill-matrix");
+      setState(
+        result.ok
+          ? { status: "ready", rows: result.data }
+          : { status: "error", message: result.error.message },
+      );
+    } catch {
+      setState({ status: "error", message: "暂时无法加载技能矩阵" });
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载技能矩阵…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" type="button" onClick={load}>
+          重新加载
+        </button>
+      </section>
+    );
+  const rows = state.rows.filter((item) =>
+    `${item.employeeNumber} ${item.employeeName} ${item.departmentName} ${item.positionName} ${item.skillName}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+  const employees = [...new Map(rows.map((item) => [item.employeeId, item])).values()];
+  const skills = [...new Map(rows.map((item) => [item.skillId, item])).values()];
+  const statusLabel = {
+    met: "达标",
+    gap: "有差距",
+    unassessed: "未评定",
+    expired: "已过期",
+  } as const;
+  return (
+    <div className="matrix-page">
+      <section className="welcome">
+        <div>
+          <p className="eyebrow">{personal ? "我的技能" : "技能矩阵"}</p>
+          <h1>{personal ? "岗位技能差距" : "部门技能热力矩阵"}</h1>
+          <p>未评定、过期或作废均按不达标处理。</p>
+        </div>
+      </section>
+      <section className="panel matrix-filter">
+        <input
+          className="table-filter"
+          placeholder="筛选员工、岗位或技能"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </section>
+      {rows.length === 0 ? (
+        <section className="panel list-state">当前范围暂无岗位技能要求</section>
+      ) : (
+        <section className="panel heatmap-panel">
+          <div className="heatmap-wrap">
+            <table className="heatmap">
+              <thead>
+                <tr>
+                  <th>员工 / 岗位</th>
+                  {skills.map((skill) => (
+                    <th key={skill.skillId}>
+                      {skill.skillName}
+                      <small>要求 {skill.requiredLevel}</small>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map((employee) => (
+                  <tr key={employee.employeeId}>
+                    <th>
+                      {employee.employeeName}
+                      <small>{employee.positionName}</small>
+                    </th>
+                    {skills.map((skill) => {
+                      const cell = rows.find(
+                        (item) =>
+                          item.employeeId === employee.employeeId && item.skillId === skill.skillId,
+                      );
+                      return (
+                        <td className={`heat-${cell?.status ?? "none"}`} key={skill.skillId}>
+                          {cell ? (
+                            <>
+                              <strong>
+                                {cell.currentLevel ?? "—"} / {cell.requiredLevel}
+                              </strong>
+                              <small>{statusLabel[cell.status]}</small>
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="matrix-cards">
+            {employees.map((employee) => (
+              <article className="matrix-card" key={employee.employeeId}>
+                <header>
+                  <strong>{employee.employeeName}</strong>
+                  <span>{employee.positionName}</span>
+                </header>
+                {rows
+                  .filter((item) => item.employeeId === employee.employeeId)
+                  .map((cell) => (
+                    <div className={`matrix-skill heat-${cell.status}`} key={cell.skillId}>
+                      <span>
+                        {cell.skillName}
+                        {cell.required ? " · 必备" : ""}
+                      </span>
+                      <strong>
+                        {cell.currentLevel ?? "—"} / {cell.requiredLevel} ·{" "}
+                        {statusLabel[cell.status]}
+                      </strong>
+                      <small>
+                        {cell.validUntil ? `有效至 ${cell.validUntil.slice(0, 10)}` : "长期有效"}
+                        {cell.gap > 0 ? ` · 差 ${cell.gap} 级` : ""}
+                      </small>
+                    </div>
+                  ))}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session: Session }) {
   const navigation = navigationForRole(session.role);
   const [activeNavigation, setActiveNavigation] = useState(navigation[0]?.id ?? "dashboard");
@@ -1428,6 +2119,10 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
           activeNavigation === "employees" ||
           activeNavigation === "profile" ? (
             <OrganizationPanel canManage={session.role === "hr_admin"} />
+          ) : activeNavigation === "skills" ? (
+            <SkillAdminPanel />
+          ) : activeNavigation === "matrix" || activeNavigation === "my-skills" ? (
+            <SkillMatrixPanel personal={session.role === "employee"} />
           ) : (
             <>
               <section className="welcome">

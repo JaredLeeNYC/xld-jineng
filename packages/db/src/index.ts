@@ -5,6 +5,7 @@ import { createDatabaseReadinessProbe } from "./readiness";
 import * as schema from "./schema";
 import { createPostgresAuthRepository } from "./auth-repository";
 import { createPostgresOrganizationRepository } from "./organization-repository";
+import { createPostgresSkillRepository } from "./skill-repository";
 
 export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
   const pool = new Pool({ connectionString: config.databaseUrl });
@@ -14,10 +15,12 @@ export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
   });
   const authRepository = createPostgresAuthRepository(pool);
   const organizationRepository = createPostgresOrganizationRepository(pool);
+  const skillRepository = createPostgresSkillRepository(pool);
 
   return {
     authRepository,
     organizationRepository,
+    skillRepository,
     db,
     pool,
     readinessProbe,
@@ -29,3 +32,4 @@ export * from "./readiness";
 export * from "./schema";
 export * from "./auth-repository";
 export * from "./organization-repository";
+export * from "./skill-repository";
