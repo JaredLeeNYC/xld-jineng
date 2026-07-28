@@ -38,3 +38,5 @@
 - `ACCEPTANCE_EVIDENCE_DIR=/var/lib/skill-matrix/acceptance-evidence`：仓库之外、受限访问的证据目录
 
 脚本会真实发送一条测试消息，使用无效 key 验证失败与人工重试，核对对应审计和员工站内通知，并自动停用本次创建的两个临时通道。输出 JSON 不含密码、Cookie、Webhook URL、key、通知正文或失败详情。运行后仍须由现场人员核对群内消息，将接收截图、审批单号和 JSON 路径登记到验收清单；脚本成功不能代替人工接收确认。结束后立即清除当前 shell 中的全部 `ACCEPTANCE_*` 变量并按安全制度处理账号密码。
+
+连续七天试运行结束后，将 `docs/go-live/final-acceptance.example.json` 复制到仓库外受限证据目录并填写真实值，再运行 `bun run acceptance:verify -- /绝对路径/final-acceptance.json`。校验器要求 50 人、3 岗位、五角色链路证据、群内人工实收截图、失败重试审计、指定站内通知、双恢复读回、完整门禁、连续七个自然日且每天零阻塞问题；同时拒绝把密码、Cookie、令牌或完整 Webhook 写入记录。只有该命令通过且审批人核对证据原件后，才能将 Ticket 10 标记为 `resolved`。

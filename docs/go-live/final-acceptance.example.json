@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "待填写",
+  "acceptanceDate": "待填写",
+  "owner": "待填写",
+  "conclusion": "passed",
+  "initialization": {
+    "employeeCount": 50,
+    "positionCount": 3,
+    "duplicateEmployeeNumbers": 0,
+    "fiveRoleChainEvidenceRef": "待填写"
+  },
+  "wecom": {
+    "sentAt": "待填写",
+    "channelName": "待填写",
+    "deliveryId": "待填写",
+    "receiptConfirmed": false,
+    "receiptScreenshotRef": "待填写",
+    "controlledFailureAttempts": 0,
+    "retryAuditEvidenceRef": "待填写"
+  },
+  "inAppNotificationTypes": [
+    "training_published",
+    "assessment_archived"
+  ],
+  "recovery": {
+    "databaseEvidenceRef": "待填写",
+    "materialEvidenceRef": "待填写",
+    "loginAndDownloadEvidenceRef": "待填写"
+  },
+  "gates": {
+    "bunTest": false,
+    "bunCheck": false,
+    "webBuild": false,
+    "migrationHash": "待填写"
+  },
+  "trialDays": [
+    {
+      "date": "待填写",
+      "activeEmployeeCount": 0,
+      "trainingSubmittedOrConfirmed": 0,
+      "assessmentsArchived": 0,
+      "notificationFailures": 0,
+      "notificationRetries": 0,
+      "blockingIssueCount": 0,
+      "owner": "待填写",
+      "evidenceRef": "待填写"
+    },
+    {
+      "date": "待填写",
+      "activeEmployeeCount": 0,
+      "trainingSubmittedOrConfirmed": 0,
+      "assessmentsArchived": 0,
+      "notificationFailures": 0,
+      "notificationRetries": 0,
+      "blockingIssueCount": 0,
+      "owner": "待填写",
+      "evidenceRef": "待填写"
+    },
+    {
+      "date": "待填写",
+      "activeEmployeeCount": 0,
+      "trainingSubmittedOrConfirmed": 0,
+      "assessmentsArchived": 0,
+      "notificationFailures": 0,
+      "notificationRetries": 0,
+      "blockingIssueCount": 0,
+      "owner": "待填写",
+      "evidenceRef": "待填写"
+    },
+    {
+      "date": "待填写",
+      "activeEmployeeCount": 0,
+      "trainingSubmittedOrConfirmed": 0,
+      "assessmentsArchived": 0,
+      "notificationFailures": 0,
+      "notificationRetries": 0,
+      "blockingIssueCount": 0,
+      "owner": "待填写",
+      "evidenceRef": "待填写"
+    },
+    {
+      "date": "待填写",
+      "activeEmployeeCount": 0,
+      "trainingSubmittedOrConfirmed": 0,
+      "assessmentsArchived": 0,
+      "notificationFailures": 0,
+      "notificationRetries": 0,
+      "blockingIssueCount": 0,
+      "owner": "待填写",
+      "evidenceRef": "待填写"
+    },
+    {
+      "date": "待填写",
+      "activeEmployeeCount": 0,
+      "trainingSubmittedOrConfirmed": 0,
+      "assessmentsArchived": 0,
+      "notificationFailures": 0,
+      "notificationRetries": 0,
+      "blockingIssueCount": 0,
+      "owner": "待填写",
+      "evidenceRef": "待填写"
+    },
+    {
+      "date": "待填写",
+      "activeEmployeeCount": 0,
+      "trainingSubmittedOrConfirmed": 0,
+      "assessmentsArchived": 0,
+      "notificationFailures": 0,
+      "notificationRetries": 0,
+      "blockingIssueCount": 0,
+      "owner": "待填写",
+      "evidenceRef": "待填写"
+    }
+  ],
+  "unresolvedBlockingIssues": []
+}

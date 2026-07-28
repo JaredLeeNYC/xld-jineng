@@ -154,6 +154,19 @@ for (const requiredPart of [
   }
 }
 
+const finalAcceptanceVerifier = await Bun.file("scripts/verify-go-live-acceptance.ts").text();
+for (const requiredPart of [
+  "receiptConfirmed !== true",
+  "trialDays.length !== 7",
+  "blockingIssueCount !== 0",
+  "unresolvedBlockingIssues.length > 0",
+  "验收 JSON 必须位于代码仓库之外",
+]) {
+  if (!finalAcceptanceVerifier.includes(requiredPart)) {
+    fail(`最终验收校验器缺少完成约束：${requiredPart}`);
+  }
+}
+
 const bash =
   process.platform === "win32" && (await Bun.file("C:/Program Files/Git/bin/bash.exe").exists())
     ? "C:/Program Files/Git/bin/bash.exe"
