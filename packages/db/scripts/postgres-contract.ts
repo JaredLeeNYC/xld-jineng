@@ -890,6 +890,21 @@ try {
      returning id`,
     [assignment.employeeId, createdSkills.get("S002")],
   );
+  let forgedValidMarkerRejected = false;
+  try {
+    await contractPool.query(
+      `insert into valid_skill_assessments (assessment_id, employee_id, skill_id)
+       values ($1, $2, $3)`,
+      [
+        invalidAssessment.rows[0]!.id,
+        assignment.employeeId,
+        createdSkills.get("S002"),
+      ],
+    );
+  } catch (error) {
+    forgedValidMarkerRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
   let invalidAssessmentPointerRejected = false;
   try {
     await contractPool.query(
@@ -901,7 +916,11 @@ try {
     invalidAssessmentPointerRejected =
       typeof error === "object" && error !== null && "code" in error && error.code === "23503";
   }
-  if (!currentAssessmentInvalidationRejected || !invalidAssessmentPointerRejected) {
+  if (
+    !currentAssessmentInvalidationRejected ||
+    !forgedValidMarkerRejected ||
+    !invalidAssessmentPointerRejected
+  ) {
     throw new Error("数据库未强制当前技能指向通过、归档且未作废的评定");
   }
   const concurrentEmployee = await contractPool.query<{ id: string }>(

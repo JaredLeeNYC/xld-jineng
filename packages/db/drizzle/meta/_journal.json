@@ -64,6 +64,13 @@
       "when": 1785211552013,
       "tag": "0008_amusing_kid_colt",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785211848170,
+      "tag": "0009_protect_valid_skill_markers",
+      "breakpoints": true
     }
   ]
 }
