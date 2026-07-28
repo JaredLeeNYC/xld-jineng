@@ -16,6 +16,7 @@ import {
   type TrainingPlanView,
   type TrainingScopeType,
   type TrainingTaskView,
+  type DashboardMetrics,
 } from "@jineng/skill-matrix-shared";
 import {
   Bell,
@@ -1921,6 +1922,315 @@ export function SkillAdminPanel() {
           </div>
         )}
       </form>
+    </div>
+  );
+}
+
+type ReportData = {
+  generatedAt: string;
+  metrics: DashboardMetrics;
+  rows: SkillMatrixCell[];
+};
+
+const percentage = (value: number | null) =>
+  value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+
+const emptyReportFilters = {
+  departmentId: "",
+  positionId: "",
+  employeeId: "",
+  skillId: "",
+  status: "",
+  validity: "",
+  dateFrom: "",
+  dateTo: "",
+  sortBy: "employeeNumber",
+  sortOrder: "asc",
+};
+
+export const reportParameters = (values: typeof emptyReportFilters) =>
+  new URLSearchParams(
+    Object.entries(values).filter((entry): entry is [string, string] => Boolean(entry[1])),
+  );
+
+export function ReportDashboardPanel({
+  initialReport,
+  initialFilters = emptyReportFilters,
+}: {
+  initialReport?: ReportData;
+  initialFilters?: typeof emptyReportFilters;
+} = {}) {
+  const [filters, setFilters] = useState(initialFilters);
+  const [appliedFilters, setAppliedFilters] = useState(initialFilters);
+  const [options, setOptions] = useState<SkillMatrixCell[]>(initialReport?.rows ?? []);
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | { status: "ready"; report: ReportData }
+  >(initialReport ? { status: "ready", report: initialReport } : { status: "loading" });
+  const load = async (values = filters, initial = false) => {
+    setState({ status: "loading" });
+    try {
+      const parameters = reportParameters(values);
+      const { result } = await request<ReportData>(`/api/reports/dashboard?${parameters}`);
+      if (!result.ok) {
+        setState({ status: "error", message: result.error.message });
+        return;
+      }
+      if (initial) setOptions(result.data.rows);
+      setAppliedFilters(values);
+      setState({ status: "ready", report: result.data });
+    } catch {
+      setState({ status: "error", message: "暂时无法加载管理报表" });
+    }
+  };
+  useEffect(() => {
+    if (!initialReport) void load(emptyReportFilters, true);
+  }, []);
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载 Dashboard 与技能矩阵…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" type="button" onClick={() => void load()}>
+          重新加载
+        </button>
+      </section>
+    );
+  const report = state.report;
+  const unique = (field: "departmentId" | "positionId" | "employeeId" | "skillId") => [
+    ...new Map(options.map((row) => [row[field], row])).values(),
+  ];
+  const statusLabel = {
+    met: "达标",
+    gap: "有差距",
+    unassessed: "未评定",
+    expired: "已过期",
+  } as const;
+  const validityLabel = {
+    effective: "有效",
+    expiring_soon: "30 天内到期",
+    expired: "已过期",
+  } as const;
+  const exportUrl = `/api/reports/export.xlsx?${reportParameters(appliedFilters)}`;
+  const cards = [
+    {
+      label: "岗位技能达标率",
+      value: percentage(report.metrics.positionSkillCompliance.rate),
+      note: `${report.metrics.positionSkillCompliance.numerator} / ${report.metrics.positionSkillCompliance.denominator}`,
+      tone: "green",
+    },
+    {
+      label: "部门技能覆盖率",
+      value: percentage(report.metrics.departmentSkillCoverage.rate),
+      note: `${report.metrics.departmentSkillCoverage.numerator} / ${report.metrics.departmentSkillCoverage.denominator}`,
+      tone: "blue",
+    },
+    {
+      label: "培训任务完成率",
+      value: percentage(report.metrics.trainingCompletion.rate),
+      note: `${report.metrics.trainingCompletion.numerator} / ${report.metrics.trainingCompletion.denominator}`,
+      tone: "amber",
+    },
+    {
+      label: "技能到期数量",
+      value: String(report.metrics.expiredCount + report.metrics.expiringSoonCount),
+      note: `30 天内 ${report.metrics.expiringSoonCount} · 已到期 ${report.metrics.expiredCount}`,
+      tone: "red",
+    },
+  ];
+  return (
+    <div className="matrix-page">
+      <section className="welcome">
+        <div>
+          <p className="eyebrow">能力风险 Dashboard</p>
+          <h1>技能指标与矩阵下钻</h1>
+          <p>指标、明细与 Excel 使用同一筛选和计算口径。</p>
+        </div>
+        <a className="primary-button export-link" href={exportUrl}>
+          导出当前 Excel
+        </a>
+      </section>
+      <section className="stat-grid" aria-label="四类核心指标">
+        {cards.map((card) => (
+          <article className="stat-card" key={card.label}>
+            <div className={`metric-icon ${card.tone}`}>
+              <TrendingUp size={18} />
+            </div>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+            <small>{card.note}</small>
+          </article>
+        ))}
+      </section>
+      <section className="panel matrix-filter" aria-label="报表筛选">
+        <select
+          value={filters.departmentId}
+          onChange={(event) => setFilters({ ...filters, departmentId: event.target.value })}
+        >
+          <option value="">全部部门</option>
+          {unique("departmentId").map((row) => (
+            <option key={row.departmentId} value={row.departmentId}>
+              {row.departmentName}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.positionId}
+          onChange={(event) => setFilters({ ...filters, positionId: event.target.value })}
+        >
+          <option value="">全部岗位</option>
+          {unique("positionId").map((row) => (
+            <option key={row.positionId} value={row.positionId}>
+              {row.positionName}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.employeeId}
+          onChange={(event) => setFilters({ ...filters, employeeId: event.target.value })}
+        >
+          <option value="">全部员工</option>
+          {unique("employeeId").map((row) => (
+            <option key={row.employeeId} value={row.employeeId}>
+              {row.employeeNumber} · {row.employeeName}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.skillId}
+          onChange={(event) => setFilters({ ...filters, skillId: event.target.value })}
+        >
+          <option value="">全部技能</option>
+          {unique("skillId").map((row) => (
+            <option key={row.skillId} value={row.skillId}>
+              {row.skillName}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.status}
+          onChange={(event) => setFilters({ ...filters, status: event.target.value })}
+        >
+          <option value="">全部达标状态</option>
+          <option value="met">达标</option>
+          <option value="gap">有差距</option>
+          <option value="unassessed">未评定</option>
+          <option value="expired">已过期</option>
+        </select>
+        <select
+          value={filters.validity}
+          onChange={(event) => setFilters({ ...filters, validity: event.target.value })}
+        >
+          <option value="">全部有效期</option>
+          <option value="effective">有效</option>
+          <option value="expiring_soon">30 天内到期</option>
+          <option value="expired">已过期</option>
+        </select>
+        <input
+          aria-label="统计开始日期"
+          type="date"
+          value={filters.dateFrom}
+          onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })}
+        />
+        <input
+          aria-label="统计结束日期"
+          type="date"
+          value={filters.dateTo}
+          onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}
+        />
+        <select
+          value={filters.sortBy}
+          onChange={(event) => setFilters({ ...filters, sortBy: event.target.value })}
+        >
+          <option value="employeeNumber">按工号</option>
+          <option value="departmentName">按部门</option>
+          <option value="positionName">按岗位</option>
+          <option value="skillCode">按技能</option>
+          <option value="status">按状态</option>
+        </select>
+        <select
+          value={filters.sortOrder}
+          onChange={(event) => setFilters({ ...filters, sortOrder: event.target.value })}
+        >
+          <option value="asc">升序</option>
+          <option value="desc">降序</option>
+        </select>
+        <button className="primary-button" type="button" onClick={() => void load()}>
+          应用筛选
+        </button>
+      </section>
+      {report.rows.length === 0 ? (
+        <section className="panel list-state">当前筛选暂无技能矩阵数据</section>
+      ) : (
+        <section className="panel heatmap-panel">
+          <div className="heatmap-wrap">
+            <table className="heatmap">
+              <thead>
+                <tr>
+                  <th>员工</th>
+                  <th>部门 / 岗位</th>
+                  <th>技能</th>
+                  <th>等级</th>
+                  <th>达标</th>
+                  <th>有效期</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.rows.map((row) => (
+                  <tr key={`${row.employeeId}:${row.skillId}`}>
+                    <td>
+                      {row.employeeNumber} · {row.employeeName}
+                    </td>
+                    <td>
+                      {row.departmentName} · {row.positionName}
+                    </td>
+                    <td>
+                      {row.skillCode} · {row.skillName}
+                      {row.required ? " · 必备" : ""}
+                    </td>
+                    <td>
+                      {row.currentLevel ?? "—"} / {row.requiredLevel}
+                    </td>
+                    <td>{statusLabel[row.status]}</td>
+                    <td>
+                      {row.validityStatus ? validityLabel[row.validityStatus] : "未评定"}
+                      {row.validUntil ? ` · ${row.validUntil.slice(0, 10)}` : ""}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="matrix-cards">
+            {report.rows.map((row) => (
+              <article className="matrix-card" key={`${row.employeeId}:${row.skillId}`}>
+                <header>
+                  <strong>{row.employeeName}</strong>
+                  <span>
+                    {row.departmentName} · {row.positionName}
+                  </span>
+                </header>
+                <div className={`matrix-skill heat-${row.status}`}>
+                  <span>
+                    {row.skillName}
+                    {row.required ? " · 必备" : ""}
+                  </span>
+                  <strong>
+                    {row.currentLevel ?? "—"} / {row.requiredLevel} · {statusLabel[row.status]}
+                  </strong>
+                  <small>
+                    {row.validityStatus ? validityLabel[row.validityStatus] : "未评定"}
+                    {row.validUntil ? ` · ${row.validUntil.slice(0, 10)}` : ""}
+                  </small>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      <p className="muted-note">生成时间：{new Date(report.generatedAt).toLocaleString("zh-CN")}</p>
     </div>
   );
 }
@@ -3851,8 +4161,10 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             <OrganizationPanel canManage={session.role === "hr_admin"} />
           ) : activeNavigation === "skills" ? (
             <SkillAdminPanel />
-          ) : activeNavigation === "matrix" || activeNavigation === "my-skills" ? (
-            <SkillMatrixPanel personal={session.role === "employee"} />
+          ) : activeNavigation === "matrix" || activeNavigation === "reports" ? (
+            <ReportDashboardPanel />
+          ) : activeNavigation === "my-skills" ? (
+            <SkillMatrixPanel personal />
           ) : activeNavigation === "training" || activeNavigation === "my-training" ? (
             <div className="training-workspace">
               <TrainingPlanPanel session={session} />
@@ -3864,6 +4176,8 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             <NotificationPanel />
           ) : activeNavigation === "settings" ? (
             <WebhookSettingsPanel />
+          ) : activeNavigation === "dashboard" && isManagement ? (
+            <ReportDashboardPanel />
           ) : (
             <>
               <section className="welcome">

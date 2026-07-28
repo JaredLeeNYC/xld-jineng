@@ -10,6 +10,7 @@ import { createFilesystemMaterialStorage } from "./material-storage";
 import { createTrainingService } from "./training-service";
 import { createAssessmentService } from "./assessment-service";
 import { createNotificationService } from "./notification-service";
+import { createReportService } from "./report-service";
 
 const config = parseServerConfig(process.env);
 const database = createDatabase(config);
@@ -72,6 +73,10 @@ const notificationService = createNotificationService({
   repository: database.notificationRepository,
   now: () => new Date(),
 });
+const reportService = createReportService({
+  repository: database.reportRepository,
+  now: () => new Date(),
+});
 
 const app = createApp({
   appUrl: config.appUrl,
@@ -82,6 +87,7 @@ const app = createApp({
   trainingService,
   assessmentService,
   notificationService,
+  reportService,
   readinessProbe: database.readinessProbe,
   secureCookie: config.appUrl.startsWith("https://"),
 }).listen({

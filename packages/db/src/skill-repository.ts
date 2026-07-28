@@ -346,14 +346,17 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
     });
   },
 
-  async listMatrix(input: {
-    departmentId?: string;
-    employeeId?: string;
-    positionId?: string;
-    skillId?: string;
-    now: Date;
-  }): Promise<SkillMatrixCell[]> {
-    const result = await pool.query<{
+  async listMatrix(
+    input: {
+      departmentId?: string;
+      employeeId?: string;
+      positionId?: string;
+      skillId?: string;
+      now: Date;
+    },
+    queryable: Pick<Pool, "query"> = pool,
+  ): Promise<SkillMatrixCell[]> {
+    const result = await queryable.query<{
       employeeId: string;
       employeeNumber: string;
       employeeName: string;

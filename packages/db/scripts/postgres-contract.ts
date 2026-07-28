@@ -9,6 +9,8 @@ import { createMemoryMaterialStorage } from "../../../apps/server/src/material-s
 import { createTrainingService } from "../../../apps/server/src/training-service";
 import { createAssessmentService } from "../../../apps/server/src/assessment-service";
 import { createNotificationService } from "../../../apps/server/src/notification-service";
+import { createReportService } from "../../../apps/server/src/report-service";
+import { readReportWorkbookSummary } from "../../../apps/server/src/report-excel";
 import {
   createDatabaseReadinessProbe,
   createPostgresAuthRepository,
@@ -18,6 +20,7 @@ import {
   createPostgresTrainingRepository,
   createPostgresAssessmentRepository,
   createPostgresNotificationRepository,
+  createPostgresReportRepository,
   migrationsFolder,
 } from "../src";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -204,8 +207,9 @@ try {
     idSource: () => randomUUID(),
     now: () => new Date(),
   });
+  const skillRepository = createPostgresSkillRepository(contractPool);
   const skillService = createSkillService({
-    repository: createPostgresSkillRepository(contractPool),
+    repository: skillRepository,
     idSource: () => randomUUID(),
     now: () => new Date(),
   });
@@ -248,6 +252,10 @@ try {
     now: () => new Date(),
     idSource: () => randomUUID(),
   });
+  const reportService = createReportService({
+    repository: createPostgresReportRepository(contractPool, skillRepository),
+    now: () => new Date(),
+  });
   const app = createApp({
     authService,
     organizationService,
@@ -256,6 +264,7 @@ try {
     trainingService,
     assessmentService,
     notificationService,
+    reportService,
     readinessProbe,
   });
   await contractPool.query(
@@ -2194,6 +2203,73 @@ try {
     { reason: "退".repeat(500) },
   );
   if (maximumReasonReturn.status !== 200) throw new Error("合法的 500 字退回原因被通知写入回滚");
+
+  const reportQuery = "status=met&sortBy=skillCode&sortOrder=desc";
+  const managerReportResponse = await app.handle(
+    new Request(`http://localhost/api/reports/dashboard?${reportQuery}`, {
+      headers: { cookie: successfulConcurrentCookie },
+    }),
+  );
+  const managerReport = (await managerReportResponse.json()) as {
+    data?: {
+      metrics: {
+        positionSkillCompliance: { numerator: number; denominator: number; rate: number | null };
+      };
+      rows: Array<{ departmentId: string; skillCode: string; status: string }>;
+    };
+  };
+  const employeeReport = await app.handle(
+    new Request("http://localhost/api/reports/dashboard", { headers: { cookie: importedCookie! } }),
+  );
+  const executiveReport = await app.handle(
+    new Request("http://localhost/api/reports/dashboard", {
+      headers: { cookie: roleLogins.get("executive_viewer")!.cookie! },
+    }),
+  );
+  const reportExport = await app.handle(
+    new Request(`http://localhost/api/reports/export.xlsx?${reportQuery}`, {
+      headers: { cookie: successfulConcurrentCookie },
+    }),
+  );
+  const reportWorkbook = await readReportWorkbookSummary(await reportExport.arrayBuffer());
+  const rows = managerReport.data?.rows ?? [];
+  const sortedSkillCodes = rows.map((row) => row.skillCode).sort((a, b) =>
+    b.localeCompare(a, "zh-CN"),
+  );
+  if (
+    managerReportResponse.status !== 200 ||
+    employeeReport.status !== 403 ||
+    executiveReport.status !== 200 ||
+    rows.some((row) => row.departmentId !== assignment.departmentId || row.status !== "met") ||
+    JSON.stringify(rows.map((row) => row.skillCode)) !== JSON.stringify(sortedSkillCodes) ||
+    reportExport.status !== 200 ||
+    !reportExport.headers.get("content-type")?.includes("spreadsheetml") ||
+    reportWorkbook.matrixRowCount !== rows.length ||
+    reportWorkbook.positionSkillNumerator !==
+      managerReport.data?.metrics.positionSkillCompliance.numerator ||
+    reportWorkbook.positionSkillDenominator !==
+      managerReport.data?.metrics.positionSkillCompliance.denominator
+  )
+    throw new Error(
+      `Dashboard 权限、筛选排序或 Excel 同口径合同失败：${JSON.stringify({
+        managerStatus: managerReportResponse.status,
+        employeeStatus: employeeReport.status,
+        executiveStatus: executiveReport.status,
+        departments: [...new Set(rows.map((row) => row.departmentId))],
+        expectedDepartment: assignment.departmentId,
+        statuses: [...new Set(rows.map((row) => row.status))],
+        skillCodes: rows.map((row) => row.skillCode),
+        sortedSkillCodes,
+        exportStatus: reportExport.status,
+        exportType: reportExport.headers.get("content-type"),
+        workbook: reportWorkbook,
+        metric: managerReport.data?.metrics.positionSkillCompliance,
+      })}`,
+    );
+  const reportAudit = await contractPool.query(
+    "select 1 from audit_logs where action='reports.exported' limit 1",
+  );
+  if (!reportAudit.rowCount) throw new Error("报表导出未写入审计日志");
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",

@@ -13,6 +13,8 @@ import type { MaterialService } from "./material-service";
 import type { TrainingService } from "./training-service";
 import type { AssessmentService } from "./assessment-service";
 import type { NotificationService } from "./notification-service";
+import type { ReportService } from "./report-service";
+import { createReportWorkbook } from "./report-excel";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -148,6 +150,7 @@ type AppDependencies = {
   trainingService?: TrainingService;
   assessmentService?: AssessmentService;
   notificationService?: NotificationService;
+  reportService?: ReportService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
 };
@@ -217,6 +220,7 @@ export const createApp = ({
   trainingService,
   assessmentService,
   notificationService,
+  reportService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
 }: AppDependencies = {}) =>
@@ -1281,6 +1285,114 @@ export const createApp = ({
           skillId: t.Optional(t.String({ format: "uuid" })),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/reports/dashboard",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!reportService) {
+          set.status = 503;
+          return failure("REPORT_SERVICE_UNAVAILABLE", "报表服务暂不可用");
+        }
+        const result = await reportService.dashboard(authenticated.actor, query);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({
+          departmentId: t.Optional(t.String({ format: "uuid" })),
+          employeeId: t.Optional(t.String({ format: "uuid" })),
+          positionId: t.Optional(t.String({ format: "uuid" })),
+          skillId: t.Optional(t.String({ format: "uuid" })),
+          status: t.Optional(
+            t.Union([
+              t.Literal("met"),
+              t.Literal("gap"),
+              t.Literal("unassessed"),
+              t.Literal("expired"),
+            ]),
+          ),
+          validity: t.Optional(
+            t.Union([t.Literal("effective"), t.Literal("expiring_soon"), t.Literal("expired")]),
+          ),
+          dateFrom: t.Optional(t.String()),
+          dateTo: t.Optional(t.String()),
+          sortBy: t.Optional(
+            t.Union([
+              t.Literal("employeeNumber"),
+              t.Literal("departmentName"),
+              t.Literal("positionName"),
+              t.Literal("skillCode"),
+              t.Literal("status"),
+            ]),
+          ),
+          sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/reports/export.xlsx",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!reportService) {
+          set.status = 503;
+          return failure("REPORT_SERVICE_UNAVAILABLE", "报表服务暂不可用");
+        }
+        const result = await reportService.exportData(authenticated.actor, query);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return new Response(await createReportWorkbook(result.data), {
+          headers: {
+            "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "content-disposition": "attachment; filename=skill-matrix-report.xlsx",
+          },
+        });
+      },
+      {
+        query: t.Object({
+          departmentId: t.Optional(t.String({ format: "uuid" })),
+          employeeId: t.Optional(t.String({ format: "uuid" })),
+          positionId: t.Optional(t.String({ format: "uuid" })),
+          skillId: t.Optional(t.String({ format: "uuid" })),
+          status: t.Optional(
+            t.Union([
+              t.Literal("met"),
+              t.Literal("gap"),
+              t.Literal("unassessed"),
+              t.Literal("expired"),
+            ]),
+          ),
+          validity: t.Optional(
+            t.Union([t.Literal("effective"), t.Literal("expiring_soon"), t.Literal("expired")]),
+          ),
+          dateFrom: t.Optional(t.String()),
+          dateTo: t.Optional(t.String()),
+          sortBy: t.Optional(
+            t.Union([
+              t.Literal("employeeNumber"),
+              t.Literal("departmentName"),
+              t.Literal("positionName"),
+              t.Literal("skillCode"),
+              t.Literal("status"),
+            ]),
+          ),
+          sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
+        }),
       },
     )
     .get(

@@ -122,3 +122,4 @@ export * from "./skill";
 export * from "./training-material";
 export * from "./training-plan";
 export * from "./assessment";
+export * from "./report";

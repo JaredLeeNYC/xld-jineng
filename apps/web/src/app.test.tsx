@@ -4,6 +4,8 @@ import {
   App,
   AssessmentPanel,
   OrganizationPanel,
+  ReportDashboardPanel,
+  reportParameters,
   NotificationPanel,
   SkillAdminPanel,
   SkillMatrixPanel,
@@ -104,6 +106,84 @@ describe("application shell", () => {
   test("skill lists expose loading states before data arrives", () => {
     expect(renderToStaticMarkup(<SkillAdminPanel />)).toContain("正在加载技能标准");
     expect(renderToStaticMarkup(<SkillMatrixPanel personal />)).toContain("正在加载技能矩阵");
+    expect(renderToStaticMarkup(<ReportDashboardPanel />)).toContain(
+      "正在加载 Dashboard 与技能矩阵",
+    );
+  });
+
+  test("report export parameters stay tied to the applied dashboard filters", () => {
+    const applied = {
+      departmentId: "department-1",
+      positionId: "",
+      employeeId: "",
+      skillId: "skill-1",
+      status: "met",
+      validity: "",
+      dateFrom: "2026-07-01",
+      dateTo: "2026-07-31",
+      sortBy: "skillCode",
+      sortOrder: "desc",
+    };
+    expect(reportParameters(applied).toString()).toBe(
+      "departmentId=department-1&skillId=skill-1&status=met&dateFrom=2026-07-01&dateTo=2026-07-31&sortBy=skillCode&sortOrder=desc",
+    );
+  });
+
+  test("report browser view renders metrics, drilldown rows, mobile cards and matching export URL", () => {
+    const filters = {
+      departmentId: "department-1",
+      positionId: "position-1",
+      employeeId: "",
+      skillId: "skill-1",
+      status: "met",
+      validity: "effective",
+      dateFrom: "2026-07-01",
+      dateTo: "2026-07-31",
+      sortBy: "skillCode",
+      sortOrder: "desc",
+    };
+    const html = renderToStaticMarkup(
+      <ReportDashboardPanel
+        initialFilters={filters}
+        initialReport={{
+          generatedAt: "2026-07-28T00:00:00.000Z",
+          metrics: {
+            positionSkillCompliance: { numerator: 1, denominator: 2, rate: 0.5 },
+            departmentSkillCoverage: { numerator: 1, denominator: 1, rate: 1 },
+            trainingCompletion: { numerator: 2, denominator: 3, rate: 2 / 3 },
+            expiringSoonCount: 1,
+            expiredCount: 0,
+          },
+          rows: [
+            {
+              employeeId: "employee-1",
+              employeeNumber: "E001",
+              employeeName: "李华",
+              departmentId: "department-1",
+              departmentName: "制造部",
+              positionId: "position-1",
+              positionName: "操作工",
+              skillId: "skill-1",
+              skillCode: "S001",
+              skillName: "设备点检",
+              requiredLevel: 2,
+              required: true,
+              currentLevel: 2,
+              validityStatus: "effective",
+              status: "met",
+              gap: 0,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("岗位技能达标率");
+    expect(html).toContain("50.0%");
+    expect(html).toContain("设备点检");
+    expect(html).toContain('class="matrix-cards"');
+    expect(html).toContain(
+      `/api/reports/export.xlsx?${reportParameters(filters)}`.replaceAll("&", "&amp;"),
+    );
   });
 
   test("training workspace exposes explicit loading states for employee mobile use", () => {
