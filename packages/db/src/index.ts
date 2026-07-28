@@ -8,6 +8,7 @@ import { createPostgresOrganizationRepository } from "./organization-repository"
 import { createPostgresSkillRepository } from "./skill-repository";
 import { createPostgresMaterialRepository } from "./material-repository";
 import { createPostgresTrainingRepository } from "./training-repository";
+import { createPostgresAssessmentRepository } from "./assessment-repository";
 
 export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
   const pool = new Pool({ connectionString: config.databaseUrl });
@@ -20,6 +21,7 @@ export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
   const skillRepository = createPostgresSkillRepository(pool);
   const materialRepository = createPostgresMaterialRepository(pool);
   const trainingRepository = createPostgresTrainingRepository(pool);
+  const assessmentRepository = createPostgresAssessmentRepository(pool);
 
   return {
     authRepository,
@@ -27,6 +29,7 @@ export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
     skillRepository,
     materialRepository,
     trainingRepository,
+    assessmentRepository,
     db,
     pool,
     readinessProbe,
@@ -41,3 +44,4 @@ export * from "./organization-repository";
 export * from "./skill-repository";
 export * from "./material-repository";
 export * from "./training-repository";
+export * from "./assessment-repository";

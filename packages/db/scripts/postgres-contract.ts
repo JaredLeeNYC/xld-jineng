@@ -7,6 +7,7 @@ import { createSkillService } from "../../../apps/server/src/skill-service";
 import { createMaterialService } from "../../../apps/server/src/material-service";
 import { createMemoryMaterialStorage } from "../../../apps/server/src/material-storage";
 import { createTrainingService } from "../../../apps/server/src/training-service";
+import { createAssessmentService } from "../../../apps/server/src/assessment-service";
 import {
   createDatabaseReadinessProbe,
   createPostgresAuthRepository,
@@ -14,6 +15,7 @@ import {
   createPostgresSkillRepository,
   createPostgresMaterialRepository,
   createPostgresTrainingRepository,
+  createPostgresAssessmentRepository,
   migrationsFolder,
 } from "../src";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -218,12 +220,19 @@ try {
     idSource: () => randomUUID(),
     now: () => new Date(),
   });
+  const assessmentService = createAssessmentService({
+    repository: createPostgresAssessmentRepository(contractPool),
+    storage: contractStorage,
+    idSource: () => randomUUID(),
+    now: () => new Date(),
+  });
   const app = createApp({
     authService,
     organizationService,
     skillService,
     materialService,
     trainingService,
+    assessmentService,
     readinessProbe,
   });
   try {
@@ -905,7 +914,10 @@ try {
     );
   } catch (error) {
     currentAssessmentInvalidationRejected =
-      typeof error === "object" && error !== null && "code" in error && error.code === "23503";
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error.code === "23503" || error.code === "23514");
   }
   const invalidAssessment = await contractPool.query<{ id: string }>(
     `insert into skill_assessments (
@@ -965,30 +977,22 @@ try {
        values ($1, $2, $3)`,
       [concurrentEmployee.rows[0]!.id, createdSkills.get("S001"), concurrentAssessment.rows[0]!.id],
     );
-    let invalidationSettled = false;
     const invalidation = invalidationClient
       .query(`update skill_assessments set status = 'voided', voided_at = now() where id = $1`, [
         concurrentAssessment.rows[0]!.id,
       ])
-      .then(() => {
-        invalidationSettled = true;
-        return undefined;
-      })
-      .catch((error: unknown) => {
-        invalidationSettled = true;
-        return error;
-      });
+      .then(() => undefined)
+      .catch((error: unknown) => error);
     await Bun.sleep(50);
-    if (invalidationSettled) throw new Error("评定作废未等待并发中的当前技能指针事务");
     await pointerClient.query("commit");
     const invalidationError = await invalidation;
     if (
       typeof invalidationError !== "object" ||
       invalidationError === null ||
       !("code" in invalidationError) ||
-      invalidationError.code !== "23503"
+      (invalidationError.code !== "23503" && invalidationError.code !== "23514")
     ) {
-      throw new Error(`并发评定作废未被有效技能标记外键阻止：${String(invalidationError)}`);
+      throw new Error(`并发评定作废未被数据库正式记录约束阻止：${String(invalidationError)}`);
     }
     await invalidationClient.query("rollback");
   } finally {
@@ -1621,6 +1625,297 @@ try {
     )
   )
     throw new Error("未分配培训的员工被授予历史资料访问权");
+
+  await contractPool.query(
+    `insert into employees (employee_number,display_name,department_id)
+     values ('H0002','评定专员',$1)`,
+    [assignment.departmentId],
+  );
+  await contractPool.query(
+    `insert into user_accounts (employee_id,password_hash,role,must_change_password)
+     select id,$1,'hr_admin',false from employees where employee_number='H0002'`,
+    [passwordHash],
+  );
+  const evaluatorLogin = await login("H0002");
+  if (!evaluatorLogin.cookie) throw new Error("独立评定人账号登录失败");
+  const evaluatorCookie = evaluatorLogin.cookie;
+  let directArchivedManualRejected = false;
+  try {
+    await contractPool.query(
+      `insert into skill_assessments
+        (employee_id,skill_id,level,status,passed,method,assessor_account_id,source_type,
+         source_reference,assessed_at,archived_by_account_id,archived_at,evidence_storage_key,
+         evidence_original_filename,evidence_mime_type,evidence_size_bytes,evidence_checksum)
+       values ($1,$2,2,'archived',true,'practical',
+         (select a.id from user_accounts a join employees e on e.id=a.employee_id where e.employee_number='H0002'),
+         'manual_assessment','绕过流程',now(),$3,now(),gen_random_uuid(),'证据.pdf','application/pdf',5,$4)`,
+      [
+        assignment.employeeId,
+        createdSkills.get("S001")!,
+        accountIds.get("hr_admin")!,
+        "0".repeat(64),
+      ],
+    );
+  } catch (error) {
+    directArchivedManualRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
+  if (!directArchivedManualRejected) throw new Error("数据库允许线下评定绕过三级流程直接归档");
+
+  const createAssessment = async (input: {
+    skillId: string;
+    level: number;
+    passed: boolean;
+    reason?: string;
+    replacesAssessmentId?: string;
+    cookie?: string;
+  }) => {
+    const data = new FormData();
+    data.set("employeeId", assignment.employeeId);
+    data.set("skillId", input.skillId);
+    data.set("method", "practical");
+    data.set("level", String(input.level));
+    data.set("passed", String(input.passed));
+    data.set("assessedAt", new Date(Date.now() - 60_000).toISOString());
+    if (input.reason) data.set("reason", input.reason);
+    if (input.replacesAssessmentId) data.set("replacesAssessmentId", input.replacesAssessmentId);
+    data.set(
+      "file",
+      new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 1])], "实操评定.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    const response = await app.handle(
+      new Request("http://localhost/api/assessments", {
+        method: "POST",
+        headers: { cookie: input.cookie ?? evaluatorCookie },
+        body: data,
+      }),
+    );
+    const body = (await response.json()) as { data?: { id: string } };
+    if (response.status !== 200 || !body.data) throw new Error("技能评定草稿创建失败");
+    return body.data.id;
+  };
+  const transitionAssessment = (id: string, action: string, cookie: string, body?: unknown) =>
+    app.handle(
+      new Request(`http://localhost/api/assessments/${id}/${action}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          ...(body ? { "content-type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+    );
+
+  const passedAssessmentId = await createAssessment({
+    skillId: createdSkills.get("S001")!,
+    level: 3,
+    passed: true,
+  });
+  const assessmentEvidence = await contractPool.query<{ storageKey: string }>(
+    'select evidence_storage_key as "storageKey" from skill_assessments where id=$1',
+    [passedAssessmentId],
+  );
+  if (!(await materialRepository.storageKeys()).includes(assessmentEvidence.rows[0]!.storageKey))
+    throw new Error("孤儿清理引用集合遗漏技能评定证据");
+  const assessmentSubmit = await transitionAssessment(
+    passedAssessmentId,
+    "submit",
+    evaluatorCookie,
+  );
+  const assessmentReturn = await transitionAssessment(
+    passedAssessmentId,
+    "return",
+    successfulConcurrentCookie,
+    { reason: "补充整改建议" },
+  );
+  const assessmentRevise = await app.handle(
+    new Request(`http://localhost/api/assessments/${passedAssessmentId}`, {
+      method: "PUT",
+      headers: {
+        cookie: evaluatorCookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        employeeId: assignment.employeeId,
+        skillId: createdSkills.get("S001")!,
+        method: "comprehensive",
+        level: 3,
+        passed: true,
+        reason: "复核通过",
+        remediation: "持续按标准点检",
+        assessedAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    }),
+  );
+  const assessmentResubmit = await transitionAssessment(
+    passedAssessmentId,
+    "submit",
+    evaluatorCookie,
+  );
+  const crossDepartmentConfirm = await transitionAssessment(
+    passedAssessmentId,
+    "manager-confirm",
+    roleLogins.get("hr_admin")!.cookie!,
+  );
+  const assessmentManagerConfirm = await transitionAssessment(
+    passedAssessmentId,
+    "manager-confirm",
+    successfulConcurrentCookie,
+  );
+  const evaluatorSelfArchive = await transitionAssessment(
+    passedAssessmentId,
+    "archive",
+    evaluatorCookie,
+  );
+  const assessmentArchive = await transitionAssessment(
+    passedAssessmentId,
+    "archive",
+    roleLogins.get("hr_admin")!.cookie!,
+  );
+  const currentPassedAssessment = await contractPool.query<{
+    assessmentId: string;
+    level: number;
+    validUntil: Date | null;
+  }>(
+    `select cs.assessment_id as "assessmentId",a.level,a.valid_until as "validUntil"
+     from employee_current_skills cs join skill_assessments a on a.id=cs.assessment_id
+     where cs.employee_id=$1 and cs.skill_id=$2`,
+    [assignment.employeeId, createdSkills.get("S001")!],
+  );
+  if (
+    assessmentSubmit.status !== 200 ||
+    assessmentReturn.status !== 200 ||
+    assessmentRevise.status !== 200 ||
+    assessmentResubmit.status !== 200 ||
+    crossDepartmentConfirm.status !== 403 ||
+    assessmentManagerConfirm.status !== 200 ||
+    evaluatorSelfArchive.status !== 403 ||
+    assessmentArchive.status !== 200 ||
+    currentPassedAssessment.rows[0]?.assessmentId !== passedAssessmentId ||
+    currentPassedAssessment.rows[0]?.level !== 3 ||
+    !currentPassedAssessment.rows[0]?.validUntil
+  )
+    throw new Error("评定退回重提、三级确认、有效期或矩阵事务更新失败");
+
+  const failedAssessmentId = await createAssessment({
+    skillId: createdSkills.get("S002")!,
+    level: 1,
+    passed: false,
+    reason: "实操不合格",
+  });
+  await transitionAssessment(failedAssessmentId, "submit", evaluatorCookie);
+  await transitionAssessment(failedAssessmentId, "manager-confirm", successfulConcurrentCookie);
+  const failedArchive = await transitionAssessment(
+    failedAssessmentId,
+    "archive",
+    roleLogins.get("hr_admin")!.cookie!,
+  );
+  const failedCurrent = await contractPool.query(
+    "select 1 from employee_current_skills where employee_id=$1 and skill_id=$2 and assessment_id=$3",
+    [assignment.employeeId, createdSkills.get("S002")!, failedAssessmentId],
+  );
+  if (failedArchive.status !== 200 || failedCurrent.rowCount)
+    throw new Error("未通过评定归档后错误授予了当前技能");
+  let archivedMutationRejected = false;
+  try {
+    await contractPool.query(
+      `update skill_assessments set status='voided',voided_by_account_id=$2,voided_at=now(),
+         void_reason='测试作废',source_reference='夹带篡改'
+       where id=$1`,
+      [failedAssessmentId, accountIds.get("hr_admin")!],
+    );
+  } catch (error) {
+    archivedMutationRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
+  const failedVoid = await transitionAssessment(
+    failedAssessmentId,
+    "void",
+    roleLogins.get("hr_admin")!.cookie!,
+    { reason: "失败记录录入有误" },
+  );
+  if (!archivedMutationRejected || failedVoid.status !== 200)
+    throw new Error("正式评定可在作废时被篡改，或作废非当前记录发生冲突");
+
+  const assessmentVoid = await transitionAssessment(
+    passedAssessmentId,
+    "void",
+    roleLogins.get("hr_admin")!.cookie!,
+    { reason: "等级录入错误" },
+  );
+  const restoredCurrent = await contractPool.query<{ assessmentId: string }>(
+    `select assessment_id as "assessmentId" from employee_current_skills
+     where employee_id=$1 and skill_id=$2`,
+    [assignment.employeeId, createdSkills.get("S001")!],
+  );
+  if (
+    assessmentVoid.status !== 200 ||
+    !restoredCurrent.rows[0] ||
+    restoredCurrent.rows[0].assessmentId === passedAssessmentId
+  )
+    throw new Error("作废正式评定未保留历史或恢复上一有效技能快照");
+
+  const reassessmentId = await createAssessment({
+    skillId: createdSkills.get("S001")!,
+    level: 4,
+    passed: true,
+    replacesAssessmentId: passedAssessmentId,
+  });
+  await transitionAssessment(reassessmentId, "submit", evaluatorCookie);
+  await transitionAssessment(reassessmentId, "manager-confirm", successfulConcurrentCookie);
+  const concurrentArchives = await Promise.all([
+    transitionAssessment(reassessmentId, "archive", roleLogins.get("hr_admin")!.cookie!),
+    transitionAssessment(reassessmentId, "archive", roleLogins.get("hr_admin")!.cookie!),
+  ]);
+  const reassessmentCurrent = await contractPool.query<{ assessmentId: string }>(
+    `select assessment_id as "assessmentId" from employee_current_skills
+     where employee_id=$1 and skill_id=$2`,
+    [assignment.employeeId, createdSkills.get("S001")!],
+  );
+  const evidenceForEmployee = await app.handle(
+    new Request(`http://localhost/api/assessments/${reassessmentId}/evidence`, {
+      headers: { cookie: importedCookie! },
+    }),
+  );
+  const assessmentForSystem = await app.handle(
+    new Request("http://localhost/api/assessments", {
+      headers: { cookie: roleLogins.get("system_admin")!.cookie! },
+    }),
+  );
+  if (
+    concurrentArchives
+      .map((response) => response.status)
+      .sort((left, right) => left - right)
+      .join(",") !== "200,409" ||
+    reassessmentCurrent.rows[0]?.assessmentId !== reassessmentId ||
+    evidenceForEmployee.status !== 200 ||
+    assessmentForSystem.status !== 403
+  )
+    throw new Error("复评替换、并发重复归档、证据读取或角色边界失败");
+
+  const managerAuthoredAssessmentId = await createAssessment({
+    skillId: createdSkills.get("S004")!,
+    level: 2,
+    passed: true,
+    cookie: successfulConcurrentCookie,
+  });
+  await transitionAssessment(managerAuthoredAssessmentId, "submit", successfulConcurrentCookie);
+  const managerAssessmentSelfConfirm = await transitionAssessment(
+    managerAuthoredAssessmentId,
+    "manager-confirm",
+    successfulConcurrentCookie,
+  );
+  if (managerAssessmentSelfConfirm.status !== 403) throw new Error("评定人可确认本人录入的评定");
+  let formalAssessmentDeleteRejected = false;
+  try {
+    await contractPool.query("delete from skill_assessments where id=$1", [failedAssessmentId]);
+  } catch (error) {
+    formalAssessmentDeleteRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
+  if (!formalAssessmentDeleteRejected) throw new Error("数据库允许物理删除已作废正式评定");
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",

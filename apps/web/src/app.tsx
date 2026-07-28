@@ -1,5 +1,7 @@
 import {
   navigationForRole,
+  assessmentMethodLabels,
+  assessmentStatusLabels,
   skillCategoryLabels,
   skillLevelMeanings,
   type FixedRole,
@@ -8,6 +10,8 @@ import {
   type SkillCategory,
   type SkillMatrixCell,
   type SkillView,
+  type SkillAssessmentView,
+  type AssessmentMethod,
   type TrainingMaterialView,
   type TrainingPlanView,
   type TrainingScopeType,
@@ -114,6 +118,7 @@ const iconByNavigation: Record<string, LucideIcon> = {
   profile: UserRound,
   "my-skills": BookOpenCheck,
   "my-training": GraduationCap,
+  "my-assessments": ClipboardCheck,
   notifications: Bell,
   dashboard: LayoutDashboard,
   employees: UsersRound,
@@ -2161,6 +2166,357 @@ const taskStatusLabel: Record<TrainingTaskView["status"], string> = {
   cancelled: "已取消",
 };
 
+export function AssessmentPanel({ session }: { session: Session }) {
+  const canAssess = session.role === "hr_admin" || session.role === "department_manager";
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | {
+        status: "ready";
+        assessments: SkillAssessmentView[];
+        employees: Employee[];
+        skills: SkillView[];
+      }
+  >({ status: "loading" });
+  const [notice, setNotice] = useState("");
+  const [editing, setEditing] = useState<SkillAssessmentView>();
+  const [evidence, setEvidence] = useState<File>();
+  const [form, setForm] = useState({
+    employeeId: "",
+    skillId: "",
+    method: "practical" as AssessmentMethod,
+    level: 2,
+    passed: true,
+    reason: "",
+    remediation: "",
+    assessedAt: new Date().toISOString().slice(0, 10),
+  });
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const [assessments, employees, skills] = await Promise.all([
+        request<SkillAssessmentView[]>("/api/assessments"),
+        canAssess
+          ? request<Employee[]>("/api/organization/employees?active=true")
+          : Promise.resolve(undefined),
+        canAssess ? request<SkillView[]>("/api/skills") : Promise.resolve(undefined),
+      ]);
+      const failed = [assessments, employees, skills]
+        .filter(Boolean)
+        .find((item) => item && !item.result.ok);
+      if (failed && !failed.result.ok) {
+        setState({ status: "error", message: failed.result.error.message });
+        return;
+      }
+      if (!assessments.result.ok) return;
+      setState({
+        status: "ready",
+        assessments: assessments.result.data,
+        employees: employees?.result.ok ? employees.result.data : [],
+        skills: skills?.result.ok ? skills.result.data : [],
+      });
+    } catch {
+      setState({ status: "error", message: "暂时无法连接技能评定服务" });
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, [canAssess]);
+  const mutate = async (path: string, body?: unknown, method = "POST") => {
+    const response = await request(path, {
+      method,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    if (!response.result.ok) {
+      setNotice(response.result.error.message);
+      return false;
+    }
+    setNotice("操作成功");
+    await load();
+    return true;
+  };
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载技能评定…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" onClick={load} type="button">
+          重新加载
+        </button>
+      </section>
+    );
+  const beginEdit = (assessment: SkillAssessmentView) => {
+    setEditing(assessment);
+    setForm({
+      employeeId: assessment.employeeId,
+      skillId: assessment.skillId,
+      method: assessment.method ?? "practical",
+      level: assessment.level,
+      passed: assessment.passed,
+      reason: assessment.reason ?? "",
+      remediation: assessment.remediation ?? "",
+      assessedAt: assessment.assessedAt.slice(0, 10),
+    });
+  };
+  const actions = (assessment: SkillAssessmentView) => (
+    <div className="row-actions">
+      <a href={`/api/assessments/${assessment.id}/evidence`}>查看证据</a>
+      {canAssess &&
+        assessment.assessorEmployeeId === session.employeeId &&
+        ["draft", "returned"].includes(assessment.status) && (
+          <>
+            <button onClick={() => beginEdit(assessment)} type="button">
+              修订
+            </button>
+            <button
+              onClick={() => mutate(`/api/assessments/${assessment.id}/submit`)}
+              type="button"
+            >
+              提交主管
+            </button>
+          </>
+        )}
+      {session.role === "department_manager" &&
+        assessment.assessorEmployeeId !== session.employeeId &&
+        assessment.status === "pending_manager" && (
+          <>
+            <button
+              onClick={() => mutate(`/api/assessments/${assessment.id}/manager-confirm`)}
+              type="button"
+            >
+              确认
+            </button>
+            <button
+              onClick={() => {
+                const reason = window.prompt("请输入退回原因");
+                if (reason) void mutate(`/api/assessments/${assessment.id}/return`, { reason });
+              }}
+              type="button"
+            >
+              退回
+            </button>
+          </>
+        )}
+      {session.role === "hr_admin" &&
+        assessment.assessorEmployeeId !== session.employeeId &&
+        assessment.status === "pending_hr" && (
+          <>
+            <button
+              onClick={() => mutate(`/api/assessments/${assessment.id}/archive`)}
+              type="button"
+            >
+              归档生效
+            </button>
+            <button
+              onClick={() => {
+                const reason = window.prompt("请输入退回原因");
+                if (reason) void mutate(`/api/assessments/${assessment.id}/return`, { reason });
+              }}
+              type="button"
+            >
+              退回
+            </button>
+          </>
+        )}
+      {session.role === "hr_admin" && assessment.status === "archived" && (
+        <button
+          onClick={() => {
+            const reason = window.prompt("请输入作废原因；纠正后请新建评定");
+            if (reason) void mutate(`/api/assessments/${assessment.id}/void`, { reason });
+          }}
+          type="button"
+        >
+          作废
+        </button>
+      )}
+    </div>
+  );
+  return (
+    <div className="assessment-page">
+      {notice && (
+        <p className="organization-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {canAssess && (
+        <form
+          className="panel compact-form"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const payload = { ...form, assessedAt: new Date(form.assessedAt).toISOString() };
+            if (editing) {
+              const ok = await mutate(`/api/assessments/${editing.id}`, payload, "PUT");
+              if (ok) setEditing(undefined);
+              return;
+            }
+            if (!evidence) {
+              setNotice("请选择评定证据");
+              return;
+            }
+            const data = new FormData();
+            Object.entries(payload).forEach(([key, value]) => data.set(key, String(value)));
+            data.set("file", evidence);
+            const response = await request<{ id: string }>("/api/assessments", {
+              method: "POST",
+              body: data,
+            });
+            if (!response.result.ok) setNotice(response.result.error.message);
+            else {
+              setNotice("评定草稿已保存");
+              setEvidence(undefined);
+              await load();
+            }
+          }}
+        >
+          <h2>{editing ? "修订退回评定" : "录入线下技能评定"}</h2>
+          <select
+            disabled={Boolean(editing)}
+            required
+            value={form.employeeId}
+            onChange={(event) => setForm({ ...form, employeeId: event.target.value })}
+          >
+            <option value="">选择员工</option>
+            {state.employees.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.employeeNumber} · {item.displayName}
+              </option>
+            ))}
+          </select>
+          <select
+            disabled={Boolean(editing)}
+            required
+            value={form.skillId}
+            onChange={(event) => setForm({ ...form, skillId: event.target.value })}
+          >
+            <option value="">选择技能</option>
+            {state.skills
+              .filter((item) => item.active)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.code} · {item.name}
+                </option>
+              ))}
+          </select>
+          <select
+            value={form.method}
+            onChange={(event) =>
+              setForm({ ...form, method: event.target.value as AssessmentMethod })
+            }
+          >
+            {Object.entries(assessmentMethodLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <input
+            max={4}
+            min={0}
+            type="number"
+            value={form.level}
+            onChange={(event) => setForm({ ...form, level: Number(event.target.value) })}
+          />
+          <select
+            value={String(form.passed)}
+            onChange={(event) => setForm({ ...form, passed: event.target.value === "true" })}
+          >
+            <option value="true">通过</option>
+            <option value="false">未通过</option>
+          </select>
+          <input
+            type="date"
+            value={form.assessedAt}
+            onChange={(event) => setForm({ ...form, assessedAt: event.target.value })}
+          />
+          <input
+            placeholder={form.passed ? "评定说明（可选）" : "未通过原因（必填）"}
+            required={!form.passed}
+            value={form.reason}
+            onChange={(event) => setForm({ ...form, reason: event.target.value })}
+          />
+          <input
+            placeholder="整改建议"
+            value={form.remediation}
+            onChange={(event) => setForm({ ...form, remediation: event.target.value })}
+          />
+          {!editing && (
+            <input
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(event) => setEvidence(event.target.files?.[0])}
+              required
+              type="file"
+            />
+          )}
+          <button className="primary-button" type="submit">
+            {editing ? "保存修订" : "保存草稿"}
+          </button>
+        </form>
+      )}
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>{session.role === "employee" ? "我的评定" : "技能评定流转"}</h2>
+            <p>归档通过后才更新当前技能；培训完成不会自动授予技能。</p>
+          </div>
+        </div>
+        {state.assessments.length === 0 ? (
+          <div className="empty-state">暂无技能评定</div>
+        ) : (
+          <>
+            <div className="material-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>员工 / 技能</th>
+                    <th>结果</th>
+                    <th>状态</th>
+                    <th>评定日期 / 有效期</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.assessments.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <strong>{item.employeeName}</strong>
+                        <small>
+                          {item.skillCode} · {item.skillName}
+                        </small>
+                      </td>
+                      <td>{item.passed ? `通过 · ${item.level} 级` : `未通过 · ${item.reason}`}</td>
+                      <td>{assessmentStatusLabels[item.status]}</td>
+                      <td>
+                        {item.assessedAt.slice(0, 10)} / {item.validUntil?.slice(0, 10) ?? "长期"}
+                      </td>
+                      <td>{actions(item)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="material-cards">
+              {state.assessments.map((item) => (
+                <article key={item.id}>
+                  <header>
+                    <strong>
+                      {item.employeeName} · {item.skillName}
+                    </strong>
+                    <span>{assessmentStatusLabels[item.status]}</span>
+                  </header>
+                  <p>{item.passed ? `通过，等级 ${item.level}` : `未通过：${item.reason}`}</p>
+                  {item.remediation && <small>整改建议：{item.remediation}</small>}
+                  {actions(item)}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
 export function TrainingPlanPanel({ session }: { session: Session }) {
   const canManage = session.role === "hr_admin" || session.role === "department_manager";
   const [state, setState] = useState<
@@ -3174,6 +3530,8 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
               <TrainingPlanPanel session={session} />
               <TrainingMaterialPanel canManage={session.role === "hr_admin"} />
             </div>
+          ) : activeNavigation === "assessments" || activeNavigation === "my-assessments" ? (
+            <AssessmentPanel session={session} />
           ) : (
             <>
               <section className="welcome">

@@ -11,6 +11,7 @@ import { parseSkillBaselineWorkbook } from "./skill-excel";
 import type { SkillService } from "./skill-service";
 import type { MaterialService } from "./material-service";
 import type { TrainingService } from "./training-service";
+import type { AssessmentService } from "./assessment-service";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -144,6 +145,7 @@ type AppDependencies = {
   skillService?: SkillService;
   materialService?: MaterialService;
   trainingService?: TrainingService;
+  assessmentService?: AssessmentService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
 };
@@ -211,6 +213,7 @@ export const createApp = ({
   skillService,
   materialService,
   trainingService,
+  assessmentService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
 }: AppDependencies = {}) =>
@@ -1274,6 +1277,276 @@ export const createApp = ({
           positionId: t.Optional(t.String({ format: "uuid" })),
           skillId: t.Optional(t.String({ format: "uuid" })),
         }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/assessments",
+      async ({ request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.list(authenticated.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .post(
+      "/api/assessments",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.create(authenticated.actor, {
+          employeeId: body.employeeId,
+          skillId: body.skillId,
+          method: body.method,
+          level: body.level,
+          passed: body.passed === "true",
+          assessedAt: body.assessedAt,
+          ...(body.reason ? { reason: body.reason } : {}),
+          ...(body.remediation ? { remediation: body.remediation } : {}),
+          ...(body.replacesAssessmentId ? { replacesAssessmentId: body.replacesAssessmentId } : {}),
+          filename: body.file.name,
+          mimeType: body.file.type,
+          bytes: new Uint8Array(await body.file.arrayBuffer()),
+        });
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          employeeId: t.String({ format: "uuid" }),
+          skillId: t.String({ format: "uuid" }),
+          method: t.Union([
+            t.Literal("written"),
+            t.Literal("practical"),
+            t.Literal("comprehensive"),
+          ]),
+          level: t.Numeric({ minimum: 0, maximum: 4 }),
+          passed: t.Union([t.Literal("true"), t.Literal("false")]),
+          reason: t.Optional(t.String({ maxLength: 500 })),
+          remediation: t.Optional(t.String({ maxLength: 500 })),
+          assessedAt: t.String(),
+          replacesAssessmentId: t.Optional(t.String({ format: "uuid" })),
+          file: t.File({ maxSize: "25m" }),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .put(
+      "/api/assessments/:id",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.update(authenticated.actor, params.id, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          employeeId: t.String({ format: "uuid" }),
+          skillId: t.String({ format: "uuid" }),
+          method: t.Union([
+            t.Literal("written"),
+            t.Literal("practical"),
+            t.Literal("comprehensive"),
+          ]),
+          level: t.Integer({ minimum: 0, maximum: 4 }),
+          passed: t.Boolean(),
+          reason: t.Optional(t.String({ maxLength: 500 })),
+          remediation: t.Optional(t.String({ maxLength: 500 })),
+          assessedAt: t.String(),
+          replacesAssessmentId: t.Optional(t.String({ format: "uuid" })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/assessments/:id/submit",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.submit(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/assessments/:id/manager-confirm",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.managerConfirm(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/assessments/:id/return",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.returnAssessment(
+          authenticated.actor,
+          params.id,
+          body.reason,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ reason: t.String({ maxLength: 500 }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/assessments/:id/archive",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.archive(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/assessments/:id/void",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.voidAssessment(
+          authenticated.actor,
+          params.id,
+          body.reason,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ reason: t.String({ maxLength: 500 }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/assessments/:id/evidence",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!assessmentService) {
+          set.status = 503;
+          return failure("ASSESSMENT_SERVICE_UNAVAILABLE", "技能评定服务暂不可用");
+        }
+        const result = await assessmentService.evidenceContent(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        set.headers["content-type"] = result.data.mimeType;
+        set.headers["x-content-type-options"] = "nosniff";
+        set.headers["content-disposition"] =
+          `attachment; filename*=UTF-8''${encodeURIComponent(result.data.filename)}`;
+        return result.data.bytes;
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )

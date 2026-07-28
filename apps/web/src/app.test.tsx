@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   App,
+  AssessmentPanel,
   OrganizationPanel,
   SkillAdminPanel,
   SkillMatrixPanel,
@@ -117,6 +118,9 @@ describe("application shell", () => {
     );
     expect(renderToStaticMarkup(<TrainingMaterialPanel canManage={false} />)).toContain(
       "正在加载培训资料",
+    );
+    expect(renderToStaticMarkup(<AssessmentPanel session={employee} />)).toContain(
+      "正在加载技能评定",
     );
   });
 });

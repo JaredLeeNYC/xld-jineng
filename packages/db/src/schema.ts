@@ -1,6 +1,7 @@
 import { fixedRoles, skillCategories } from "@jineng/skill-matrix-shared";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigserial,
   boolean,
   char,
@@ -177,17 +178,55 @@ export const skillAssessments = pgTable(
     level: smallint("level").notNull(),
     status: varchar("status", { length: 20 }).notNull(),
     passed: boolean("passed").notNull(),
+    method: varchar("method", { length: 20 }),
+    assessorAccountId: uuid("assessor_account_id").references(() => userAccounts.id, {
+      onDelete: "restrict",
+    }),
+    reason: varchar("reason", { length: 500 }),
+    remediation: varchar("remediation", { length: 500 }),
     sourceType: varchar("source_type", { length: 30 }).notNull(),
     sourceReference: varchar("source_reference", { length: 300 }).notNull(),
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull(),
     validUntil: timestamp("valid_until", { withTimezone: true }),
-    archivedAt: timestamp("archived_at", { withTimezone: true }).notNull(),
+    evidenceStorageKey: varchar("evidence_storage_key", { length: 150 }),
+    evidenceOriginalFilename: varchar("evidence_original_filename", { length: 255 }),
+    evidenceMimeType: varchar("evidence_mime_type", { length: 150 }),
+    evidenceSizeBytes: integer("evidence_size_bytes"),
+    evidenceChecksum: char("evidence_checksum", { length: 64 }),
+    managerConfirmedByAccountId: uuid("manager_confirmed_by_account_id").references(
+      () => userAccounts.id,
+      { onDelete: "restrict" },
+    ),
+    managerConfirmedAt: timestamp("manager_confirmed_at", { withTimezone: true }),
+    returnedByAccountId: uuid("returned_by_account_id").references(() => userAccounts.id, {
+      onDelete: "restrict",
+    }),
+    returnReason: varchar("return_reason", { length: 500 }),
+    archivedByAccountId: uuid("archived_by_account_id").references(() => userAccounts.id, {
+      onDelete: "restrict",
+    }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    voidedByAccountId: uuid("voided_by_account_id").references(() => userAccounts.id, {
+      onDelete: "restrict",
+    }),
+    voidReason: varchar("void_reason", { length: 500 }),
     voidedAt: timestamp("voided_at", { withTimezone: true }),
+    replacesAssessmentId: uuid("replaces_assessment_id").references(
+      (): AnyPgColumn => skillAssessments.id,
+      { onDelete: "restrict" },
+    ),
     ...timestamps,
   },
   (table) => [
     check("skill_assessments_level", sql`${table.level} between 0 and 4`),
-    check("skill_assessments_archived_status", sql`${table.status} in ('archived', 'voided')`),
+    check(
+      "skill_assessments_status",
+      sql`${table.status} in ('draft','pending_manager','pending_hr','archived','returned','voided')`,
+    ),
+    check(
+      "skill_assessments_method",
+      sql`${table.method} is null or ${table.method} in ('written','practical','comprehensive')`,
+    ),
     uniqueIndex("skill_assessments_identity_unique").on(table.id, table.employeeId, table.skillId),
     index("skill_assessments_employee_skill_idx").on(
       table.employeeId,

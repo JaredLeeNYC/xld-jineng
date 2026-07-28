@@ -26,6 +26,7 @@ describe("fixed role authorization", () => {
       "profile",
       "my-skills",
       "my-training",
+      "my-assessments",
       "notifications",
     ]);
     expect(

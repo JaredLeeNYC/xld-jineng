@@ -71,6 +71,7 @@ const roleNavigation: Record<FixedRole, readonly NavigationItem[]> = {
     { id: "profile", label: "个人资料", access: "read" },
     { id: "my-skills", label: "我的技能", access: "read" },
     { id: "my-training", label: "我的培训", access: "write" },
+    { id: "my-assessments", label: "我的评定", access: "read" },
     { id: "notifications", label: "消息通知", access: "read" },
   ],
   department_manager: [
@@ -120,3 +121,4 @@ export * from "./organization";
 export * from "./skill";
 export * from "./training-material";
 export * from "./training-plan";
+export * from "./assessment";
