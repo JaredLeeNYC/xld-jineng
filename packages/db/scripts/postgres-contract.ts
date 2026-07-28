@@ -1850,12 +1850,12 @@ try {
      from notification_outbox where event_key like $1`,
     [`%:${passedAssessmentId}:%`],
   );
-  const evaluatorSelfArchive = await transitionAssessment(
+  const evaluatorArchiveAfterIndependentReview = await transitionAssessment(
     passedAssessmentId,
     "archive",
     evaluatorCookie,
   );
-  const assessmentArchive = await transitionAssessment(
+  const duplicateAssessmentArchive = await transitionAssessment(
     passedAssessmentId,
     "archive",
     roleLogins.get("hr_admin")!.cookie!,
@@ -1883,13 +1883,13 @@ try {
     assessmentSecondManagerConfirm.status !== 200 ||
     assessmentReminderVersions.rows[0]?.pendingManager !== 3 ||
     assessmentReminderVersions.rows[0]?.pendingHr !== 2 ||
-    evaluatorSelfArchive.status !== 403 ||
-    assessmentArchive.status !== 200 ||
+    evaluatorArchiveAfterIndependentReview.status !== 200 ||
+    duplicateAssessmentArchive.status !== 409 ||
     currentPassedAssessment.rows[0]?.assessmentId !== passedAssessmentId ||
     currentPassedAssessment.rows[0]?.level !== 3 ||
     !currentPassedAssessment.rows[0]?.validUntil
   )
-    throw new Error("评定退回重提、三级确认、有效期或矩阵事务更新失败");
+    throw new Error("评定退回重提、独立复核、有效期或矩阵事务更新失败");
 
   const failedAssessmentId = await createAssessment({
     skillId: createdSkills.get("S002")!,
@@ -1993,13 +1993,32 @@ try {
     passed: true,
     cookie: successfulConcurrentCookie,
   });
-  await transitionAssessment(managerAuthoredAssessmentId, "submit", successfulConcurrentCookie);
+  const managerAssessmentSubmit = await transitionAssessment(
+    managerAuthoredAssessmentId,
+    "submit",
+    successfulConcurrentCookie,
+  );
+  const managerAuthoredState = await contractPool.query<{ status: string }>(
+    "select status from skill_assessments where id=$1",
+    [managerAuthoredAssessmentId],
+  );
   const managerAssessmentSelfConfirm = await transitionAssessment(
     managerAuthoredAssessmentId,
     "manager-confirm",
     successfulConcurrentCookie,
   );
-  if (managerAssessmentSelfConfirm.status !== 403) throw new Error("评定人可确认本人录入的评定");
+  const managerAuthoredArchive = await transitionAssessment(
+    managerAuthoredAssessmentId,
+    "archive",
+    roleLogins.get("hr_admin")!.cookie!,
+  );
+  if (
+    managerAssessmentSubmit.status !== 200 ||
+    managerAuthoredState.rows[0]?.status !== "pending_hr" ||
+    managerAssessmentSelfConfirm.status !== 403 ||
+    managerAuthoredArchive.status !== 200
+  )
+    throw new Error("主管录入评定未跳过重复自审，或 HR 无法独立归档");
   let formalAssessmentDeleteRejected = false;
   try {
     await contractPool.query("delete from skill_assessments where id=$1", [failedAssessmentId]);

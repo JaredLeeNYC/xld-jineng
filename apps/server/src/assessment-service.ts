@@ -154,8 +154,9 @@ export const createAssessmentService = (dependencies: {
     },
     async submit(actor: SessionView, id: string) {
       if (!canAssess(actor)) return fail("FORBIDDEN", "无权提交技能评定", 403);
-      return (await repository.submit(actorScope(actor), id))
-        ? { ok: true as const, data: { id, status: "pending_manager" as const } }
+      const status = await repository.submit(actorScope(actor), id);
+      return status
+        ? { ok: true as const, data: { id, status } }
         : fail("ASSESSMENT_SUBMIT_REJECTED", "仅评定人可提交完整的草稿或已退回评定", 409);
     },
     async managerConfirm(actor: SessionView, id: string) {
@@ -178,12 +179,13 @@ export const createAssessmentService = (dependencies: {
     },
     async archive(actor: SessionView, id: string) {
       if (actor.role !== "hr_admin") return fail("FORBIDDEN", "仅 HR 可以归档技能评定", 403);
-      const visible = (await repository.list(actorScope(actor))).find((item) => item.id === id);
-      if (visible?.assessorEmployeeId === actor.employeeId)
-        return fail("SELF_REVIEW_FORBIDDEN", "评定人不能归档本人录入的评定", 403);
       return (await repository.archive(actorScope(actor), id, now()))
         ? { ok: true as const, data: { id, status: "archived" as const } }
-        : fail("ASSESSMENT_ARCHIVE_REJECTED", "仅主管确认后的评定可以归档", 409);
+        : fail(
+            "ASSESSMENT_ARCHIVE_REJECTED",
+            "评定需要至少一名独立复核人，且必须处于待 HR 归档状态",
+            409,
+          );
     },
     async voidAssessment(actor: SessionView, id: string, reason: string) {
       if (actor.role !== "hr_admin") return fail("FORBIDDEN", "仅 HR 可以作废归档评定", 403);

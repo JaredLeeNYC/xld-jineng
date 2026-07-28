@@ -3,5 +3,6 @@ dist/
 .env
 .env.local
 coverage/
+.data/
 packages/db/drizzle/meta/_journal.json.tmp
 *.log

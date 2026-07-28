@@ -11,7 +11,13 @@ const manager = {
   role: "department_manager" as const,
   mustChangePassword: false,
 };
-const hr = { ...manager, accountId: "account-hr", role: "hr_admin" as const };
+const hr = {
+  ...manager,
+  accountId: "account-hr",
+  employeeId: "employee-hr",
+  employeeNumber: "H001",
+  role: "hr_admin" as const,
+};
 const employee = { ...manager, accountId: "account-employee", role: "employee" as const };
 const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 1]);
 const failure = (result: { ok: boolean; error?: { code: string; status: number } }) => {
@@ -19,15 +25,15 @@ const failure = (result: { ok: boolean; error?: { code: string; status: number }
   return result.error;
 };
 
-const setup = (selfAuthored = false) => {
+const setup = (assessorEmployeeId?: string) => {
   const calls: string[] = [];
   const repository = {
     list: async () =>
-      selfAuthored
+      assessorEmployeeId
         ? [
             {
               id: "assessment-1",
-              assessorEmployeeId: manager.employeeId,
+              assessorEmployeeId,
             },
           ]
         : [],
@@ -39,9 +45,9 @@ const setup = (selfAuthored = false) => {
       calls.push("update");
       return true;
     },
-    submit: async () => {
-      calls.push("submit");
-      return true;
+    submit: async (actor: { role: string }) => {
+      calls.push(`submit:${actor.role}`);
+      return actor.role === "department_manager" ? "pending_hr" : "pending_manager";
     },
     managerConfirm: async () => {
       calls.push("manager-confirm");
@@ -101,13 +107,25 @@ describe("assessment service", () => {
   });
 
   test("keeps manager confirmation and HR archive as separate transitions", async () => {
-    const { service, calls } = setup();
-    expect((await service.submit(hr, "assessment-1")).ok).toBe(true);
+    const { service, calls } = setup(hr.employeeId);
+    expect(await service.submit(hr, "assessment-1")).toMatchObject({
+      ok: true,
+      data: { status: "pending_manager" },
+    });
     expect(failure(await service.managerConfirm(hr, "assessment-1")).status).toBe(403);
     expect((await service.managerConfirm(manager, "assessment-1")).ok).toBe(true);
     expect(failure(await service.archive(manager, "assessment-1")).status).toBe(403);
     expect((await service.archive(hr, "assessment-1")).ok).toBe(true);
-    expect(calls).toEqual(["submit", "manager-confirm", "archive"]);
+    expect(calls).toEqual(["submit:hr_admin", "manager-confirm", "archive"]);
+  });
+
+  test("routes a manager-authored assessment directly to HR", async () => {
+    const { service, calls } = setup();
+    expect(await service.submit(manager, "assessment-1")).toMatchObject({
+      ok: true,
+      data: { status: "pending_hr" },
+    });
+    expect(calls).toEqual(["submit:department_manager"]);
   });
 
   test("requires return and void reasons", async () => {
@@ -119,10 +137,9 @@ describe("assessment service", () => {
     expect(calls).toEqual(["return", "void"]);
   });
 
-  test("prevents the assessor from confirming or archiving their own result", async () => {
-    const { service, calls } = setup(true);
+  test("prevents a manager from confirming their own result", async () => {
+    const { service, calls } = setup(manager.employeeId);
     expect(failure(await service.managerConfirm(manager, "assessment-1")).status).toBe(403);
-    expect(failure(await service.archive(hr, "assessment-1")).status).toBe(403);
     expect(calls).toEqual([]);
   });
 });

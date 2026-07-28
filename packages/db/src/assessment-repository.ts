@@ -203,22 +203,36 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
 
   async submit(actor: AssessmentActor, id: string) {
     return transaction(pool, async (client) => {
-      const result = await client.query<{ transitionedAt: Date }>(
-        `update skill_assessments set status='pending_manager',updated_at=now()
-         where id=$1 and assessor_account_id=$2 and status in ('draft','returned')
-           and method is not null and evidence_storage_key is not null
-         returning updated_at as "transitionedAt"`,
+      const result = await client.query<{
+        status: "pending_manager" | "pending_hr";
+        transitionedAt: Date;
+      }>(
+        `update skill_assessments a
+         set status=case when assessor.role='department_manager' then 'pending_hr' else 'pending_manager' end,
+           updated_at=now()
+         from user_accounts assessor
+         where a.id=$1 and a.assessor_account_id=$2 and assessor.id=$2
+           and assessor.role in ('department_manager','hr_admin')
+           and a.status in ('draft','returned')
+           and a.method is not null and a.evidence_storage_key is not null
+         returning a.status,a.updated_at as "transitionedAt"`,
         [id, actor.accountId],
       );
-      if (!result.rowCount) return false;
-      await audit(client, actor.accountId, "skill_assessment.submitted", id);
-      await enqueueManagementWebhook(client, {
-        eventKey: `assessment_pending_manager:${id}:${result.rows[0]!.transitionedAt.toISOString()}`,
-        eventType: "assessment_pending_manager",
-        title: "技能评定待主管确认",
-        message: "有新的技能评定等待部门主管确认",
+      const transitioned = result.rows[0];
+      if (!transitioned) return undefined;
+      await audit(client, actor.accountId, "skill_assessment.submitted", id, {
+        status: transitioned.status,
       });
-      return true;
+      const awaitingHr = transitioned.status === "pending_hr";
+      await enqueueManagementWebhook(client, {
+        eventKey: `${awaitingHr ? "assessment_pending_hr" : "assessment_pending_manager"}:${id}:${transitioned.transitionedAt.toISOString()}`,
+        eventType: awaitingHr ? "assessment_pending_hr" : "assessment_pending_manager",
+        title: awaitingHr ? "技能评定待 HR 归档" : "技能评定待主管确认",
+        message: awaitingHr
+          ? "主管已完成技能评定，请 HR 复核归档"
+          : "有新的技能评定等待部门主管确认",
+      });
+      return transitioned.status;
     });
   },
 
@@ -282,7 +296,11 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
         `select a.employee_id as "employeeId",a.skill_id as "skillId",a.assessed_at as "assessedAt",a.passed,
            s.reassessment_required as "reassessmentRequired",s.validity_months as "validityMonths"
          from skill_assessments a join skills s on s.id=a.skill_id
-         where a.id=$1 and a.status='pending_hr' and a.assessor_account_id<>$2 for update of a`,
+         where a.id=$1 and a.status='pending_hr'
+           and (a.assessor_account_id<>$2 or
+             (a.manager_confirmed_by_account_id is not null
+               and a.manager_confirmed_by_account_id<>a.assessor_account_id))
+         for update of a`,
         [id, actor.accountId],
       );
       const row = assessment.rows[0];

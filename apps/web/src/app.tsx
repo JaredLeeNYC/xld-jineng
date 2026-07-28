@@ -3063,27 +3063,25 @@ export function AssessmentPanel({ session }: { session: Session }) {
             </button>
           </>
         )}
-      {session.role === "hr_admin" &&
-        assessment.assessorEmployeeId !== session.employeeId &&
-        assessment.status === "pending_hr" && (
-          <>
-            <button
-              onClick={() => mutate(`/api/assessments/${assessment.id}/archive`)}
-              type="button"
-            >
-              归档生效
-            </button>
-            <button
-              onClick={() => {
-                const reason = window.prompt("请输入退回原因");
-                if (reason) void mutate(`/api/assessments/${assessment.id}/return`, { reason });
-              }}
-              type="button"
-            >
-              退回
-            </button>
-          </>
-        )}
+      {session.role === "department_manager" &&
+        assessment.assessorEmployeeId === session.employeeId &&
+        assessment.status === "pending_manager" && <small>本人录入，不能自审</small>}
+      {session.role === "hr_admin" && assessment.status === "pending_hr" && (
+        <>
+          <button onClick={() => mutate(`/api/assessments/${assessment.id}/archive`)} type="button">
+            归档生效
+          </button>
+          <button
+            onClick={() => {
+              const reason = window.prompt("请输入退回原因");
+              if (reason) void mutate(`/api/assessments/${assessment.id}/return`, { reason });
+            }}
+            type="button"
+          >
+            退回
+          </button>
+        </>
+      )}
       {session.role === "hr_admin" && assessment.status === "archived" && (
         <button
           onClick={() => {
@@ -3222,7 +3220,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
         <div className="panel-heading">
           <div>
             <h2>{session.role === "employee" ? "我的评定" : "技能评定流转"}</h2>
-            <p>归档通过后才更新当前技能；培训完成不会自动授予技能。</p>
+            <p>至少一名独立人员复核并由 HR 归档后才更新当前技能。</p>
           </div>
         </div>
         {state.assessments.length === 0 ? (

@@ -167,6 +167,20 @@ for (const requiredPart of [
   }
 }
 
+const assessmentWorkflowMigration = await Bun.file(
+  "packages/db/drizzle/0017_sensible_review_route.sql",
+).text();
+for (const requiredPart of [
+  "OLD.status = 'draft' AND NEW.status IN ('pending_manager','pending_hr')",
+  "assessor_role IS DISTINCT FROM 'department_manager'",
+  "an independent reviewer is required",
+  "skill_assessment.workflow_migrated",
+]) {
+  if (!assessmentWorkflowMigration.includes(requiredPart)) {
+    fail(`评定简化迁移缺少职责分离约束：${requiredPart}`);
+  }
+}
+
 const bash =
   process.platform === "win32" && (await Bun.file("C:/Program Files/Git/bin/bash.exe").exists())
     ? "C:/Program Files/Git/bin/bash.exe"
