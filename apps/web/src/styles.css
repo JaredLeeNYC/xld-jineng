@@ -815,7 +815,8 @@ main {
 .credential-panel button,
 .employee-table button,
 .employee-card button,
-.master-row button,
+.master-table button,
+.master-card button,
 .inline-editor > button,
 .assignment-history .panel-heading button {
   border: 0;
@@ -849,7 +850,6 @@ main {
   align-content: start;
   gap: 6px;
 }
-.master-row,
 .history-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -858,19 +858,55 @@ main {
   border-top: 1px solid var(--line);
   padding: 11px 0;
 }
-.master-row strong,
-.master-row small,
 .history-row strong,
 .history-row small {
   display: block;
 }
-.master-row small,
-.master-row em,
 .history-row span,
 .history-row small {
   color: var(--muted);
   font-size: 11px;
   font-style: normal;
+}
+.master-table-wrap {
+  overflow-x: auto;
+}
+.master-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.master-table th,
+.master-table td {
+  border-top: 1px solid var(--line);
+  padding: 10px 7px;
+  text-align: left;
+}
+.master-table th {
+  color: var(--muted);
+  font-size: 10px;
+}
+.master-cards {
+  display: none;
+}
+.master-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 13px;
+}
+.master-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.master-card header span,
+.master-card p,
+.locked-field {
+  color: var(--muted);
+  font-size: 11px;
+}
+.master-card p {
+  margin: 8px 0;
 }
 .inline-editor {
   display: grid;
@@ -1097,6 +1133,13 @@ main {
   }
   .master-filter {
     display: grid;
+  }
+  .master-table-wrap {
+    display: none;
+  }
+  .master-cards {
+    display: grid;
+    gap: 10px;
   }
   .inline-editor {
     grid-template-columns: 1fr;

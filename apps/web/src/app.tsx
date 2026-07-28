@@ -678,6 +678,38 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
       )}
     </>
   );
+  const departmentActions = (department: Department) =>
+    department.active ? (
+      <>
+        <button type="button" onClick={() => setEditingDepartment(department)}>
+          编辑
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void mutate(`/api/organization/departments/${department.id}/deactivate`, "POST")
+          }
+        >
+          停用
+        </button>
+      </>
+    ) : null;
+  const positionActions = (position: Position) =>
+    position.active ? (
+      <>
+        <button type="button" onClick={() => setEditingPosition(position)}>
+          编辑
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void mutate(`/api/organization/positions/${position.id}/deactivate`, "POST")
+          }
+        >
+          停用
+        </button>
+      </>
+    ) : null;
 
   return (
     <div className="organization-page">
@@ -880,33 +912,42 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
             {filteredDepartments.length === 0 ? (
               <p className="list-state">当前筛选暂无部门</p>
             ) : (
-              filteredDepartments.map((department) => (
-                <div className="master-row" key={department.id}>
-                  <span>
-                    <strong>{department.code}</strong>
-                    <small>{department.name}</small>
-                  </span>
-                  <em>{department.active ? "启用" : "停用"}</em>
-                  {department.active && (
-                    <span>
-                      <button type="button" onClick={() => setEditingDepartment(department)}>
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void mutate(
-                            `/api/organization/departments/${department.id}/deactivate`,
-                            "POST",
-                          )
-                        }
-                      >
-                        停用
-                      </button>
-                    </span>
-                  )}
+              <>
+                <div className="master-table-wrap">
+                  <table className="master-table">
+                    <thead>
+                      <tr>
+                        <th>编码</th>
+                        <th>名称</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredDepartments.map((department) => (
+                        <tr key={department.id}>
+                          <td>{department.code}</td>
+                          <td>{department.name}</td>
+                          <td>{department.active ? "启用" : "停用"}</td>
+                          <td>{departmentActions(department)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))
+                <div className="master-cards">
+                  {filteredDepartments.map((department) => (
+                    <article className="master-card" key={department.id}>
+                      <header>
+                        <strong>{department.name}</strong>
+                        <span>{department.code}</span>
+                      </header>
+                      <p>{department.active ? "启用" : "停用"}</p>
+                      <footer>{departmentActions(department)}</footer>
+                    </article>
+                  ))}
+                </div>
+              </>
             )}
           </section>
           <section className="panel master-list">
@@ -919,35 +960,46 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
             {filteredPositions.length === 0 ? (
               <p className="list-state">当前筛选暂无岗位</p>
             ) : (
-              filteredPositions.map((position) => (
-                <div className="master-row" key={position.id}>
-                  <span>
-                    <strong>
-                      {position.code} · {position.name}
-                    </strong>
-                    <small>{position.departmentName}</small>
-                  </span>
-                  <em>{position.active ? "启用" : "停用"}</em>
-                  {position.active && (
-                    <span>
-                      <button type="button" onClick={() => setEditingPosition(position)}>
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void mutate(
-                            `/api/organization/positions/${position.id}/deactivate`,
-                            "POST",
-                          )
-                        }
-                      >
-                        停用
-                      </button>
-                    </span>
-                  )}
+              <>
+                <div className="master-table-wrap">
+                  <table className="master-table">
+                    <thead>
+                      <tr>
+                        <th>编码 / 岗位</th>
+                        <th>部门</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPositions.map((position) => (
+                        <tr key={position.id}>
+                          <td>
+                            {position.code} · {position.name}
+                          </td>
+                          <td>{position.departmentName}</td>
+                          <td>{position.active ? "启用" : "停用"}</td>
+                          <td>{positionActions(position)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))
+                <div className="master-cards">
+                  {filteredPositions.map((position) => (
+                    <article className="master-card" key={position.id}>
+                      <header>
+                        <strong>{position.name}</strong>
+                        <span>{position.code}</span>
+                      </header>
+                      <p>
+                        {position.departmentName} · {position.active ? "启用" : "停用"}
+                      </p>
+                      <footer>{positionActions(position)}</footer>
+                    </article>
+                  ))}
+                </div>
+              </>
             )}
           </section>
         </section>
@@ -1005,20 +1057,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
               setEditingPosition({ ...editingPosition, name: event.target.value })
             }
           />
-          <select
-            value={editingPosition.departmentId}
-            onChange={(event) =>
-              setEditingPosition({ ...editingPosition, departmentId: event.target.value })
-            }
-          >
-            {state.departments
-              .filter((item) => item.active)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-          </select>
+          <span className="locked-field">所属部门：{editingPosition.departmentName}</span>
           <button className="primary-button" type="submit">
             保存
           </button>

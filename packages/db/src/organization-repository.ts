@@ -182,11 +182,8 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
         `update positions p set name = $2, department_id = $3, updated_at = now()
          where p.id = $1 and exists (
            select 1 from departments d where d.id = $3 and d.active = true
-         ) and (
-           p.department_id = $3 or not exists (
-             select 1 from position_assignments pa where pa.position_id = p.id
-           )
-         ) returning p.id`,
+         ) and p.department_id = $3
+         returning p.id`,
         [input.id, input.name, input.departmentId],
       );
       if (result.rowCount === 0) return false;
