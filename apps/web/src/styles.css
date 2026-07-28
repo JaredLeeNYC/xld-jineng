@@ -1026,6 +1026,29 @@ main {
   display: grid;
   gap: 20px;
 }
+.training-workspace,
+.training-plan-page {
+  display: grid;
+  gap: 20px;
+}
+.training-plan-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.training-plan-form h2,
+.training-plan-form button {
+  grid-column: 1 / -1;
+}
+.training-plan-form select[multiple] {
+  min-height: 110px;
+}
+.batch-confirm {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-top: 16px;
+}
 .material-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1089,6 +1112,16 @@ main {
 }
 
 @media (max-width: 720px) {
+  .training-plan-form {
+    grid-template-columns: 1fr;
+  }
+  .training-plan-form > * {
+    grid-column: 1;
+  }
+  .batch-confirm {
+    align-items: stretch;
+    flex-direction: column;
+  }
   .material-form {
     grid-template-columns: 1fr;
   }

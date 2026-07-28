@@ -6,12 +6,14 @@ import { createSkillBaselineWorkbook } from "../../../apps/server/src/skill-exce
 import { createSkillService } from "../../../apps/server/src/skill-service";
 import { createMaterialService } from "../../../apps/server/src/material-service";
 import { createMemoryMaterialStorage } from "../../../apps/server/src/material-storage";
+import { createTrainingService } from "../../../apps/server/src/training-service";
 import {
   createDatabaseReadinessProbe,
   createPostgresAuthRepository,
   createPostgresOrganizationRepository,
   createPostgresSkillRepository,
   createPostgresMaterialRepository,
+  createPostgresTrainingRepository,
   migrationsFolder,
 } from "../src";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -204,16 +206,24 @@ try {
     now: () => new Date(),
   });
   const materialRepository = createPostgresMaterialRepository(contractPool);
+  const contractStorage = createMemoryMaterialStorage();
   const materialService = createMaterialService({
     repository: materialRepository,
-    storage: createMemoryMaterialStorage(),
+    storage: contractStorage,
     idSource: () => randomUUID(),
+  });
+  const trainingService = createTrainingService({
+    repository: createPostgresTrainingRepository(contractPool),
+    storage: contractStorage,
+    idSource: () => randomUUID(),
+    now: () => new Date(),
   });
   const app = createApp({
     authService,
     organizationService,
     skillService,
     materialService,
+    trainingService,
     readinessProbe,
   });
   try {
@@ -1171,6 +1181,253 @@ try {
   ) {
     throw new Error("培训资料数据库元数据或随机存储键不符合约束");
   }
+  const importedEmployee = await contractPool.query<{ id: string }>(
+    "select id from employees where employee_number=$1",
+    [firstCredential.employeeNumber],
+  );
+  const planPayload = {
+    title: "点检培训计划",
+    materialId: materialUploadBody.data.id,
+    ownerEmployeeId: employeeIds.get("department_manager")!,
+    startAt: new Date(Date.now() - 60_000).toISOString(),
+    dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+    location: "一号会议室",
+    scopeType: "employees",
+    scopeEmployeeIds: [importedEmployee.rows[0]!.id],
+  };
+  const employeeCreatePlan = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      method: "POST",
+      headers: { cookie: importedCookie!, "content-type": "application/json" },
+      body: JSON.stringify(planPayload),
+    }),
+  );
+  const createPlanResponse = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie!, "content-type": "application/json" },
+      body: JSON.stringify(planPayload),
+    }),
+  );
+  const createPlanBody = (await createPlanResponse.json()) as { data?: { id: string } };
+  if (
+    employeeCreatePlan.status !== 403 ||
+    createPlanResponse.status !== 200 ||
+    !createPlanBody.data?.id
+  )
+    throw new Error(
+      `培训计划创建权限或草稿创建失败：employee=${employeeCreatePlan.status}, hr=${createPlanResponse.status}, body=${JSON.stringify(createPlanBody)}`,
+    );
+  const updatePlanResponse = await app.handle(
+    new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}`, {
+      method: "PATCH",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie!, "content-type": "application/json" },
+      body: JSON.stringify({ ...planPayload, location: "二号会议室" }),
+    }),
+  );
+  const publishPlanResponse = await app.handle(
+    new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}/publish`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const republishResponse = await app.handle(
+    new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}/publish`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const task = await contractPool.query<{ id: string }>(
+    "select id from training_tasks where plan_id=$1 and employee_id=$2",
+    [createPlanBody.data.id, importedEmployee.rows[0]!.id],
+  );
+  if (
+    updatePlanResponse.status !== 200 ||
+    publishPlanResponse.status !== 200 ||
+    republishResponse.status !== 409 ||
+    task.rowCount !== 1
+  )
+    throw new Error("培训草稿编辑、发布固化或非法状态跳转失败");
+  const submit = () =>
+    app.handle(
+      new Request(`http://localhost/api/training-tasks/${task.rows[0]!.id}/submit`, {
+        method: "POST",
+        headers: { cookie: importedCookie! },
+      }),
+    );
+  const firstSubmit = await submit();
+  const returnResponse = await app.handle(
+    new Request(`http://localhost/api/training-tasks/${task.rows[0]!.id}/return`, {
+      method: "POST",
+      headers: {
+        cookie: successfulConcurrentCookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ reason: "请重新阅读安全章节" }),
+    }),
+  );
+  const secondSubmit = await submit();
+  const trainingConfirmResponse = await app.handle(
+    new Request(`http://localhost/api/training-tasks/${task.rows[0]!.id}/confirm`, {
+      method: "POST",
+      headers: { cookie: successfulConcurrentCookie },
+    }),
+  );
+  const trainingRecord = await contractPool.query(
+    "select 1 from training_records where task_id=$1",
+    [task.rows[0]!.id],
+  );
+  const cancelConfirmed = await app.handle(
+    new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}/cancel`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  if (
+    firstSubmit.status !== 200 ||
+    returnResponse.status !== 200 ||
+    secondSubmit.status !== 200 ||
+    trainingConfirmResponse.status !== 200 ||
+    trainingRecord.rowCount !== 1 ||
+    cancelConfirmed.status !== 409
+  )
+    throw new Error(
+      `员工提交、退回重提、双确认或正式履历规则失败：${firstSubmit.status}/${returnResponse.status}/${secondSubmit.status}/${trainingConfirmResponse.status}/records=${trainingRecord.rowCount}/cancel=${cancelConfirmed.status}`,
+    );
+  let confirmedTaskMutationRejected = false;
+  try {
+    await contractPool.query("update training_tasks set status='returned' where id=$1", [
+      task.rows[0]!.id,
+    ]);
+  } catch (error) {
+    confirmedTaskMutationRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
+  if (!confirmedTaskMutationRejected) throw new Error("数据库未保护已形成正式履历的确认任务");
+
+  const batchPlanResponse = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie!, "content-type": "application/json" },
+      body: JSON.stringify({
+        ...planPayload,
+        title: "集中点检培训",
+        scopeEmployeeIds: [importedEmployee.rows[0]!.id, employeeIds.get("department_manager")!],
+      }),
+    }),
+  );
+  const batchPlanBody = (await batchPlanResponse.json()) as { data?: { id: string } };
+  await app.handle(
+    new Request(`http://localhost/api/training-plans/${batchPlanBody.data!.id}/publish`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const batchTasks = await contractPool.query<{ id: string }>(
+    "select id from training_tasks where plan_id=$1 order by id",
+    [batchPlanBody.data!.id],
+  );
+  const attendance = new FormData();
+  attendance.set("taskIds", JSON.stringify(batchTasks.rows.map((row) => row.id)));
+  attendance.set(
+    "file",
+    new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 1])], "签到.pdf", {
+      type: "application/pdf",
+    }),
+  );
+  const batchConfirmResponse = await app.handle(
+    new Request(`http://localhost/api/training-plans/${batchPlanBody.data!.id}/batch-confirm`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      body: attendance,
+    }),
+  );
+  const batchRecords = await contractPool.query<{ count: number }>(
+    "select count(*)::int as count from training_records r join training_tasks t on t.id=r.task_id where t.plan_id=$1",
+    [batchPlanBody.data!.id],
+  );
+  if (batchConfirmResponse.status !== 200 || batchRecords.rows[0]?.count !== 2)
+    throw new Error("集中培训证据上传与批量确认失败");
+  const evidence = await contractPool.query<{ id: string }>(
+    "select id from training_evidence where plan_id=$1",
+    [batchPlanBody.data!.id],
+  );
+  const employeeEvidenceResponse = await app.handle(
+    new Request(`http://localhost/api/training-evidence/${evidence.rows[0]!.id}/content`, {
+      headers: { cookie: importedCookie! },
+    }),
+  );
+  const systemEvidenceResponse = await app.handle(
+    new Request(`http://localhost/api/training-evidence/${evidence.rows[0]!.id}/content`, {
+      headers: { cookie: roleLogins.get("system_admin")!.cookie! },
+    }),
+  );
+  if (employeeEvidenceResponse.status !== 200 || systemEvidenceResponse.status !== 403)
+    throw new Error("培训证据查看权限失败");
+
+  const overduePlanResponse = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      method: "POST",
+      headers: {
+        cookie: roleLogins.get("hr_admin")!.cookie!,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ...planPayload,
+        title: "逾期取消培训",
+        startAt: new Date(Date.now() - 172_800_000).toISOString(),
+        dueAt: new Date(Date.now() - 86_400_000).toISOString(),
+      }),
+    }),
+  );
+  const overduePlanBody = (await overduePlanResponse.json()) as { data?: { id: string } };
+  await app.handle(
+    new Request(`http://localhost/api/training-plans/${overduePlanBody.data!.id}/publish`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const overdueTasksResponse = await app.handle(
+    new Request("http://localhost/api/training-tasks", {
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const overdueTasksBody = (await overdueTasksResponse.json()) as {
+    data?: Array<{ planId: string; overdue: boolean }>;
+  };
+  const overdueTask = await contractPool.query<{ id: string }>(
+    "select id from training_tasks where plan_id=$1",
+    [overduePlanBody.data!.id],
+  );
+  let prematureRecordRejected = false;
+  try {
+    await contractPool.query(
+      "insert into training_records (task_id,confirmed_by_account_id,confirmed_at) values ($1,$2,now())",
+      [overdueTask.rows[0]!.id, accountIds.get("hr_admin")!],
+    );
+  } catch (error) {
+    prematureRecordRejected =
+      typeof error === "object" && error !== null && "code" in error && error.code === "23514";
+  }
+  if (!prematureRecordRejected) throw new Error("数据库允许未确认任务进入正式培训履历");
+  const cancelOverdueResponse = await app.handle(
+    new Request(`http://localhost/api/training-plans/${overduePlanBody.data!.id}/cancel`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const cancelledTask = await contractPool.query<{ status: string }>(
+    "select status from training_tasks where plan_id=$1",
+    [overduePlanBody.data!.id],
+  );
+  if (
+    !overdueTasksBody.data?.some(
+      (item) => item.planId === overduePlanBody.data!.id && item.overdue,
+    ) ||
+    cancelOverdueResponse.status !== 200 ||
+    cancelledTask.rows[0]?.status !== "cancelled"
+  )
+    throw new Error("培训逾期计算、取消保留或状态排除失败");
   const employeeMaterialResponse = await app.handle(
     new Request(`http://localhost/api/training-materials/${materialUploadBody.data.id}/content`, {
       headers: { cookie: importedCookie! },
@@ -1204,13 +1461,9 @@ try {
       headers: { cookie: importedCookie! },
     }),
   );
-  if (deactivateMaterialResponse.status !== 200 || inactiveMaterialResponse.status !== 404) {
-    throw new Error("停用培训资料仍可用于员工新访问");
+  if (deactivateMaterialResponse.status !== 200 || inactiveMaterialResponse.status !== 200) {
+    throw new Error("真实培训任务未保留停用资料的历史读取能力");
   }
-  const importedEmployee = await contractPool.query<{ id: string }>(
-    "select id from employees where employee_number=$1",
-    [firstCredential.employeeNumber],
-  );
   if (
     !(await materialRepository.canRead({
       materialId: materialUploadBody.data.id,
@@ -1225,20 +1478,13 @@ try {
   ) {
     throw new Error("员工培训资料未按当前岗位技能范围授权");
   }
-  await materialRepository.grantHistoricalAccess({
-    materialId: materialUploadBody.data.id,
-    employeeId: importedEmployee.rows[0]!.id,
-    sourceType: "training_assignment",
-    sourceReference: "contract-history-001",
-  });
-  const historicalMaterialResponse = await app.handle(
-    new Request(`http://localhost/api/training-materials/${materialUploadBody.data.id}/content`, {
-      headers: { cookie: importedCookie! },
-    }),
-  );
-  if (historicalMaterialResponse.status !== 200) {
-    throw new Error("历史培训授权未保留停用资料的受控读取能力");
-  }
+  if (
+    await materialRepository.hasHistoricalAccess(
+      materialUploadBody.data.id,
+      otherEmployee.rows[0]!.id,
+    )
+  )
+    throw new Error("未分配培训的员工被授予历史资料访问权");
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",

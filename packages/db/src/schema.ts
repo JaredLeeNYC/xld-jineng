@@ -291,6 +291,149 @@ export const trainingMaterialAccessGrants = pgTable(
   ],
 );
 
+export const trainingPlans = pgTable(
+  "training_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: varchar("title", { length: 150 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    materialId: uuid("material_id")
+      .notNull()
+      .references(() => trainingMaterials.id, { onDelete: "restrict" }),
+    ownerEmployeeId: uuid("owner_employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    location: varchar("location", { length: 150 }).notNull(),
+    scopeType: varchar("scope_type", { length: 20 }).notNull(),
+    scopeDepartmentId: uuid("scope_department_id").references(() => departments.id, {
+      onDelete: "restrict",
+    }),
+    scopePositionId: uuid("scope_position_id").references(() => positions.id, {
+      onDelete: "restrict",
+    }),
+    createdByAccountId: uuid("created_by_account_id")
+      .notNull()
+      .references(() => userAccounts.id, { onDelete: "restrict" }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    check(
+      "training_plans_status",
+      sql`${table.status} in ('draft','published','in_progress','completed','cancelled')`,
+    ),
+    check(
+      "training_plans_scope",
+      sql`(${table.scopeType} = 'department' and ${table.scopeDepartmentId} is not null and ${table.scopePositionId} is null) or (${table.scopeType} = 'position' and ${table.scopePositionId} is not null and ${table.scopeDepartmentId} is null) or (${table.scopeType} = 'employees' and ${table.scopeDepartmentId} is null and ${table.scopePositionId} is null)`,
+    ),
+    check("training_plans_time_range", sql`${table.dueAt} > ${table.startAt}`),
+    index("training_plans_status_idx").on(table.status),
+  ],
+);
+
+export const trainingPlanScopeEmployees = pgTable(
+  "training_plan_scope_employees",
+  {
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => trainingPlans.id, { onDelete: "restrict" }),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    active: boolean("active").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("training_plan_scope_employees_unique").on(table.planId, table.employeeId),
+    index("training_plan_scope_employees_employee_idx").on(table.employeeId),
+  ],
+);
+
+export const trainingTasks = pgTable(
+  "training_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => trainingPlans.id, { onDelete: "restrict" }),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    status: varchar("status", { length: 20 }).notNull().default("assigned"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    returnedAt: timestamp("returned_at", { withTimezone: true }),
+    returnReason: varchar("return_reason", { length: 500 }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    check(
+      "training_tasks_status",
+      sql`${table.status} in ('assigned','submitted','returned','confirmed','cancelled')`,
+    ),
+    uniqueIndex("training_tasks_plan_employee_unique").on(table.planId, table.employeeId),
+    index("training_tasks_employee_status_idx").on(table.employeeId, table.status),
+  ],
+);
+
+export const trainingRecords = pgTable(
+  "training_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => trainingTasks.id, { onDelete: "restrict" }),
+    confirmedByAccountId: uuid("confirmed_by_account_id")
+      .notNull()
+      .references(() => userAccounts.id, { onDelete: "restrict" }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("training_records_task_unique").on(table.taskId)],
+);
+
+export const trainingEvidence = pgTable(
+  "training_evidence",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => trainingPlans.id, { onDelete: "restrict" }),
+    storageKey: uuid("storage_key").notNull(),
+    originalFilename: varchar("original_filename", { length: 255 }).notNull(),
+    mimeType: varchar("mime_type", { length: 150 }).notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    checksum: char("checksum", { length: 64 }).notNull(),
+    uploadedByAccountId: uuid("uploaded_by_account_id")
+      .notNull()
+      .references(() => userAccounts.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("training_evidence_storage_key_unique").on(table.storageKey)],
+);
+
+export const trainingEvidenceTasks = pgTable(
+  "training_evidence_tasks",
+  {
+    evidenceId: uuid("evidence_id")
+      .notNull()
+      .references(() => trainingEvidence.id, { onDelete: "restrict" }),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => trainingTasks.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("training_evidence_tasks_unique").on(table.evidenceId, table.taskId),
+    index("training_evidence_tasks_task_idx").on(table.taskId),
+  ],
+);
+
 export const employeeCurrentSkills = pgTable(
   "employee_current_skills",
   {

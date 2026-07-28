@@ -119,3 +119,4 @@ export const failure = (code: string, message: string): ApiError => ({
 export * from "./organization";
 export * from "./skill";
 export * from "./training-material";
+export * from "./training-plan";

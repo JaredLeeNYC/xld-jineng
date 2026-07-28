@@ -9,6 +9,9 @@ import {
   type SkillMatrixCell,
   type SkillView,
   type TrainingMaterialView,
+  type TrainingPlanView,
+  type TrainingScopeType,
+  type TrainingTaskView,
 } from "@jineng/skill-matrix-shared";
 import {
   Bell,
@@ -2143,6 +2146,609 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
   );
 }
 
+const planStatusLabel: Record<TrainingPlanView["status"], string> = {
+  draft: "草稿",
+  published: "已发布",
+  in_progress: "进行中",
+  completed: "已完成",
+  cancelled: "已取消",
+};
+const taskStatusLabel: Record<TrainingTaskView["status"], string> = {
+  assigned: "待学习",
+  submitted: "待确认",
+  returned: "已退回",
+  confirmed: "已确认",
+  cancelled: "已取消",
+};
+
+export function TrainingPlanPanel({ session }: { session: Session }) {
+  const canManage = session.role === "hr_admin" || session.role === "department_manager";
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | {
+        status: "ready";
+        plans: TrainingPlanView[];
+        tasks: TrainingTaskView[];
+        materials: TrainingMaterialView[];
+        employees: Employee[];
+        departments: Department[];
+        positions: Position[];
+      }
+  >({ status: "loading" });
+  const [notice, setNotice] = useState("");
+  const [editingId, setEditingId] = useState<string>();
+  const [evidence, setEvidence] = useState<File>();
+  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
+  const [form, setForm] = useState({
+    title: "",
+    materialId: "",
+    ownerEmployeeId: "",
+    startAt: "",
+    dueAt: "",
+    location: "",
+    scopeType: "department" as TrainingScopeType,
+    scopeDepartmentId: "",
+    scopePositionId: "",
+    scopeEmployeeIds: [] as string[],
+  });
+
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      const [tasks, plans, materials, employees, departments, positions] = await Promise.all([
+        request<TrainingTaskView[]>("/api/training-tasks"),
+        canManage ? request<TrainingPlanView[]>("/api/training-plans") : Promise.resolve(undefined),
+        canManage
+          ? request<TrainingMaterialView[]>("/api/training-materials")
+          : Promise.resolve(undefined),
+        canManage
+          ? request<Employee[]>("/api/organization/employees?active=true")
+          : Promise.resolve(undefined),
+        canManage
+          ? request<Department[]>("/api/organization/departments")
+          : Promise.resolve(undefined),
+        canManage ? request<Position[]>("/api/organization/positions") : Promise.resolve(undefined),
+      ]);
+      const responses = [tasks, plans, materials, employees, departments, positions].filter(
+        Boolean,
+      ) as Array<{ result: ApiResult<unknown> }>;
+      const failed = responses.find((item) => !item.result.ok);
+      if (failed && !failed.result.ok) {
+        setState({ status: "error", message: failed.result.error.message });
+        return;
+      }
+      if (!tasks.result.ok) return;
+      setState({
+        status: "ready",
+        tasks: tasks.result.data,
+        plans: plans?.result.ok ? plans.result.data : [],
+        materials: materials?.result.ok ? materials.result.data : [],
+        employees: employees?.result.ok ? employees.result.data : [],
+        departments: departments?.result.ok ? departments.result.data : [],
+        positions: positions?.result.ok ? positions.result.data : [],
+      });
+    } catch {
+      setState({ status: "error", message: "暂时无法连接培训计划服务" });
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, [canManage]);
+  const mutate = async (path: string, method = "POST", body?: unknown) => {
+    const response = await request(path, {
+      method,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    if (!response.result.ok) {
+      setNotice(response.result.error.message);
+      return false;
+    }
+    setNotice("操作成功");
+    await load();
+    return true;
+  };
+
+  if (state.status === "loading")
+    return <section className="panel list-state-panel">正在加载培训计划与任务…</section>;
+  if (state.status === "error")
+    return (
+      <section className="panel list-state-panel" role="alert">
+        <p>{state.message}</p>
+        <button className="primary-button" onClick={load} type="button">
+          重新加载
+        </button>
+      </section>
+    );
+  const activeTasks = state.tasks;
+  return (
+    <div className="training-plan-page">
+      {notice && (
+        <p className="organization-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {canManage && (
+        <>
+          <form
+            className="panel compact-form training-plan-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const payload = {
+                ...form,
+                ...(form.scopeType === "department"
+                  ? { scopeDepartmentId: form.scopeDepartmentId }
+                  : { scopeDepartmentId: undefined }),
+                ...(form.scopeType === "position"
+                  ? { scopePositionId: form.scopePositionId }
+                  : { scopePositionId: undefined }),
+                ...(form.scopeType === "employees"
+                  ? { scopeEmployeeIds: form.scopeEmployeeIds }
+                  : { scopeEmployeeIds: undefined }),
+              };
+              const ok = await mutate(
+                editingId ? `/api/training-plans/${editingId}` : "/api/training-plans",
+                editingId ? "PATCH" : "POST",
+                payload,
+              );
+              if (ok) {
+                setEditingId(undefined);
+                setForm({
+                  title: "",
+                  materialId: "",
+                  ownerEmployeeId: "",
+                  startAt: "",
+                  dueAt: "",
+                  location: "",
+                  scopeType: "department",
+                  scopeDepartmentId: "",
+                  scopePositionId: "",
+                  scopeEmployeeIds: [],
+                });
+              }
+            }}
+          >
+            <h2>{editingId ? "编辑培训草稿" : "新建培训计划"}</h2>
+            <input
+              required
+              placeholder="计划名称"
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+            />
+            <select
+              required
+              value={form.materialId}
+              onChange={(event) => setForm({ ...form, materialId: event.target.value })}
+            >
+              <option value="">选择培训资料</option>
+              {state.materials
+                .filter((item) => item.active)
+                .map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+            </select>
+            <select
+              required
+              value={form.ownerEmployeeId}
+              onChange={(event) => setForm({ ...form, ownerEmployeeId: event.target.value })}
+            >
+              <option value="">选择负责人</option>
+              {state.employees
+                .filter((item) => item.active)
+                .map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.displayName}
+                  </option>
+                ))}
+            </select>
+            <input
+              required
+              type="datetime-local"
+              value={form.startAt}
+              onChange={(event) => setForm({ ...form, startAt: event.target.value })}
+            />
+            <input
+              required
+              type="datetime-local"
+              value={form.dueAt}
+              onChange={(event) => setForm({ ...form, dueAt: event.target.value })}
+            />
+            <input
+              required
+              placeholder="地点"
+              value={form.location}
+              onChange={(event) => setForm({ ...form, location: event.target.value })}
+            />
+            <select
+              value={form.scopeType}
+              onChange={(event) =>
+                setForm({ ...form, scopeType: event.target.value as TrainingScopeType })
+              }
+            >
+              <option value="department">按部门</option>
+              <option value="position">按岗位</option>
+              <option value="employees">指定员工</option>
+            </select>
+            {form.scopeType === "department" && (
+              <select
+                required
+                value={form.scopeDepartmentId}
+                onChange={(event) => setForm({ ...form, scopeDepartmentId: event.target.value })}
+              >
+                <option value="">选择部门</option>
+                {state.departments
+                  .filter((item) => item.active)
+                  .map((item) => (
+                    <option value={item.id} key={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+              </select>
+            )}
+            {form.scopeType === "position" && (
+              <select
+                required
+                value={form.scopePositionId}
+                onChange={(event) => setForm({ ...form, scopePositionId: event.target.value })}
+              >
+                <option value="">选择岗位</option>
+                {state.positions
+                  .filter((item) => item.active)
+                  .map((item) => (
+                    <option value={item.id} key={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+              </select>
+            )}
+            {form.scopeType === "employees" && (
+              <select
+                multiple
+                required
+                value={form.scopeEmployeeIds}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    scopeEmployeeIds: Array.from(event.target.options)
+                      .filter((item) => item.selected)
+                      .map((item) => item.value),
+                  })
+                }
+              >
+                {state.employees
+                  .filter((item) => item.active)
+                  .map((item) => (
+                    <option value={item.id} key={item.id}>
+                      {item.displayName}
+                    </option>
+                  ))}
+              </select>
+            )}
+            <button className="primary-button" type="submit">
+              保存草稿
+            </button>
+          </form>
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <h2>培训计划</h2>
+                <p>发布后固化对象并生成员工任务。</p>
+              </div>
+            </div>
+            {state.plans.length === 0 ? (
+              <div className="list-state-panel">暂无培训计划</div>
+            ) : (
+              <div className="material-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>计划</th>
+                      <th>负责人/时间</th>
+                      <th>进度</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.plans.map((plan) => (
+                      <tr key={plan.id}>
+                        <td>
+                          <strong>{plan.title}</strong>
+                          <small>{plan.materialTitle}</small>
+                        </td>
+                        <td>
+                          {plan.ownerName}
+                          <small>
+                            {new Date(plan.startAt).toLocaleString()} —{" "}
+                            {new Date(plan.dueAt).toLocaleString()}
+                          </small>
+                        </td>
+                        <td>
+                          {plan.confirmedCount}/{plan.taskCount}
+                        </td>
+                        <td>{planStatusLabel[plan.status]}</td>
+                        <td>
+                          {plan.status === "draft" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingId(plan.id);
+                                  setForm({
+                                    title: plan.title,
+                                    materialId: plan.materialId,
+                                    ownerEmployeeId: plan.ownerEmployeeId,
+                                    startAt: plan.startAt.slice(0, 16),
+                                    dueAt: plan.dueAt.slice(0, 16),
+                                    location: plan.location,
+                                    scopeType: plan.scopeType,
+                                    scopeDepartmentId: plan.scopeDepartmentId ?? "",
+                                    scopePositionId: plan.scopePositionId ?? "",
+                                    scopeEmployeeIds: plan.scopeEmployeeIds,
+                                  });
+                                }}
+                              >
+                                编辑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void mutate(`/api/training-plans/${plan.id}/publish`)
+                                }
+                              >
+                                发布
+                              </button>
+                            </>
+                          )}
+                          {["draft", "published", "in_progress"].includes(plan.status) && (
+                            <button
+                              type="button"
+                              onClick={() => void mutate(`/api/training-plans/${plan.id}/cancel`)}
+                            >
+                              取消
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>{canManage ? "培训任务与待办" : "我的培训"}</h2>
+            <p>员工提交后，负责人或部门主管确认才进入正式履历。</p>
+          </div>
+        </div>
+        {activeTasks.length === 0 ? (
+          <div className="list-state-panel">暂无培训任务</div>
+        ) : (
+          <>
+            <div className="material-table">
+              <table>
+                <thead>
+                  <tr>
+                    {canManage && <th>选择</th>}
+                    <th>计划/员工</th>
+                    <th>截止时间</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeTasks.map((task) => (
+                    <tr key={task.id}>
+                      {canManage && (
+                        <td>
+                          <input
+                            type="checkbox"
+                            disabled={task.status === "confirmed"}
+                            checked={selectedTasks.includes(task.id)}
+                            onChange={(event) =>
+                              setSelectedTasks(
+                                event.target.checked
+                                  ? [...selectedTasks, task.id]
+                                  : selectedTasks.filter((id) => id !== task.id),
+                              )
+                            }
+                          />
+                        </td>
+                      )}
+                      <td>
+                        <strong>{task.planTitle}</strong>
+                        <small>
+                          {canManage
+                            ? `${task.employeeNumber} · ${task.employeeName}`
+                            : task.materialTitle}
+                        </small>
+                      </td>
+                      <td>
+                        {new Date(task.dueAt).toLocaleString()}
+                        {task.overdue && <small> · 已逾期</small>}
+                      </td>
+                      <td>
+                        {taskStatusLabel[task.status]}
+                        {task.returnReason && <small> · {task.returnReason}</small>}
+                      </td>
+                      <td>
+                        {task.evidence.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                `/api/training-evidence/${item.id}/content`,
+                                "_blank",
+                                "noopener,noreferrer",
+                              )
+                            }
+                          >
+                            查看证据
+                          </button>
+                        ))}
+                        {!canManage && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                `/api/training-materials/${task.materialId}/content`,
+                                "_blank",
+                                "noopener,noreferrer",
+                              )
+                            }
+                          >
+                            查看资料
+                          </button>
+                        )}
+                        {!canManage && ["assigned", "returned"].includes(task.status) && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void mutate(`/api/training-tasks/${task.id}/submit`)}
+                            >
+                              提交完成
+                            </button>
+                          </>
+                        )}
+                        {canManage && task.status === "submitted" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void mutate(`/api/training-tasks/${task.id}/confirm`)}
+                            >
+                              确认
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const reason = window.prompt("请输入退回原因");
+                                if (reason)
+                                  void mutate(`/api/training-tasks/${task.id}/return`, "POST", {
+                                    reason,
+                                  });
+                              }}
+                            >
+                              退回
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="material-cards">
+              {activeTasks.map((task) => (
+                <article key={task.id}>
+                  <header>
+                    <strong>{task.planTitle}</strong>
+                    <span>{taskStatusLabel[task.status]}</span>
+                  </header>
+                  <p>
+                    {canManage ? task.employeeName : task.materialTitle} ·{" "}
+                    {new Date(task.dueAt).toLocaleString()}
+                  </p>
+                  {task.evidence.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() =>
+                        window.open(
+                          `/api/training-evidence/${item.id}/content`,
+                          "_blank",
+                          "noopener,noreferrer",
+                        )
+                      }
+                    >
+                      查看签到证据
+                    </button>
+                  ))}
+                  {!canManage && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(
+                          `/api/training-materials/${task.materialId}/content`,
+                          "_blank",
+                          "noopener,noreferrer",
+                        )
+                      }
+                    >
+                      查看培训资料
+                    </button>
+                  )}
+                  {!canManage && ["assigned", "returned"].includes(task.status) && (
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => void mutate(`/api/training-tasks/${task.id}/submit`)}
+                    >
+                      提交完成
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+        {canManage && (
+          <form
+            className="batch-confirm"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!evidence || selectedTasks.length === 0) {
+                setNotice("请选择参训任务并上传签到表或照片");
+                return;
+              }
+              const planId = state.tasks.find((task) => selectedTasks.includes(task.id))?.planId;
+              if (
+                !planId ||
+                selectedTasks.some(
+                  (id) => state.tasks.find((task) => task.id === id)?.planId !== planId,
+                )
+              ) {
+                setNotice("批量确认必须选择同一计划的任务");
+                return;
+              }
+              const body = new FormData();
+              body.set("taskIds", JSON.stringify(selectedTasks));
+              body.set("file", evidence);
+              const response = await request(`/api/training-plans/${planId}/batch-confirm`, {
+                method: "POST",
+                body,
+              });
+              setNotice(response.result.ok ? "批量确认成功" : response.result.error.message);
+              if (response.result.ok) {
+                setSelectedTasks([]);
+                setEvidence(undefined);
+                await load();
+              }
+            }}
+          >
+            <input
+              type="file"
+              required
+              accept=".pdf,.jpg,.jpeg,.png,.webp"
+              onChange={(event) => setEvidence(event.target.files?.[0])}
+            />
+            <button className="primary-button" type="submit">
+              上传证据并批量确认
+            </button>
+          </form>
+        )}
+      </section>
+    </div>
+  );
+}
+
 export function TrainingMaterialPanel({ canManage }: { canManage: boolean }) {
   const [state, setState] = useState<
     | { status: "loading" }
@@ -2556,7 +3162,10 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
           ) : activeNavigation === "matrix" || activeNavigation === "my-skills" ? (
             <SkillMatrixPanel personal={session.role === "employee"} />
           ) : activeNavigation === "training" || activeNavigation === "my-training" ? (
-            <TrainingMaterialPanel canManage={session.role === "hr_admin"} />
+            <div className="training-workspace">
+              <TrainingPlanPanel session={session} />
+              <TrainingMaterialPanel canManage={session.role === "hr_admin"} />
+            </div>
           ) : (
             <>
               <section className="welcome">

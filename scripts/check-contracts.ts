@@ -59,6 +59,17 @@ for (const [path, method, statuses] of [
   ["/api/training-materials/{id}", "patch", ["200", "403", "404"]],
   ["/api/training-materials/{id}/deactivate", "post", ["200", "403", "404"]],
   ["/api/training-materials/{id}/content", "get", ["200", "403", "404"]],
+  ["/api/training-plans", "get", ["200", "403"]],
+  ["/api/training-plans", "post", ["200", "403", "409"]],
+  ["/api/training-plans/{id}", "patch", ["200", "403", "409"]],
+  ["/api/training-plans/{id}/publish", "post", ["200", "403", "409"]],
+  ["/api/training-plans/{id}/cancel", "post", ["200", "403", "409"]],
+  ["/api/training-tasks", "get", ["200", "403"]],
+  ["/api/training-tasks/{id}/submit", "post", ["200", "403", "409"]],
+  ["/api/training-tasks/{id}/confirm", "post", ["200", "403", "409"]],
+  ["/api/training-tasks/{id}/return", "post", ["200", "403", "409"]],
+  ["/api/training-plans/{id}/batch-confirm", "post", ["200", "403", "409"]],
+  ["/api/training-evidence/{id}/content", "get", ["200", "403", "404"]],
 ] as const) {
   const responses = specification.paths?.[path]?.[method]?.responses;
   if (!responses || statuses.some((status) => !responses[status])) {

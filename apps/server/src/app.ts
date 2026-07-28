@@ -10,6 +10,7 @@ import type { OrganizationService } from "./organization-service";
 import { parseSkillBaselineWorkbook } from "./skill-excel";
 import type { SkillService } from "./skill-service";
 import type { MaterialService } from "./material-service";
+import type { TrainingService } from "./training-service";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -142,6 +143,7 @@ type AppDependencies = {
   organizationService?: OrganizationService;
   skillService?: SkillService;
   materialService?: MaterialService;
+  trainingService?: TrainingService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
 };
@@ -208,6 +210,7 @@ export const createApp = ({
   organizationService,
   skillService,
   materialService,
+  trainingService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
 }: AppDependencies = {}) =>
@@ -1453,6 +1456,325 @@ export const createApp = ({
           return failure(result.error.code, result.error.message);
         }
         if (result.data.kind === "link") return Response.redirect(result.data.url, 302);
+        return new Response(result.data.bytes.slice().buffer as ArrayBuffer, {
+          headers: {
+            "content-type": result.data.mimeType,
+            "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(result.data.filename)}`,
+            "x-content-type-options": "nosniff",
+          },
+        });
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/training-plans",
+      async ({ request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.listPlans(authenticated.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .post(
+      "/api/training-plans",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.createPlan(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          title: t.String({ maxLength: 150 }),
+          materialId: t.String({ format: "uuid" }),
+          ownerEmployeeId: t.String({ format: "uuid" }),
+          startAt: t.String(),
+          dueAt: t.String(),
+          location: t.String({ maxLength: 150 }),
+          scopeType: t.Union([
+            t.Literal("department"),
+            t.Literal("position"),
+            t.Literal("employees"),
+          ]),
+          scopeDepartmentId: t.Optional(t.String({ format: "uuid" })),
+          scopePositionId: t.Optional(t.String({ format: "uuid" })),
+          scopeEmployeeIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .patch(
+      "/api/training-plans/:id",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.updatePlan(authenticated.actor, params.id, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          title: t.String({ maxLength: 150 }),
+          materialId: t.String({ format: "uuid" }),
+          ownerEmployeeId: t.String({ format: "uuid" }),
+          startAt: t.String(),
+          dueAt: t.String(),
+          location: t.String({ maxLength: 150 }),
+          scopeType: t.Union([
+            t.Literal("department"),
+            t.Literal("position"),
+            t.Literal("employees"),
+          ]),
+          scopeDepartmentId: t.Optional(t.String({ format: "uuid" })),
+          scopePositionId: t.Optional(t.String({ format: "uuid" })),
+          scopeEmployeeIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-plans/:id/publish",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.publishPlan(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-plans/:id/cancel",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.cancelPlan(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/training-tasks",
+      async ({ request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.listTasks(authenticated.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .post(
+      "/api/training-tasks/:id/submit",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.submitTask(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-tasks/:id/confirm",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.confirmTask(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-tasks/:id/return",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.returnTask(
+          authenticated.actor,
+          params.id,
+          body.reason,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ reason: t.String({ maxLength: 500 }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-plans/:id/batch-confirm",
+      async ({ body, params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        let taskIds: string[];
+        try {
+          taskIds = Array.isArray(body.taskIds)
+            ? body.taskIds
+            : (JSON.parse(body.taskIds) as string[]);
+        } catch {
+          set.status = 400;
+          return failure("INVALID_TASKS", "参训员工格式无效");
+        }
+        const result = await trainingService.batchConfirm(authenticated.actor, {
+          planId: params.id,
+          taskIds,
+          filename: body.file.name,
+          mimeType: body.file.type,
+          bytes: new Uint8Array(await body.file.arrayBuffer()),
+        });
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({
+          taskIds: t.Union([t.String(), t.Array(t.String({ format: "uuid" }), { minItems: 1 })]),
+          file: t.File({ maxSize: "25m" }),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/training-evidence/:id/content",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.evidenceContent(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
         return new Response(result.data.bytes.slice().buffer as ArrayBuffer, {
           headers: {
             "content-type": result.data.mimeType,

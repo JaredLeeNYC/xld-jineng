@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { App, OrganizationPanel, SkillAdminPanel, SkillMatrixPanel } from "./app";
+import {
+  App,
+  OrganizationPanel,
+  SkillAdminPanel,
+  SkillMatrixPanel,
+  TrainingMaterialPanel,
+  TrainingPlanPanel,
+} from "./app";
 
 describe("application shell", () => {
   test("exposes the phase-one factory management areas", () => {
@@ -94,5 +101,22 @@ describe("application shell", () => {
   test("skill lists expose loading states before data arrives", () => {
     expect(renderToStaticMarkup(<SkillAdminPanel />)).toContain("正在加载技能标准");
     expect(renderToStaticMarkup(<SkillMatrixPanel personal />)).toContain("正在加载技能矩阵");
+  });
+
+  test("training workspace exposes explicit loading states for employee mobile use", () => {
+    const employee: Parameters<typeof TrainingPlanPanel>[0]["session"] = {
+      accountId: "account-employee",
+      employeeId: "employee-employee",
+      employeeNumber: "E0001",
+      displayName: "李华",
+      role: "employee",
+      mustChangePassword: false,
+    };
+    expect(renderToStaticMarkup(<TrainingPlanPanel session={employee} />)).toContain(
+      "正在加载培训计划与任务",
+    );
+    expect(renderToStaticMarkup(<TrainingMaterialPanel canManage={false} />)).toContain(
+      "正在加载培训资料",
+    );
   });
 });

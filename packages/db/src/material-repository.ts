@@ -187,7 +187,8 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
   },
   async storageKeys() {
     const result = await pool.query<{ storageKey: string }>(
-      'select storage_key as "storageKey" from training_materials where storage_key is not null',
+      `select storage_key as "storageKey" from training_materials where storage_key is not null
+       union select storage_key::text as "storageKey" from training_evidence`,
     );
     return result.rows.map((row) => row.storageKey);
   },
