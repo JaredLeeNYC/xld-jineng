@@ -38,17 +38,26 @@ export const createMaterialService = (dependencies: {
   repository: MaterialRepository;
   storage: MaterialStorage;
   idSource: () => string;
+  storageWarning?: (error: unknown) => void;
 }) => {
-  const { repository, storage, idSource } = dependencies;
+  const { repository, storage, idSource, storageWarning = console.error } = dependencies;
   return {
     async list(actor: SessionView, input: { includeInactive?: boolean; query?: string } = {}) {
       if (!readers.includes(actor.role)) return fail("FORBIDDEN", "无权查看培训资料", 403);
+      const materials = await repository.list({
+        ...(actor.role === "hr_admin" && input.includeInactive ? { includeInactive: true } : {}),
+        ...(input.query?.trim() ? { query: input.query.trim() } : {}),
+        role: actor.role as "employee" | "department_manager" | "hr_admin" | "executive_viewer",
+        employeeId: actor.employeeId,
+        ...(actor.departmentId ? { departmentId: actor.departmentId } : {}),
+      });
+      const publicMaterials = materials.map(({ storageKey: _storageKey, ...material }) => material);
       return {
         ok: true as const,
-        data: await repository.list({
-          ...(actor.role === "hr_admin" && input.includeInactive ? { includeInactive: true } : {}),
-          ...(input.query?.trim() ? { query: input.query.trim() } : {}),
-        }),
+        data:
+          actor.role === "hr_admin"
+            ? publicMaterials
+            : publicMaterials.map(({ externalUrl: _externalUrl, ...material }) => material),
       };
     },
     async createLink(
@@ -125,7 +134,10 @@ export const createMaterialService = (dependencies: {
         return fail("FILE_SIGNATURE_MISMATCH", "文件内容与声明类型不一致", 400);
       const id = idSource();
       const storageKey = idSource();
+      let writeLocked = false;
       try {
+        await storage.beginWrite(storageKey);
+        writeLocked = true;
         await storage.put(storageKey, input.bytes);
         const created = await repository.create({
           id,
@@ -153,6 +165,14 @@ export const createMaterialService = (dependencies: {
           /* cleanup job reconciles orphaned keys */
         }
         return fail("MATERIAL_STORAGE_FAILED", "资料保存失败，请稍后重试", 500);
+      } finally {
+        if (writeLocked) {
+          try {
+            await storage.endWrite(storageKey);
+          } catch (error) {
+            storageWarning(error);
+          }
+        }
       }
     },
     async update(
@@ -184,11 +204,25 @@ export const createMaterialService = (dependencies: {
         ? { ok: true as const, data: { id, active: false as const } }
         : fail("MATERIAL_NOT_FOUND", "资料不存在或已停用", 404);
     },
-    async content(actor: SessionView, id: string, allowHistorical = false) {
+    async content(actor: SessionView, id: string) {
       if (!readers.includes(actor.role)) return fail("FORBIDDEN", "无权访问培训资料", 403);
       const material = await repository.get(id);
-      if (!material || (!material.active && actor.role !== "hr_admin" && !allowHistorical))
-        return fail("MATERIAL_NOT_FOUND", "资料不存在或已停用", 404);
+      if (!material) return fail("MATERIAL_NOT_FOUND", "资料不存在或已停用", 404);
+      const businessAuthorized = await repository.canRead({
+        materialId: id,
+        role: actor.role as "employee" | "department_manager" | "hr_admin" | "executive_viewer",
+        employeeId: actor.employeeId,
+        ...(actor.departmentId ? { departmentId: actor.departmentId } : {}),
+      });
+      const historicalAuthorized =
+        actor.role === "employee" &&
+        (await repository.hasHistoricalAccess(material.id, actor.employeeId));
+      if (
+        actor.role !== "hr_admin" &&
+        !historicalAuthorized &&
+        (!material.active || !businessAuthorized)
+      )
+        return fail("MATERIAL_NOT_FOUND", "资料不存在或无访问权限", 404);
       if (material.kind === "link")
         return { ok: true as const, data: { kind: "link" as const, url: material.externalUrl! } };
       try {
@@ -209,8 +243,11 @@ export const createMaterialService = (dependencies: {
       }
     },
     async cleanupOrphans() {
+      await storage.cleanupTemporary(new Date(Date.now() - 24 * 60 * 60 * 1_000));
       const referenced = new Set(await repository.storageKeys());
-      const orphaned = (await storage.listKeys()).filter((key) => !referenced.has(key));
+      const orphaned = (await storage.listKeys(new Date(Date.now() - 24 * 60 * 60 * 1_000))).filter(
+        (key) => !referenced.has(key),
+      );
       for (const key of orphaned) await storage.delete(key);
       return orphaned;
     },

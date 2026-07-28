@@ -203,8 +203,9 @@ try {
     idSource: () => randomUUID(),
     now: () => new Date(),
   });
+  const materialRepository = createPostgresMaterialRepository(contractPool);
   const materialService = createMaterialService({
-    repository: createPostgresMaterialRepository(contractPool),
+    repository: materialRepository,
     storage: createMemoryMaterialStorage(),
     idSource: () => randomUUID(),
   });
@@ -1205,6 +1206,38 @@ try {
   );
   if (deactivateMaterialResponse.status !== 200 || inactiveMaterialResponse.status !== 404) {
     throw new Error("停用培训资料仍可用于员工新访问");
+  }
+  const importedEmployee = await contractPool.query<{ id: string }>(
+    "select id from employees where employee_number=$1",
+    [firstCredential.employeeNumber],
+  );
+  if (
+    !(await materialRepository.canRead({
+      materialId: materialUploadBody.data.id,
+      role: "employee",
+      employeeId: importedEmployee.rows[0]!.id,
+    })) ||
+    (await materialRepository.canRead({
+      materialId: materialUploadBody.data.id,
+      role: "employee",
+      employeeId: otherEmployee.rows[0]!.id,
+    }))
+  ) {
+    throw new Error("员工培训资料未按当前岗位技能范围授权");
+  }
+  await materialRepository.grantHistoricalAccess({
+    materialId: materialUploadBody.data.id,
+    employeeId: importedEmployee.rows[0]!.id,
+    sourceType: "training_assignment",
+    sourceReference: "contract-history-001",
+  });
+  const historicalMaterialResponse = await app.handle(
+    new Request(`http://localhost/api/training-materials/${materialUploadBody.data.id}/content`, {
+      headers: { cookie: importedCookie! },
+    }),
+  );
+  if (historicalMaterialResponse.status !== 200) {
+    throw new Error("历史培训授权未保留停用资料的受控读取能力");
   }
 
   await contractPool.query(

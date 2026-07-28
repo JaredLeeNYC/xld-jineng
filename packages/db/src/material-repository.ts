@@ -26,7 +26,7 @@ const selectMaterials = `select m.id, m.title, m.category, m.description, m.kind
   coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'code', s.code, 'name', s.name))
     filter (where s.id is not null), '[]') as skills
  from training_materials m
- left join training_material_skills ms on ms.material_id = m.id
+ left join training_material_skills ms on ms.material_id = m.id and ms.active = true
  left join skills s on s.id = ms.skill_id`;
 
 const normalize = (row: MaterialRecord): MaterialRecord => ({
@@ -42,13 +42,35 @@ const normalize = (row: MaterialRecord): MaterialRecord => ({
 });
 
 export const createPostgresMaterialRepository = (pool: Pool) => ({
-  async list(input: { includeInactive?: boolean; query?: string } = {}) {
+  async list(input: {
+    includeInactive?: boolean;
+    query?: string;
+    role: "employee" | "department_manager" | "hr_admin" | "executive_viewer";
+    employeeId: string;
+    departmentId?: string;
+  }) {
     const result = await pool.query<MaterialRecord>(
       `${selectMaterials}
        where (m.active = true or $1 = true)
          and ($2::text is null or m.title ilike '%' || $2 || '%' or m.category ilike '%' || $2 || '%')
+         and (
+           $3 = 'hr_admin' or $3 = 'executive_viewer' or exists (
+             select 1 from training_material_skills access_ms
+             join position_skill_requirements psr on psr.skill_id = access_ms.skill_id
+             join position_assignments pa on pa.position_id = psr.position_id and pa.ended_at is null
+             where access_ms.material_id = m.id and access_ms.active = true
+               and (($3 = 'employee' and pa.employee_id = $4::uuid)
+                 or ($3 = 'department_manager' and pa.department_id = $5::uuid))
+           )
+         )
        group by m.id order by m.created_at desc`,
-      [input.includeInactive ?? false, input.query ?? null],
+      [
+        input.includeInactive ?? false,
+        input.query ?? null,
+        input.role,
+        input.employeeId,
+        input.departmentId ?? null,
+      ],
     );
     return result.rows.map(normalize);
   },
@@ -132,10 +154,14 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
         [input.id, input.title, input.category, input.description ?? null],
       );
       if (!result.rowCount) return false;
-      await client.query("delete from training_material_skills where material_id=$1", [input.id]);
+      await client.query(
+        "update training_material_skills set active=false, updated_at=now() where material_id=$1 and active=true",
+        [input.id],
+      );
       for (const skillId of input.skillIds)
         await client.query(
-          "insert into training_material_skills (material_id, skill_id) values ($1,$2)",
+          `insert into training_material_skills (material_id, skill_id) values ($1,$2)
+           on conflict (material_id, skill_id) do update set active=true, updated_at=now()`,
           [input.id, skillId],
         );
       await client.query(
@@ -164,6 +190,45 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
       'select storage_key as "storageKey" from training_materials where storage_key is not null',
     );
     return result.rows.map((row) => row.storageKey);
+  },
+  async canRead(input: {
+    materialId: string;
+    role: "employee" | "department_manager" | "hr_admin" | "executive_viewer";
+    employeeId: string;
+    departmentId?: string;
+  }) {
+    if (input.role === "hr_admin" || input.role === "executive_viewer") return true;
+    const result = await pool.query(
+      `select 1 from training_material_skills ms
+       join position_skill_requirements psr on psr.skill_id = ms.skill_id
+       join position_assignments pa on pa.position_id = psr.position_id and pa.ended_at is null
+       where ms.material_id = $1 and ms.active = true
+         and (($2 = 'employee' and pa.employee_id = $3::uuid)
+           or ($2 = 'department_manager' and pa.department_id = $4::uuid))
+       limit 1`,
+      [input.materialId, input.role, input.employeeId, input.departmentId ?? null],
+    );
+    return Boolean(result.rowCount);
+  },
+  async hasHistoricalAccess(materialId: string, employeeId: string) {
+    const result = await pool.query(
+      "select 1 from training_material_access_grants where material_id=$1 and employee_id=$2 limit 1",
+      [materialId, employeeId],
+    );
+    return Boolean(result.rowCount);
+  },
+  async grantHistoricalAccess(input: {
+    materialId: string;
+    employeeId: string;
+    sourceType: string;
+    sourceReference: string;
+  }) {
+    await pool.query(
+      `insert into training_material_access_grants
+       (material_id, employee_id, source_type, source_reference) values ($1,$2,$3,$4)
+       on conflict do nothing`,
+      [input.materialId, input.employeeId, input.sourceType, input.sourceReference],
+    );
   },
 });
 

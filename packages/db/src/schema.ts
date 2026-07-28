@@ -257,11 +257,37 @@ export const trainingMaterialSkills = pgTable(
     skillId: uuid("skill_id")
       .notNull()
       .references(() => skills.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    active: boolean("active").notNull().default(true),
+    ...timestamps,
   },
   (table) => [
     uniqueIndex("training_material_skills_unique").on(table.materialId, table.skillId),
     index("training_material_skills_skill_idx").on(table.skillId),
+  ],
+);
+
+export const trainingMaterialAccessGrants = pgTable(
+  "training_material_access_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    materialId: uuid("material_id")
+      .notNull()
+      .references(() => trainingMaterials.id, { onDelete: "restrict" }),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    sourceType: varchar("source_type", { length: 30 }).notNull(),
+    sourceReference: varchar("source_reference", { length: 100 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("training_material_access_grants_source_unique").on(
+      table.materialId,
+      table.employeeId,
+      table.sourceType,
+      table.sourceReference,
+    ),
+    index("training_material_access_grants_employee_idx").on(table.employeeId, table.materialId),
   ],
 );
 

@@ -78,6 +78,20 @@
       "when": 1785212356565,
       "tag": "0010_fantastic_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785212921526,
+      "tag": "0011_jazzy_shriek",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785213139706,
+      "tag": "0012_black_archangel",
+      "breakpoints": true
     }
   ]
 }

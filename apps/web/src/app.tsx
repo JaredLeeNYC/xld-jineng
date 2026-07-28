@@ -2228,8 +2228,13 @@ export function TrainingMaterialPanel({ canManage }: { canManage: boolean }) {
     });
   const openContent = async (material: TrainingMaterialView) => {
     setNotice("");
-    if (material.kind === "link" && material.externalUrl) {
-      window.open(material.externalUrl, "_blank", "noopener,noreferrer");
+    if (material.kind === "link") {
+      const opened = window.open(
+        `/api/training-materials/${material.id}/content`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      if (!opened) setNotice("浏览器阻止了新窗口，请允许弹窗后重试");
       return;
     }
     try {
