@@ -24,3 +24,17 @@
 - 每日执行 `bun run materials:cleanup` 对账孤儿对象；不按原始文件名删除附件。
 - 系统管理员在“审计日志”查看登录安全、业务变更、停用、作废、导出和通知重试。
 - 企业微信失败只在发送记录中重试，不通过重放培训或评定业务来补消息。
+
+## 企业微信与站内通知验收取证
+
+真实云端部署完成且业务全链路已经产生站内通知后，由获批上线人员在安全终端设置以下临时环境变量，再运行 `bun run acceptance:wecom`：
+
+- `ACCEPTANCE_APPROVED=YES`
+- `ACCEPTANCE_BASE_URL=https://<生产域名>`
+- `ACCEPTANCE_ADMIN_EMPLOYEE_NUMBER`、`ACCEPTANCE_ADMIN_PASSWORD`：系统管理员验收账号
+- `ACCEPTANCE_EMPLOYEE_NUMBER`、`ACCEPTANCE_EMPLOYEE_PASSWORD`：已完成培训和评定链路的员工账号
+- `ACCEPTANCE_WECOM_WEBHOOK_URL`：生产管理群机器人完整地址
+- `ACCEPTANCE_EXPECTED_NOTIFICATION_TYPES=training_published,assessment_archived`：本次链路应产生的通知类型
+- `ACCEPTANCE_EVIDENCE_DIR=/var/lib/skill-matrix/acceptance-evidence`：仓库之外、受限访问的证据目录
+
+脚本会真实发送一条测试消息，使用无效 key 验证失败与人工重试，核对对应审计和员工站内通知，并自动停用本次创建的两个临时通道。输出 JSON 不含密码、Cookie、Webhook URL、key、通知正文或失败详情。运行后仍须由现场人员核对群内消息，将接收截图、审批单号和 JSON 路径登记到验收清单；脚本成功不能代替人工接收确认。结束后立即清除当前 shell 中的全部 `ACCEPTANCE_*` 变量并按安全制度处理账号密码。

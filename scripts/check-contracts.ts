@@ -140,6 +140,20 @@ for (const [path, requiredParts] of requiredDeploymentContent) {
   }
 }
 
+const acceptanceEvidenceScript = await Bun.file("scripts/capture-go-live-evidence.ts").text();
+for (const requiredPart of [
+  "ACCEPTANCE_APPROVED",
+  "ACCEPTANCE_EVIDENCE_DIR",
+  "WEBHOOK_TEST_FAILED",
+  "notification_delivery.retried",
+  "groupReceiptConfirmedByHuman: false",
+  "active: false",
+]) {
+  if (!acceptanceEvidenceScript.includes(requiredPart)) {
+    fail(`企业微信验收取证脚本缺少安全约束：${requiredPart}`);
+  }
+}
+
 const bash =
   process.platform === "win32" && (await Bun.file("C:/Program Files/Git/bin/bash.exe").exists())
     ? "C:/Program Files/Git/bin/bash.exe"
