@@ -13,19 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
-
       - name: Deploy via SSH
-        run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            root@${{ secrets.DEPLOY_HOST }} \
-            '/opt/skill-matrix/repo/deploy/auto-deploy.sh'
-
-      - name: Cleanup
-        if: always
-        run: rm -f ~/.ssh/deploy_key
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: /opt/skill-matrix/repo/deploy/auto-deploy.sh
