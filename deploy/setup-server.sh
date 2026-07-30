@@ -42,7 +42,7 @@ echo "    bun: $($BUN_BIN --version)"
 # ── 3. 创建目录结构 ──
 echo "==> [3/10] 创建目录结构"
 mkdir -p "$RELEASES_DIR" "$CONFIG_DIR" "$MATERIALS_DIR" /var/backups/skill-matrix
-chown -R skill-matrix:skill-matrix /opt/skill-matrix
+# repo 和 releases 由 root 管理（部署由 root 经 SSH 执行），只把 materials 目录给 skill-matrix
 chown skill-matrix:skill-matrix "$MATERIALS_DIR"
 
 # ── 4. 克隆仓库 ──
@@ -53,7 +53,7 @@ else
   rm -rf "$REPO_DIR"
   git clone --depth 1 "$REPO_URL" "$REPO_DIR"
 fi
-chown -R skill-matrix:skill-matrix "$REPO_DIR"
+# repo 由 root 管理，避免 git dubious ownership
 
 # ── 5. PostgreSQL ──
 echo "==> [5/10] 配置 PostgreSQL"
