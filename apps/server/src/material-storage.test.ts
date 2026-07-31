@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFile, mkdir, mkdtemp, rm, utimes } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { createFilesystemMaterialStorage, createMemoryMaterialStorage } from "./material-storage";
+import {
+  createCosMaterialStorage,
+  createFilesystemMaterialStorage,
+  createMemoryMaterialStorage,
+  type CosMaterialStorageClient,
+} from "./material-storage";
 
 const key = "11111111-1111-4111-8111-111111111111";
 
@@ -50,6 +55,76 @@ describe("material storage", () => {
     ]);
     expect(await Bun.file(temporary).exists()).toBe(false);
     expect(await Bun.file(lock).exists()).toBe(false);
+  });
+
+  test("COS adapter maps logical keys to a private prefix and reconciles pages", async () => {
+    const requests: { method: string; key?: string; marker?: string }[] = [];
+    const client: CosMaterialStorageClient = {
+      async putObject(params) {
+        requests.push({ method: "put", key: params.Key });
+        return {} as never;
+      },
+      async getObject(params) {
+        requests.push({ method: "get", key: params.Key });
+        return { Body: Buffer.from([4, 5, 6]) } as never;
+      },
+      async deleteObject(params) {
+        requests.push({ method: "delete", key: params.Key });
+        return {} as never;
+      },
+      async getBucket(params) {
+        requests.push({
+          method: "list",
+          ...(params.Marker ? { marker: params.Marker } : {}),
+        });
+        if (!params.Marker) {
+          return {
+            Contents: [
+              {
+                Key: `skill-matrix/${key}`,
+                LastModified: "2026-01-01T00:00:00.000Z",
+              },
+              { Key: "skill-matrix/not-a-storage-key", LastModified: "2026-01-01T00:00:00.000Z" },
+            ],
+            IsTruncated: "true",
+            NextMarker: `skill-matrix/${key}`,
+          } as never;
+        }
+        return {
+          Contents: [
+            {
+              Key: "skill-matrix/22222222-2222-4222-8222-222222222222",
+              LastModified: "2026-01-03T00:00:00.000Z",
+            },
+          ],
+          IsTruncated: "false",
+        } as never;
+      },
+    };
+    const storage = createCosMaterialStorage({
+      bucket: "skill-matrix-materials-1442183788",
+      region: "ap-guangzhou",
+      objectPrefix: "/skill-matrix",
+      secretId: "secret-id",
+      secretKey: "secret-key",
+      client,
+    });
+
+    await storage.beginWrite(key);
+    await storage.put(key, new Uint8Array([1, 2, 3]));
+    expect(await storage.get(key)).toEqual(new Uint8Array([4, 5, 6]));
+    expect(
+      await storage.listKeys(new Date("2026-01-02T00:00:00.000Z")),
+    ).toEqual([key]);
+    await storage.delete(key);
+    await storage.endWrite(key);
+    expect(requests).toEqual([
+      { method: "put", key: `skill-matrix/${key}` },
+      { method: "get", key: `skill-matrix/${key}` },
+      { method: "list" },
+      { method: "list", marker: `skill-matrix/${key}` },
+      { method: "delete", key: `skill-matrix/${key}` },
+    ]);
   });
 
   test("backup and restore scripts reproduce the exact verified snapshot", async () => {

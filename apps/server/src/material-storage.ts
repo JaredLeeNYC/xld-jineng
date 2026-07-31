@@ -1,5 +1,6 @@
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
+import COS from "cos-nodejs-sdk-v5";
 
 export type MaterialStorage = {
   beginWrite(key: string): Promise<void>;
@@ -9,6 +10,22 @@ export type MaterialStorage = {
   delete(key: string): Promise<void>;
   listKeys(olderThan?: Date): Promise<string[]>;
   cleanupTemporary(olderThan: Date): Promise<string[]>;
+};
+
+export type CosMaterialStorageClient = {
+  putObject(params: COS.PutObjectParams): Promise<COS.PutObjectResult>;
+  getObject(params: COS.GetObjectParams): Promise<COS.GetObjectResult>;
+  deleteObject(params: COS.DeleteObjectParams): Promise<COS.DeleteObjectResult>;
+  getBucket(params: COS.GetBucketParams): Promise<COS.GetBucketResult>;
+};
+
+export type CosMaterialStorageOptions = {
+  bucket: string;
+  region: string;
+  objectPrefix: string;
+  secretId: string;
+  secretKey: string;
+  client?: CosMaterialStorageClient;
 };
 
 const assertStorageKey = (key: string) => {
@@ -150,6 +167,96 @@ export const createFilesystemMaterialStorage = (rootDirectory: string): Material
           return [];
         throw error;
       }
+    },
+  };
+};
+
+const normalizeObjectPrefix = (value: string) => {
+  const prefix = value.trim().replace(/^\/+/, "");
+  if (!prefix) return "";
+  return prefix.endsWith("/") ? prefix : `${prefix}/`;
+};
+
+const objectNotFound = (error: unknown) => {
+  if (typeof error !== "object" || !error) return false;
+  const code = "code" in error ? error.code : undefined;
+  const statusCode = "statusCode" in error ? error.statusCode : undefined;
+  return code === "NoSuchKey" || code === "NoSuchObject" || statusCode === 404;
+};
+
+export const createCosMaterialStorage = (options: CosMaterialStorageOptions): MaterialStorage => {
+  const prefix = normalizeObjectPrefix(options.objectPrefix);
+  if (!prefix) throw new Error("COS_OBJECT_PREFIX_INVALID");
+  const client =
+    options.client ??
+    new COS({
+      SecretId: options.secretId,
+      SecretKey: options.secretKey,
+    });
+  const objectKey = (key: string) => {
+    assertStorageKey(key);
+    return `${prefix}${key}`;
+  };
+  const requestBase = { Bucket: options.bucket, Region: options.region };
+
+  return {
+    async beginWrite(key) {
+      objectKey(key);
+    },
+    async endWrite(key) {
+      objectKey(key);
+    },
+    async put(key, bytes) {
+      await client.putObject({
+        ...requestBase,
+        Key: objectKey(key),
+        Body: Buffer.from(bytes),
+        ContentLength: bytes.byteLength,
+      });
+    },
+    async get(key) {
+      try {
+        const result = await client.getObject({
+          ...requestBase,
+          Key: objectKey(key),
+        });
+        return new Uint8Array(result.Body);
+      } catch (error) {
+        if (objectNotFound(error)) throw new Error("STORAGE_OBJECT_NOT_FOUND");
+        throw error;
+      }
+    },
+    async delete(key) {
+      await client.deleteObject({
+        ...requestBase,
+        Key: objectKey(key),
+      });
+    },
+    async listKeys(olderThan) {
+      const keys: string[] = [];
+      let marker: string | undefined;
+      do {
+        const params: COS.GetBucketParams = {
+          ...requestBase,
+          Prefix: prefix,
+          MaxKeys: 1_000,
+          ...(marker ? { Marker: marker } : {}),
+        };
+        const result = await client.getBucket(params);
+        for (const item of result.Contents ?? []) {
+          if (!item.Key.startsWith(prefix)) continue;
+          const key = item.Key.slice(prefix.length);
+          if (!/^[0-9a-f-]{36}$/i.test(key)) continue;
+          if (olderThan && new Date(item.LastModified) >= olderThan) continue;
+          keys.push(key);
+        }
+        marker = result.IsTruncated === "true" ? result.NextMarker : undefined;
+      } while (marker);
+      return keys;
+    },
+    async cleanupTemporary() {
+      // COS simple PUT 不会在应用端创建临时文件或锁目录；未完成分片由桶生命周期规则负责。
+      return [];
     },
   };
 };

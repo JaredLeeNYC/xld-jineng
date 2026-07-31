@@ -6,7 +6,7 @@ import { createAuthService } from "./auth-service";
 import { createOrganizationService } from "./organization-service";
 import { createSkillService } from "./skill-service";
 import { createMaterialService } from "./material-service";
-import { createFilesystemMaterialStorage } from "./material-storage";
+import { createConfiguredMaterialStorage } from "./material-storage-factory";
 import { createTrainingService } from "./training-service";
 import { createAssessmentService } from "./assessment-service";
 import { createNotificationService } from "./notification-service";
@@ -53,20 +53,21 @@ const skillService = createSkillService({
   idSource: () => randomUUID(),
   now: () => new Date(),
 });
+const materialStorage = createConfiguredMaterialStorage(config);
 const materialService = createMaterialService({
   repository: database.materialRepository,
-  storage: createFilesystemMaterialStorage(config.materialStorageDir),
+  storage: materialStorage,
   idSource: () => randomUUID(),
 });
 const trainingService = createTrainingService({
   repository: database.trainingRepository,
-  storage: createFilesystemMaterialStorage(config.materialStorageDir),
+  storage: materialStorage,
   idSource: () => randomUUID(),
   now: () => new Date(),
 });
 const assessmentService = createAssessmentService({
   repository: database.assessmentRepository,
-  storage: createFilesystemMaterialStorage(config.materialStorageDir),
+  storage: materialStorage,
   idSource: () => randomUUID(),
   now: () => new Date(),
 });

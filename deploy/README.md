@@ -28,8 +28,8 @@
 
 ## 培训资料持久化与备份
 
-- 生产环境将 `MATERIAL_STORAGE_DIR` 固定为 `/var/lib/skill-matrix/materials`，该目录位于 `/opt/skill-matrix/releases` 发布目录之外，切换版本不会覆盖附件。
-- 发布前执行 `deploy/backup-materials.sh /var/lib/skill-matrix/materials /var/backups/skill-matrix-materials.tar.gz`。
-- 恢复前必须进入维护窗口并停止 `skill-matrix-server`。恢复演练执行 `RESTORE_APPROVED=YES deploy/restore-materials.sh /var/backups/skill-matrix-materials.tar.gz /var/lib/skill-matrix/materials-restore-test`；脚本默认只指向隔离恢复目录、持有维护锁、拒绝活动上传，并在原子切换前后逐文件校验 SHA-256。
-- 数据库与附件归档必须取自同一维护窗口。孤儿对象通过数据库存储键对账清理，不允许依据原始文件名删除文件。
-- 每日低峰通过 cron 执行 `cd /opt/skill-matrix/current && bun run materials:cleanup`，清理无数据库引用的对象及超过 24 小时的中断上传临时文件。
+- 推荐将 `MATERIAL_STORAGE_PROVIDER=cos`，资料对象写入腾讯云 COS 私有桶的 `COS_OBJECT_PREFIX` 前缀；数据库只保存对象键和校验信息，服务器不再保存资料正文。
+- COS 账号使用专用 CAM 子账号，至少包含目标桶的 `GetBucket` 和目标前缀下对象的 `PutObject`、`GetObject`、`DeleteObject`，不要把腾讯云根账号密钥放进服务器。
+- COS 模式下 `bun run materials:cleanup` 会分页列出前缀对象，与数据库三类存储键对账并删除超过 24 小时的孤儿对象；应用端不会创建本地上传锁或临时文件。
+- `MATERIAL_STORAGE_PROVIDER=filesystem` 仍保留给本地开发/回滚。此模式下目录位于 `/opt/skill-matrix/releases` 外，发布切换不会覆盖附件；可用 `deploy/backup-materials.sh` 和 `deploy/restore-materials.sh` 做本地文件备份与隔离恢复演练。
+- 数据库与附件归档必须取自同一维护窗口。COS 桶的版本化、生命周期、跨地域复制和备份策略需在腾讯云控制台另行配置，不能把数据库备份当作对象备份。

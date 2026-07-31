@@ -10,12 +10,19 @@ RELEASES_DIR="/opt/skill-matrix/releases"
 CURRENT_LINK="/opt/skill-matrix/current"
 CONFIG_DIR="/etc/skill-matrix"
 MATERIALS_DIR="/var/lib/skill-matrix/materials"
+MATERIAL_UPLOAD_LOCKS_DIR="${MATERIALS_DIR}.upload-locks"
 COMPOSE_FILE="/opt/skill-matrix/compose.yaml"
 SYSTEMD_UNIT="/etc/systemd/system/skill-matrix-server.service"
 NGINX_CONF="/etc/nginx/conf.d/skill-matrix.conf"
 BUN_BIN="/usr/local/bin/bun"
 INITIAL_PASSWORD="${SEED_INITIAL_PASSWORD:-ChangeMe123!!}"
 PG_PORT="5432"
+MATERIAL_STORAGE_PROVIDER="${MATERIAL_STORAGE_PROVIDER:-filesystem}"
+COS_BUCKET="${COS_BUCKET:-}"
+COS_REGION="${COS_REGION:-ap-guangzhou}"
+COS_OBJECT_PREFIX="${COS_OBJECT_PREFIX:-skill-matrix/}"
+COS_SECRET_ID="${COS_SECRET_ID:-}"
+COS_SECRET_KEY="${COS_SECRET_KEY:-}"
 
 echo "================================================"
 echo "  技能矩阵系统 — tc-stage 首次初始化"
@@ -41,9 +48,9 @@ echo "    bun: $($BUN_BIN --version)"
 
 # ── 3. 创建目录结构 ──
 echo "==> [3/10] 创建目录结构"
-mkdir -p "$RELEASES_DIR" "$CONFIG_DIR" "$MATERIALS_DIR" /var/backups/skill-matrix
+mkdir -p "$RELEASES_DIR" "$CONFIG_DIR" "$MATERIALS_DIR" "$MATERIAL_UPLOAD_LOCKS_DIR" /var/backups/skill-matrix
 # repo 和 releases 由 root 管理（部署由 root 经 SSH 执行），只把 materials 目录给 skill-matrix
-chown skill-matrix:skill-matrix "$MATERIALS_DIR"
+chown skill-matrix:skill-matrix "$MATERIALS_DIR" "$MATERIAL_UPLOAD_LOCKS_DIR"
 
 # ── 4. 克隆仓库 ──
 echo "==> [4/10] 克隆仓库"
@@ -90,7 +97,20 @@ HOST=127.0.0.1
 PORT=3000
 MATERIAL_STORAGE_DIR=$MATERIALS_DIR
 SEED_INITIAL_PASSWORD=$INITIAL_PASSWORD
+MATERIAL_STORAGE_PROVIDER=$MATERIAL_STORAGE_PROVIDER
 EOF
+if [ "$MATERIAL_STORAGE_PROVIDER" = "cos" ]; then
+  : "${COS_BUCKET:?MATERIAL_STORAGE_PROVIDER=cos 时必须设置 COS_BUCKET}"
+  : "${COS_SECRET_ID:?MATERIAL_STORAGE_PROVIDER=cos 时必须设置 COS_SECRET_ID}"
+  : "${COS_SECRET_KEY:?MATERIAL_STORAGE_PROVIDER=cos 时必须设置 COS_SECRET_KEY}"
+  cat >> "$CONFIG_DIR/server.env" <<EOF
+COS_BUCKET=$COS_BUCKET
+COS_REGION=$COS_REGION
+COS_OBJECT_PREFIX=$COS_OBJECT_PREFIX
+COS_SECRET_ID=$COS_SECRET_ID
+COS_SECRET_KEY=$COS_SECRET_KEY
+EOF
+fi
 chmod 600 "$CONFIG_DIR/server.env"
 chown root:root "$CONFIG_DIR/server.env"
 echo "    server.env 生成完成 (权限 $(stat -c '%a' "$CONFIG_DIR/server.env"))"
@@ -112,6 +132,7 @@ server {
     index index.html;
 
     location /api/ {
+        client_max_body_size 26m;
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
