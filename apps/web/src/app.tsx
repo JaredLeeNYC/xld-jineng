@@ -2241,12 +2241,70 @@ export function ReportDashboardPanel({
   );
 }
 
-export function SkillMatrixPanel({ personal }: { personal: boolean }) {
+export const buildSkillMatrixView = (rows: SkillMatrixCell[]) => {
+  const employees = [...new Map(rows.map((item) => [item.employeeId, item])).values()];
+  const skills = [...new Map(rows.map((item) => [item.skillId, item])).values()];
+  const cells = new Map(rows.map((item) => [`${item.employeeId}:${item.skillId}`, item]));
+  const summarize = (items: SkillMatrixCell[]) => {
+    const target = items.filter((item) => item.required).length;
+    const actual = items.filter((item) => item.required && item.status === "met").length;
+    return { actual, target, difference: actual - target };
+  };
+  return {
+    employees,
+    skills,
+    cells,
+    employeeSummaries: new Map(
+      employees.map((employee) => [
+        employee.employeeId,
+        summarize(rows.filter((item) => item.employeeId === employee.employeeId)),
+      ]),
+    ),
+    skillSummaries: new Map(
+      skills.map((skill) => [
+        skill.skillId,
+        summarize(rows.filter((item) => item.skillId === skill.skillId)),
+      ]),
+    ),
+  };
+};
+
+const formatMatrixDifference = (difference: number) =>
+  difference > 0 ? `+${difference}` : String(difference);
+
+function SkillLevelBlocks({ cell }: { cell: SkillMatrixCell }) {
+  const currentLevel = cell.currentLevel ?? 0;
+  return (
+    <div
+      className="matrix-level"
+      aria-label={`${cell.skillName}：当前 ${cell.currentLevel ?? "未评定"} 级，目标 ${cell.requiredLevel} 级，${
+        cell.status === "met" ? "达标" : "未达标"
+      }`}
+    >
+      <div className="matrix-level-blocks" aria-hidden="true">
+        {[1, 2, 3, 4].map((level) => (
+          <span className={level <= currentLevel ? "filled" : ""} key={level} />
+        ))}
+      </div>
+      <strong>
+        现 {cell.currentLevel ?? "—"} · 目 {cell.requiredLevel}
+      </strong>
+    </div>
+  );
+}
+
+export function SkillMatrixPanel({
+  personal,
+  initialRows,
+}: {
+  personal: boolean;
+  initialRows?: SkillMatrixCell[];
+}) {
   const [state, setState] = useState<
     | { status: "loading" }
     | { status: "error"; message: string }
     | { status: "ready"; rows: SkillMatrixCell[] }
-  >({ status: "loading" });
+  >(initialRows ? { status: "ready", rows: initialRows } : { status: "loading" });
   const [query, setQuery] = useState("");
   const [filterOptions, setFilterOptions] = useState<SkillMatrixCell[]>([]);
   const [filters, setFilters] = useState({
@@ -2277,8 +2335,9 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
     }
   };
   useEffect(() => {
-    void load({ departmentId: "", employeeId: "", positionId: "", skillId: "" });
-  }, []);
+    if (!initialRows)
+      void load({ departmentId: "", employeeId: "", positionId: "", skillId: "" });
+  }, [initialRows]);
   if (state.status === "loading")
     return <section className="panel list-state-panel">正在加载技能矩阵…</section>;
   if (state.status === "error")
@@ -2295,8 +2354,7 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
-  const employees = [...new Map(rows.map((item) => [item.employeeId, item])).values()];
-  const skills = [...new Map(rows.map((item) => [item.skillId, item])).values()];
+  const matrix = buildSkillMatrixView(rows);
   const departmentOptions = [
     ...new Map(filterOptions.map((item) => [item.departmentId, item])).values(),
   ];
@@ -2323,8 +2381,12 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
       <section className="welcome">
         <div>
           <p className="eyebrow">{personal ? "我的技能" : "技能矩阵"}</p>
-          <h1>{personal ? "岗位技能差距" : "部门技能热力矩阵"}</h1>
-          <p>未评定、过期或作废均按不达标处理。</p>
+          <h1>{personal ? "岗位技能差距" : "工位技能矩阵表"}</h1>
+          <p>
+            {personal
+              ? "未评定、过期或作废均按不达标处理。"
+              : "按员工与技能交叉展示当前等级，并汇总个人及技能达标差异。"}
+          </p>
         </div>
       </section>
       <section className="panel matrix-filter">
@@ -2391,34 +2453,39 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
       ) : (
         <section className="panel heatmap-panel">
           <div className="heatmap-wrap">
-            <table className="heatmap">
+            <table className="heatmap skill-matrix-grid">
               <thead>
                 <tr>
-                  <th>员工 / 岗位</th>
-                  {skills.map((skill) => (
-                    <th key={skill.skillId}>{skill.skillName}</th>
+                  <th className="matrix-employee-column">员工 / 岗位</th>
+                  {matrix.skills.map((skill) => (
+                    <th className="matrix-skill-column" key={skill.skillId}>
+                      <strong>{skill.skillName}</strong>
+                      <small>{skill.skillCode}</small>
+                    </th>
                   ))}
+                  <th className="matrix-summary-column">实际达标</th>
+                  <th className="matrix-summary-column">目标数</th>
+                  <th className="matrix-summary-column">差异</th>
                 </tr>
               </thead>
               <tbody>
-                {employees.map((employee) => (
+                {matrix.employees.map((employee) => {
+                  const summary = matrix.employeeSummaries.get(employee.employeeId)!;
+                  return (
                   <tr key={employee.employeeId}>
-                    <th>
-                      {employee.employeeName}
-                      <small>{employee.positionName}</small>
+                    <th className="matrix-employee-column">
+                      <strong>{employee.employeeName}</strong>
+                      <small>
+                        {employee.employeeNumber} · {employee.positionName}
+                      </small>
                     </th>
-                    {skills.map((skill) => {
-                      const cell = rows.find(
-                        (item) =>
-                          item.employeeId === employee.employeeId && item.skillId === skill.skillId,
-                      );
+                    {matrix.skills.map((skill) => {
+                      const cell = matrix.cells.get(`${employee.employeeId}:${skill.skillId}`);
                       return (
                         <td className={`heat-${cell?.status ?? "none"}`} key={skill.skillId}>
                           {cell ? (
                             <>
-                              <strong>
-                                {cell.currentLevel ?? "—"} / {cell.requiredLevel}
-                              </strong>
+                              <SkillLevelBlocks cell={cell} />
                               <small>
                                 {statusLabel[cell.status]} ·{" "}
                                 {cell.validityStatus
@@ -2437,18 +2504,49 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
                         </td>
                       );
                     })}
+                    <td className="matrix-summary-value actual">{summary.actual}</td>
+                    <td className="matrix-summary-value target">{summary.target}</td>
+                    <td className={`matrix-summary-value ${summary.difference < 0 ? "negative" : ""}`}>
+                      {formatMatrixDifference(summary.difference)}
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                {(["actual", "target", "difference"] as const).map((metric) => (
+                  <tr className="matrix-summary-row" key={metric}>
+                    <th>{metric === "actual" ? "实际达标" : metric === "target" ? "目标数" : "差异"}</th>
+                    {matrix.skills.map((skill) => {
+                      const summary = matrix.skillSummaries.get(skill.skillId)!;
+                      const value = summary[metric];
+                      return (
+                        <td className={metric === "difference" && value < 0 ? "negative" : ""} key={skill.skillId}>
+                          {metric === "difference" ? formatMatrixDifference(value) : value}
+                        </td>
+                      );
+                    })}
+                    <td className="matrix-summary-spacer" colSpan={3} />
                   </tr>
                 ))}
-              </tbody>
+              </tfoot>
             </table>
           </div>
           <div className="matrix-cards">
-            {employees.map((employee) => (
+            {matrix.employees.map((employee) => {
+              const summary = matrix.employeeSummaries.get(employee.employeeId)!;
+              return (
               <article className="matrix-card" key={employee.employeeId}>
                 <header>
                   <strong>{employee.employeeName}</strong>
                   <span>{employee.positionName}</span>
                 </header>
+                <p className="matrix-card-summary">
+                  达标 {summary.actual} / {summary.target}
+                  <span className={summary.difference < 0 ? "negative" : ""}>
+                    差异 {formatMatrixDifference(summary.difference)}
+                  </span>
+                </p>
                 {rows
                   .filter((item) => item.employeeId === employee.employeeId)
                   .map((cell) => (
@@ -2457,11 +2555,9 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
                         {cell.skillName}
                         {cell.required ? " · 必备" : ""}
                       </span>
-                      <strong>
-                        {cell.currentLevel ?? "—"} / {cell.requiredLevel} ·{" "}
-                        {statusLabel[cell.status]}
-                      </strong>
+                      <SkillLevelBlocks cell={cell} />
                       <small>
+                        {statusLabel[cell.status]} ·{" "}
                         {cell.validityStatus ? `${validityLabel[cell.validityStatus]} · ` : ""}
                         {cell.validUntil ? `有效至 ${cell.validUntil.slice(0, 10)}` : "长期有效"}
                         {cell.gap > 0 ? ` · 差 ${cell.gap} 级` : ""}
@@ -2469,8 +2565,20 @@ export function SkillMatrixPanel({ personal }: { personal: boolean }) {
                     </div>
                   ))}
               </article>
-            ))}
+              );
+            })}
           </div>
+          <section className="matrix-level-legend" aria-label="能力等级说明">
+            <strong>能力等级说明</strong>
+            <div>
+              {([0, 1, 2, 3, 4] as const).map((level) => (
+                <article key={level}>
+                  <span className="legend-level">L{level}</span>
+                  <span>{skillLevelMeanings[level]}</span>
+                </article>
+              ))}
+            </div>
+          </section>
         </section>
       )}
     </div>

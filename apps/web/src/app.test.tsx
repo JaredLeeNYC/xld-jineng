@@ -13,6 +13,7 @@ import {
   TrainingMaterialPanel,
   TrainingPlanPanel,
   WebhookSettingsPanel,
+  buildSkillMatrixView,
 } from "./app";
 
 describe("application shell", () => {
@@ -143,6 +144,62 @@ describe("application shell", () => {
     expect(renderToStaticMarkup(<ReportDashboardPanel />)).toContain(
       "正在加载 Dashboard 与技能矩阵",
     );
+  });
+
+  test("supervisor matrix follows the reference layout with row and column summaries", () => {
+    const rows = [
+      {
+        employeeId: "employee-1",
+        employeeNumber: "E001",
+        employeeName: "李华",
+        departmentId: "department-1",
+        departmentName: "SMT",
+        positionId: "position-1",
+        positionName: "操作员",
+        skillId: "skill-1",
+        skillCode: "S001",
+        skillName: "贴片机",
+        requiredLevel: 2,
+        required: true,
+        currentLevel: 3,
+        validityStatus: "effective",
+        status: "met",
+        gap: 0,
+      },
+      {
+        employeeId: "employee-1",
+        employeeNumber: "E001",
+        employeeName: "李华",
+        departmentId: "department-1",
+        departmentName: "SMT",
+        positionId: "position-1",
+        positionName: "操作员",
+        skillId: "skill-2",
+        skillCode: "S002",
+        skillName: "回流焊",
+        requiredLevel: 3,
+        required: true,
+        currentLevel: 2,
+        validityStatus: "effective",
+        status: "gap",
+        gap: 1,
+      },
+    ] as const;
+    const matrix = buildSkillMatrixView([...rows]);
+    expect(matrix.employeeSummaries.get("employee-1")).toEqual({
+      actual: 1,
+      target: 2,
+      difference: -1,
+    });
+
+    const html = renderToStaticMarkup(<SkillMatrixPanel personal={false} initialRows={[...rows]} />);
+    expect(html).toContain("工位技能矩阵表");
+    expect(html).toContain("实际达标");
+    expect(html).toContain("目标数");
+    expect(html).toContain("差异");
+    expect(html).toContain("能力等级说明");
+    expect(html).toContain("现 3 · 目 2");
+    expect(html).toContain('class="matrix-summary-row"');
   });
 
   test("report export parameters stay tied to the applied dashboard filters", () => {
