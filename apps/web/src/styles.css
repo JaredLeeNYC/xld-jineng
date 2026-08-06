@@ -1234,6 +1234,156 @@ main {
   min-width: 92px;
   border-left: 4px solid transparent;
 }
+.skill-matrix-grid {
+  min-width: max-content;
+  border: 1px solid var(--line);
+}
+.skill-matrix-grid th,
+.skill-matrix-grid td {
+  border-right: 1px solid var(--line);
+  text-align: center;
+}
+.skill-matrix-grid thead th {
+  background: #f7faf7;
+  color: var(--ink);
+  padding: 12px 10px;
+}
+.skill-matrix-grid thead th small,
+.skill-matrix-grid thead th strong {
+  display: block;
+}
+.skill-matrix-grid thead th small {
+  color: var(--muted);
+  margin-top: 4px;
+}
+.skill-matrix-grid .matrix-employee-column {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 160px;
+  background: white;
+  text-align: left;
+}
+.skill-matrix-grid thead .matrix-employee-column {
+  z-index: 3;
+  background: #f7faf7;
+}
+.matrix-skill-column {
+  min-width: 128px;
+}
+.matrix-summary-column,
+.matrix-summary-value {
+  min-width: 76px;
+  font-variant-numeric: tabular-nums;
+}
+.matrix-summary-value {
+  background: #f7faf7;
+  border-left-width: 1px !important;
+  font-size: 15px;
+  font-weight: 700;
+}
+.matrix-summary-value.actual {
+  color: var(--green);
+}
+.matrix-summary-value.target {
+  color: var(--blue);
+}
+.matrix-level {
+  display: grid;
+  gap: 6px;
+}
+.matrix-level > strong {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.matrix-level-blocks {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  width: 54px;
+  margin: 0 auto;
+}
+.matrix-level-blocks span {
+  height: 8px;
+  border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent);
+  background: rgb(255 255 255 / 68%);
+}
+.heat-met .matrix-level-blocks .filled {
+  background: #83c94d;
+  border-color: #5da42d;
+}
+.heat-gap .matrix-level-blocks .filled {
+  background: #efbd45;
+  border-color: #c58f17;
+}
+.heat-unassessed .matrix-level-blocks .filled,
+.heat-expired .matrix-level-blocks .filled {
+  background: #dd7967;
+  border-color: #b65040;
+}
+.matrix-summary-row th,
+.matrix-summary-row td {
+  background: white;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-weight: 700;
+  text-align: center;
+}
+.matrix-summary-row th {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #f7faf7;
+  text-align: left;
+}
+.matrix-summary-row .negative,
+.matrix-summary-value.negative,
+.matrix-card-summary .negative {
+  color: var(--coral);
+}
+.matrix-summary-spacer {
+  background: #f7faf7 !important;
+}
+.matrix-level-legend {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.matrix-level-legend > div {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
+}
+.matrix-level-legend article {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+  font-size: 11px;
+}
+.legend-level {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: #eaf7ef;
+  color: var(--green);
+  font-weight: 800;
+}
+.matrix-card-summary {
+  display: flex;
+  justify-content: space-between;
+  margin: 12px 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
 .heat-met {
   background: #eaf7ef;
   border-left-color: #4e9b6f !important;
@@ -1436,6 +1586,9 @@ main {
   }
   .matrix-filter {
     display: grid;
+  }
+  .matrix-level-legend > div {
+    grid-template-columns: 1fr;
   }
   .inline-editor {
     grid-template-columns: 1fr;
