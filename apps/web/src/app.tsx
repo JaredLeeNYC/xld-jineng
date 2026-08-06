@@ -4314,6 +4314,24 @@ export function TrainingMaterialPanel({ canManage }: { canManage: boolean }) {
   );
 }
 
+export function MatrixNavigationPanel({
+  initialRows,
+  navigationId,
+}: {
+  initialRows?: SkillMatrixCell[];
+  navigationId: "matrix" | "reports";
+}) {
+  return navigationId === "matrix" ? (
+    initialRows ? (
+      <SkillMatrixPanel personal={false} initialRows={initialRows} />
+    ) : (
+      <SkillMatrixPanel personal={false} />
+    )
+  ) : (
+    <ReportDashboardPanel />
+  );
+}
+
 function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session: Session }) {
   const navigation = navigationForRole(session.role);
   const [activeNavigation, setActiveNavigation] = useState(navigation[0]?.id ?? "dashboard");
@@ -4401,7 +4419,9 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
           ) : activeNavigation === "skills" ? (
             <SkillAdminPanel />
           ) : activeNavigation === "matrix" || activeNavigation === "reports" ? (
-            <ReportDashboardPanel />
+            <MatrixNavigationPanel
+              navigationId={activeNavigation === "matrix" ? "matrix" : "reports"}
+            />
           ) : activeNavigation === "my-skills" ? (
             <SkillMatrixPanel personal />
           ) : activeNavigation === "training" || activeNavigation === "my-training" ? (

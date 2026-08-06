@@ -8,6 +8,7 @@ import {
   ReportDashboardPanel,
   reportParameters,
   NotificationPanel,
+  MatrixNavigationPanel,
   SkillAdminPanel,
   SkillMatrixPanel,
   TrainingMaterialPanel,
@@ -144,6 +145,13 @@ describe("application shell", () => {
     expect(renderToStaticMarkup(<ReportDashboardPanel />)).toContain(
       "正在加载 Dashboard 与技能矩阵",
     );
+  });
+
+  test("routes the supervisor matrix menu to the dedicated matrix view", () => {
+    const html = renderToStaticMarkup(<MatrixNavigationPanel navigationId="matrix" />);
+
+    expect(html).toContain("正在加载技能矩阵");
+    expect(html).not.toContain("正在加载 Dashboard 与技能矩阵");
   });
 
   test("supervisor matrix follows the reference layout with row and column summaries", () => {
