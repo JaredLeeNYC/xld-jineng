@@ -217,7 +217,7 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
       `select 1 from training_material_access_grants g
        where g.material_id=$1 and g.employee_id=$2 and
          (g.source_type<>'training_task' or exists (
-           select 1 from training_tasks t where t.id::text=g.source_reference and t.status<>'cancelled'
+           select 1 from training_tasks t join training_plans p on p.id=t.plan_id where t.id::text=g.source_reference and t.status<>'cancelled' and p.material_id=g.material_id
          )) limit 1`,
       [materialId, employeeId],
     );

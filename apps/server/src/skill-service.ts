@@ -38,7 +38,12 @@ export const createSkillService = (dependencies: {
   return {
     async listSkills(
       actor: SessionView,
-      input: { includeInactive?: boolean; query?: string } = {},
+      input: {
+        includeInactive?: boolean;
+        query?: string;
+        departmentId?: string;
+        positionId?: string;
+      } = {},
     ) {
       if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role))
         return fail("FORBIDDEN", "无权查看技能目录", 403);
@@ -47,6 +52,8 @@ export const createSkillService = (dependencies: {
         data: await repository.listSkills({
           ...(actor.role === "hr_admin" && input.includeInactive ? { includeInactive: true } : {}),
           ...(input.query ? { query: input.query } : {}),
+          ...(input.departmentId ? { departmentId: input.departmentId } : {}),
+          ...(input.positionId ? { positionId: input.positionId } : {}),
         }),
       };
     },
@@ -95,6 +102,7 @@ export const createSkillService = (dependencies: {
       actor: SessionView,
       id: string,
       input: {
+        code?: string;
         name: string;
         category: SkillCategory;
         reassessmentRequired: boolean;
@@ -104,22 +112,31 @@ export const createSkillService = (dependencies: {
       const denied = hrOnly(actor);
       if (denied) return denied;
       if (
+        (input.code !== undefined &&
+          (!normalizeBusinessCode(input.code) || input.code.trim().length > 30)) ||
         !input.name.trim() ||
         !skillCategories.includes(input.category) ||
         (input.reassessmentRequired &&
           (!input.validityMonths || input.validityMonths < 1 || input.validityMonths > 120))
       )
         return fail("INVALID_SKILL", "技能名称、分类或复评周期无效", 400);
-      return (await repository.updateSkill({
-        id,
-        name: input.name.trim(),
-        category: input.category,
-        reassessmentRequired: input.reassessmentRequired,
-        ...(input.reassessmentRequired ? { validityMonths: input.validityMonths } : {}),
-        actorAccountId: actor.accountId,
-      }))
-        ? { ok: true as const, data: { id } }
-        : fail("SKILL_NOT_FOUND", "技能不存在", 404);
+      try {
+        return (await repository.updateSkill({
+          ...(input.code !== undefined ? { code: normalizeBusinessCode(input.code) } : {}),
+          id,
+          name: input.name.trim(),
+          category: input.category,
+          reassessmentRequired: input.reassessmentRequired,
+          ...(input.reassessmentRequired ? { validityMonths: input.validityMonths } : {}),
+          actorAccountId: actor.accountId,
+        }))
+          ? { ok: true as const, data: { id } }
+          : fail("SKILL_NOT_FOUND", "技能不存在", 404);
+      } catch (error) {
+        if (typeof error === "object" && error && "code" in error && error.code === "23505")
+          return fail("DUPLICATE_SKILL_CODE", "技能编码已存在", 409);
+        throw error;
+      }
     },
 
     async deactivateSkill(actor: SessionView, id: string) {
@@ -130,10 +147,21 @@ export const createSkillService = (dependencies: {
         : fail("SKILL_NOT_FOUND", "技能不存在或已停用", 404);
     },
 
-    async listRequirements(actor: SessionView, positionId?: string) {
+    async archiveSkill(actor: SessionView, id: string) {
       const denied = hrOnly(actor);
       if (denied) return denied;
-      return { ok: true as const, data: await repository.listRequirements(positionId) };
+      return (await repository.archiveSkill({ id, actorAccountId: actor.accountId }))
+        ? { ok: true as const, data: { id, archived: true } }
+        : fail("SKILL_NOT_ARCHIVABLE", "仅可归档未归档的已停用技能", 409);
+    },
+
+    async listRequirements(actor: SessionView, positionId?: string, departmentId?: string) {
+      const denied = hrOnly(actor);
+      if (denied) return denied;
+      return {
+        ok: true as const,
+        data: await repository.listRequirements(positionId, departmentId),
+      };
     },
 
     async saveRequirement(

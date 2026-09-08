@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import ExcelJS from "exceljs";
-import { createEmployeeExport, parseEmployeeWorkbook } from "./organization-excel";
+import {
+  createEmployeeExport,
+  createEmployeeImportWorkbook,
+  parseEmployeeWorkbook,
+} from "./organization-excel";
 
 describe("organization Excel", () => {
   test("parses the employee template and ignores blank rows", async () => {
@@ -41,6 +45,24 @@ describe("organization Excel", () => {
     const sheet = workbook.worksheets[0]!;
     expect(sheet.getCell("A2").text).toBe("E0001");
     expect(sheet.getCell("G2").text).toBe("在职");
-    expect(sheet.columnCount).toBe(7);
+    expect(sheet.columnCount).toBe(13);
   });
+});
+
+test("round-trips complete employee profiles and manager roles", async () => {
+  const profile = {
+    employeeNumber: "0341",
+    displayName: "张三",
+    departmentCode: "D001",
+    positionCode: "P001",
+    phone: "13800000000",
+    gender: "男",
+    age: 32,
+    identityNumber: "110101199401010011",
+    tenureYears: 2.5,
+    education: "本科",
+    role: "department_manager" as const,
+  };
+  const buffer = await createEmployeeImportWorkbook([profile]);
+  expect(await parseEmployeeWorkbook(buffer)).toEqual([{ ...profile, rowNumber: 2 }]);
 });

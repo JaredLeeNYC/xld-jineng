@@ -1,0 +1,30 @@
+[
+  {
+    "scenario": "existing",
+    "pass": true,
+    "exitCode": 1,
+    "events": "ln -sfn /d/dev/jineng/.tmp/deploy-mock-r3/existing/previous /d/dev/jineng/.tmp/deploy-mock-r3/existing/current\n",
+    "output": "==> deploying 1234567890ab\nrelease directory already exists; preserve it and use a new release SHA\n"
+  },
+  {
+    "scenario": "backup_fail",
+    "pass": true,
+    "exitCode": 1,
+    "events": "ln -sfn /d/dev/jineng/.tmp/deploy-mock-r3/backup_fail/previous /d/dev/jineng/.tmp/deploy-mock-r3/backup_fail/current\nbun install --frozen-lockfile\nbun run build:web\nbackup\n",
+    "output": "==> deploying 1234567890ab\n==> bun install\n==> build:web\n==> backing up database\n"
+  },
+  {
+    "scenario": "ready_fail",
+    "pass": true,
+    "exitCode": 1,
+    "events": "ln -sfn /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/previous /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/current\nbun install --frozen-lockfile\nbun run build:web\nbackup\nbun run db:migrate\nln -sfn /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/releases/1234567890ab /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/current.next\nmv -Tf /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/current.next /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/current\nsystemctl restart skill-matrix-server\nln -sfn /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/previous /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/current.rollback\nmv -Tf /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/current.rollback /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/current\nsystemctl restart skill-matrix-server\n",
+    "output": "==> deploying 1234567890ab\n==> bun install\n==> build:web\n==> backing up database\n==> db:migrate\n==> current -> /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/releases/1234567890ab\n==> health check\n==> health check FAILED\n==> rolling back to /d/dev/jineng/.tmp/deploy-mock-r3/ready_fail/previous\n==> rolled back\n"
+  },
+  {
+    "scenario": "success",
+    "pass": true,
+    "exitCode": 0,
+    "events": "ln -sfn /d/dev/jineng/.tmp/deploy-mock-r3/success/previous /d/dev/jineng/.tmp/deploy-mock-r3/success/current\nbun install --frozen-lockfile\nbun run build:web\nbackup\nbun run db:migrate\nln -sfn /d/dev/jineng/.tmp/deploy-mock-r3/success/releases/1234567890ab /d/dev/jineng/.tmp/deploy-mock-r3/success/current.next\nmv -Tf /d/dev/jineng/.tmp/deploy-mock-r3/success/current.next /d/dev/jineng/.tmp/deploy-mock-r3/success/current\nsystemctl restart skill-matrix-server\nbun packages/db/scripts/promote-reviewed-managers.ts\n",
+    "output": "==> deploying 1234567890ab\n==> bun install\n==> build:web\n==> backing up database\n==> db:migrate\n==> current -> /d/dev/jineng/.tmp/deploy-mock-r3/success/releases/1234567890ab\n==> health check\n==> health check passed\n==> ready check passed\n==> applying reviewed manager account changes\n==> deployed 1234567890ab successfully; reviewed accounts verified\n"
+  }
+]

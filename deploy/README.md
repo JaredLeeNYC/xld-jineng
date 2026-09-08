@@ -2,6 +2,14 @@
 
 本模板适合与参考系统一致的单台 Linux 云主机部署：Nginx 提供静态页面和反向代理，systemd 管理 Bun API，Docker Compose 只运行 PostgreSQL。
 
+## 当前测试环境发布
+
+`lzb-ops/work/2026-07-skill-matrix-deploy/map.md` 记录的技能矩阵目标为 tc-stage（`https://skills.xinglianda.cn`）。本仓库 `.github/workflows/deploy.yml` 在 main push 后自动发布；下文显式 `release.sh` 是通用发布模板，不是该测试环境的触发条件。
+
+工作流从触发提交读取 `auto-deploy.sh`，传入完整 SHA，并通过 `git archive` 创建全新版本目录。已存在的版本目录不覆盖。发布前安装本机 LibreOffice，用于授权后将 Word、Excel、PowerPoint 转换为 PDF；转换文件不上传第三方。OpenCloudOS 使用 dnf 安装 writer、calc、impress、headless 包，依赖安装失败时停止发布。
+
+数据库备份成功后才能迁移。health 和 ready 均通过后记录运行版本，再执行 `packages/db/scripts/promote-reviewed-managers.ts`，幂等处理本次修改清单指定的四个工号。缺失、停用或角色异常会导致工作流失败并输出逐项状态；此时应用可能已上线，必须区分运行版本与业务变更完成状态。没有通过全部验收前不要 push main。
+
 ## 发布护栏
 
 1. 每次发布解压到 `/opt/skill-matrix/releases/<版本>`，不要直接覆盖 `current`。

@@ -1,0 +1,116 @@
+- complementary:
+  - strong: 技能矩阵
+  - generic: 工厂人才管理
+  - navigation "主导航":
+    - paragraph: 我的菜单
+    - button "全厂概况":
+      - generic: 全厂概况
+    - button "组织人员":
+      - generic: 组织人员
+    - button "技能标准" [active]:
+      - generic: 技能标准
+    - button "培训管理":
+      - generic: 培训管理
+    - button "评定归档":
+      - generic: 评定归档
+    - button "报表导出":
+      - generic: 报表导出
+  - button "退出登录":
+    - generic: 退出登录
+  - generic: 当前组织
+  - strong: 示范制造工厂
+- main:
+  - generic: 搜索员工、岗位或技能
+  - generic: ⌘ K
+  - button "通知":
+  - generic: 验
+  - strong: 验收HR001
+  - generic: HR001 · HR / 培训管理员
+  - paragraph: 技能标准
+  - heading "岗位技能标准" [level=1]
+  - paragraph: 使用固定三级分类与 0–4 级定义，维护岗位达标口径。
+  - heading "新增技能" [level=2]
+  - textbox "技能编码"
+  - textbox "技能名称"
+  - combobox:
+    - option "通用"
+    - option "专业" [selected]
+    - option "核心"
+  - checkbox "需要复评"
+  - text: 需要复评
+  - button "保存技能"
+  - heading "岗位要求" [level=2]
+  - combobox:
+    - option "QA-OP · 验收操作员" [selected]
+  - combobox:
+    - option "QA-SKILL · 验收焊接" [selected]
+  - combobox:
+    - option "0 · 未掌握"
+    - option "1 · 初级 · 了解并能在指导下操作"
+    - option "2 · 中级 · 可独立完成标准作业" [selected]
+    - option "3 · 高级 · 熟练处理异常并指导他人"
+    - option "4 · 专家 · 可制定标准并持续改进"
+  - checkbox "必备技能" [checked]
+  - text: 必备技能
+  - button "保存要求"
+  - heading "复制岗位要求" [level=2]
+  - combobox:
+    - option "验收操作员" [selected]
+  - combobox:
+    - option "验收操作员" [selected]
+  - text: 统一调整等级
+  - spinbutton "统一调整等级": "0"
+  - button "复制并调整"
+  - text: 部门
+  - combobox "技能部门筛选":
+    - option "全部部门"
+    - option "验收制造部" [selected]
+  - text: 岗位
+  - combobox "技能岗位筛选":
+    - option "全部岗位"
+    - option "验收操作员" [selected]
+  - heading "技能目录" [level=2]
+  - paragraph: 共 1 项
+  - textbox "筛选编码、名称或分类"
+  - table:
+    - rowgroup:
+      - row "编码 / 名称 部门 岗位 分类 复评 状态 操作":
+        - columnheader "编码 / 名称"
+        - columnheader "部门"
+        - columnheader "岗位"
+        - columnheader "分类"
+        - columnheader "复评"
+        - columnheader "状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "QA-SKILL · 验收焊接 验收制造部 验收操作员 专业 无需 启用 编辑 停用":
+        - cell "QA-SKILL · 验收焊接"
+        - cell "验收制造部"
+        - cell "验收操作员"
+        - cell "专业"
+        - cell "无需"
+        - cell "启用"
+        - cell "编辑 停用":
+          - button "编辑"
+          - button "停用"
+  - heading "当前岗位要求" [level=2]
+  - paragraph: 1 条唯一要求
+  - table:
+    - rowgroup:
+      - row "部门 岗位 技能 等级 类型":
+        - columnheader "部门"
+        - columnheader "岗位"
+        - columnheader "技能"
+        - columnheader "等级"
+        - columnheader "类型"
+    - rowgroup:
+      - row "验收制造部 QA-OP · 验收操作员 QA-SKILL · 验收焊接 3 必备":
+        - cell "验收制造部"
+        - cell "QA-OP · 验收操作员"
+        - cell "QA-SKILL · 验收焊接"
+        - cell "3"
+        - cell "必备"
+  - heading "初始技能 Excel" [level=2]
+  - paragraph: 每行必须包含档案来源，预检通过后才归档。
+  - button "Choose File"
+  - button "预检基线" [disabled]

@@ -127,3 +127,44 @@ describe("skill service", () => {
     expect(getMatrixInput()).toMatchObject({ employeeId: "employee-self" });
   });
 });
+
+test("updates codes, rejects duplicates, and only permits HR archive", async () => {
+  let saved: unknown;
+  let duplicate = false;
+  const repository = {
+    updateSkill: async (input: unknown) => {
+      saved = input;
+      if (duplicate) throw { code: "23505" };
+      return true;
+    },
+    archiveSkill: async ({ id }: { id: string }) => id === "inactive",
+    listSkills: async (input: unknown) => {
+      saved = input;
+      return [];
+    },
+  } as unknown as SkillRepository;
+  const service = createSkillService({ repository, idSource: () => "id", now: () => new Date() });
+  const input = {
+    code: " new-01 ",
+    name: "焊接",
+    category: "professional" as const,
+    reassessmentRequired: false,
+  };
+  expect(await service.updateSkill(hr, "s1", input)).toMatchObject({ ok: true });
+  expect(saved).toMatchObject({ code: "NEW-01" });
+  duplicate = true;
+  expect(await service.updateSkill(hr, "s1", input)).toMatchObject({
+    ok: false,
+    error: { code: "DUPLICATE_SKILL_CODE" },
+  });
+  expect(await service.archiveSkill(hr, "active")).toMatchObject({
+    ok: false,
+    error: { code: "SKILL_NOT_ARCHIVABLE" },
+  });
+  expect(await service.archiveSkill(hr, "inactive")).toMatchObject({ ok: true });
+  expect(
+    await service.archiveSkill({ ...hr, role: "department_manager" }, "inactive"),
+  ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+  await service.listSkills(hr, { departmentId: "d1", positionId: "p1" });
+  expect(saved).toMatchObject({ departmentId: "d1", positionId: "p1" });
+});

@@ -45,22 +45,34 @@ const audit = async (
 
 export const createPostgresSkillRepository = (pool: Pool) => ({
   async listSkills(
-    input: { includeInactive?: boolean; query?: string } = {},
+    input: {
+      includeInactive?: boolean;
+      query?: string;
+      departmentId?: string;
+      positionId?: string;
+    } = {},
   ): Promise<SkillView[]> {
     const result = await pool.query<SkillView>(
-      `select id, code, name, category,
-              reassessment_required as "reassessmentRequired",
-              validity_months as "validityMonths", active
-       from skills
-       where (active = true or $1 = true)
-         and ($2::text is null or code ilike '%' || $2 || '%' or name ilike '%' || $2 || '%')
-       order by category, code`,
-      [input.includeInactive ?? false, input.query ?? null],
+      `select s.id, s.code, s.name, s.category, s.reassessment_required as "reassessmentRequired",
+         s.validity_months as "validityMonths", s.active,
+         coalesce((select jsonb_agg(distinct jsonb_build_object('id',d.id,'name',d.name))
+           from position_skill_requirements r join positions p on p.id=r.position_id join departments d on d.id=p.department_id where r.skill_id=s.id), '[]'::jsonb) as departments,
+         coalesce((select jsonb_agg(distinct jsonb_build_object('id',p.id,'name',p.name))
+           from position_skill_requirements r join positions p on p.id=r.position_id where r.skill_id=s.id), '[]'::jsonb) as positions
+       from skills s where s.archived_at is null and (s.active=true or $1=true)
+         and ($2::text is null or s.code ilike '%' || $2 || '%' or s.name ilike '%' || $2 || '%')
+         and (($3::uuid is null and $4::uuid is null) or exists (
+           select 1 from position_skill_requirements r join positions p on p.id=r.position_id
+           where r.skill_id=s.id and ($3::uuid is null or p.department_id=$3) and ($4::uuid is null or p.id=$4)))
+       order by s.category,s.code`,
+      [
+        input.includeInactive ?? false,
+        input.query ?? null,
+        input.departmentId ?? null,
+        input.positionId ?? null,
+      ],
     );
-    return result.rows.map((row) => ({
-      ...row,
-      ...(row.validityMonths ? { validityMonths: row.validityMonths } : {}),
-    }));
+    return result.rows;
   },
 
   async createSkill(input: {
@@ -99,6 +111,7 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
 
   async updateSkill(input: {
     id: string;
+    code?: string;
     name: string;
     category: SkillCategory;
     reassessmentRequired: boolean;
@@ -108,13 +121,14 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
     return transaction(pool, async (client) => {
       const result = await client.query(
         `update skills set name = $2, category = $3, reassessment_required = $4,
-           validity_months = $5, updated_at = now() where id = $1 returning id`,
+           validity_months = $5, code = coalesce($6, code), updated_at = now() where id = $1 and archived_at is null returning id`,
         [
           input.id,
           input.name,
           input.category,
           input.reassessmentRequired,
           input.validityMonths ?? null,
+          input.code ?? null,
         ],
       );
       if (result.rowCount === 0) return false;
@@ -123,6 +137,7 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
         action: "skill.updated",
         objectType: "skill",
         objectId: input.id,
+        summary: { code: input.code },
       });
       return true;
     });
@@ -145,17 +160,38 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
     });
   },
 
-  async listRequirements(positionId?: string): Promise<PositionSkillRequirementView[]> {
+  async archiveSkill(input: { id: string; actorAccountId: string }): Promise<boolean> {
+    return transaction(pool, async (client) => {
+      const result = await client.query(
+        "update skills set archived_at=now(), updated_at=now() where id=$1 and active=false and archived_at is null returning id",
+        [input.id],
+      );
+      if (result.rowCount === 0) return false;
+      await audit(client, {
+        actorAccountId: input.actorAccountId,
+        action: "skill.archived",
+        objectType: "skill",
+        objectId: input.id,
+      });
+      return true;
+    });
+  },
+
+  async listRequirements(
+    positionId?: string,
+    departmentId?: string,
+  ): Promise<PositionSkillRequirementView[]> {
     const result = await pool.query<PositionSkillRequirementView>(
-      `select r.id, r.position_id as "positionId", p.code as "positionCode", p.name as "positionName",
+      `select d.id as "departmentId", d.name as "departmentName", r.id, r.position_id as "positionId", p.code as "positionCode", p.name as "positionName",
               r.skill_id as "skillId", s.code as "skillCode", s.name as "skillName",
               s.category as "skillCategory", r.required_level as "requiredLevel", r.required
        from position_skill_requirements r
        join positions p on p.id = r.position_id
        join skills s on s.id = r.skill_id
-       where ($1::uuid is null or r.position_id = $1)
+       join departments d on d.id = p.department_id
+       where ($1::uuid is null or r.position_id = $1) and ($2::uuid is null or d.id = $2) and s.archived_at is null
        order by p.code, s.category, s.code`,
-      [positionId ?? null],
+      [positionId ?? null, departmentId ?? null],
     );
     return result.rows;
   },

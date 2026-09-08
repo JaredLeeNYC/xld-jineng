@@ -200,7 +200,9 @@ describe("application shell", () => {
       difference: -1,
     });
 
-    const html = renderToStaticMarkup(<SkillMatrixPanel personal={false} initialRows={[...rows]} />);
+    const html = renderToStaticMarkup(
+      <SkillMatrixPanel personal={false} initialRows={[...rows]} />,
+    );
     expect(html).toContain("工位技能矩阵表");
     expect(html).toContain("实际达标");
     expect(html).toContain("目标数");

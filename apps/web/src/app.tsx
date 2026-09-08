@@ -2,6 +2,8 @@ import {
   navigationForRole,
   maximumPasswordLength,
   minimumPasswordLength,
+  trainingTypeLabels,
+  type TrainingType,
   assessmentMethodLabels,
   assessmentStatusLabels,
   skillCategoryLabels,
@@ -38,7 +40,8 @@ import {
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { MaterialPreviewButton } from "./material-preview";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 export type Session = {
   accountId: string;
@@ -78,6 +81,11 @@ type Employee = {
   positionName?: string;
   hireDate?: string;
   phone?: string;
+  gender?: string;
+  age?: number;
+  identityNumber?: string;
+  tenureYears?: number;
+  education?: string;
   active: boolean;
 };
 type ImportPreview = {
@@ -290,7 +298,8 @@ function PasswordChangePage({
         <p className="eyebrow">首次登录保护</p>
         <h2>{session.displayName}，请先修改密码</h2>
         <p className="auth-help">
-          新密码至少 {minimumPasswordLength} 位，最多 {maximumPasswordLength} 位。完成修改前不能进入业务页面。
+          新密码至少 {minimumPasswordLength} 位，最多 {maximumPasswordLength}{" "}
+          位。完成修改前不能进入业务页面。
         </p>
         <label>
           <span>当前密码</span>
@@ -502,6 +511,14 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
   const [departmentForm, setDepartmentForm] = useState({ code: "", name: "" });
   const [positionForm, setPositionForm] = useState({ code: "", name: "", departmentId: "" });
   const [employeeForm, setEmployeeForm] = useState({
+    phone: "",
+    hireDate: "",
+    gender: "",
+    age: "",
+    identityNumber: "",
+    tenureYears: "",
+    education: "",
+    role: "employee",
     employeeNumber: "",
     displayName: "",
     departmentCode: "",
@@ -853,7 +870,14 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                   credentials: Array<{ employeeNumber: string; temporaryPassword: string }>;
                 }>("/api/organization/employees", {
                   method: "POST",
-                  body: JSON.stringify(employeeForm),
+                  body: JSON.stringify({
+                    ...employeeForm,
+                    hireDate: employeeForm.hireDate || undefined,
+                    age: employeeForm.age ? Number(employeeForm.age) : undefined,
+                    tenureYears: employeeForm.tenureYears
+                      ? Number(employeeForm.tenureYears)
+                      : undefined,
+                  }),
                 });
                 if (!result.ok) {
                   setNotice(result.error.message);
@@ -862,6 +886,14 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                 setCredentials(result.data.credentials);
                 setNotice("员工已创建；初始凭证仅在本页显示一次。");
                 setEmployeeForm({
+                  phone: "",
+                  hireDate: "",
+                  gender: "",
+                  age: "",
+                  identityNumber: "",
+                  tenureYears: "",
+                  education: "",
+                  role: "employee",
                   employeeNumber: "",
                   displayName: "",
                   departmentCode: "",
@@ -874,6 +906,48 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
             }}
           >
             <h2>新增员工</h2>
+            <label>
+              账号角色
+              <select
+                aria-label="账号角色"
+                value={employeeForm.role}
+                onChange={(event) => setEmployeeForm({ ...employeeForm, role: event.target.value })}
+              >
+                <option value="employee">普通员工</option>
+                <option value="department_manager">部门主管</option>
+              </select>
+            </label>
+            {(
+              [
+                ["phone", "手机号"],
+                ["hireDate", "入职日期"],
+                ["gender", "性别"],
+                ["age", "年龄"],
+                ["identityNumber", "身份证号"],
+                ["tenureYears", "司龄（年）"],
+                ["education", "学历"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <input
+                  aria-label={label}
+                  type={
+                    key === "hireDate"
+                      ? "date"
+                      : key === "age" || key === "tenureYears"
+                        ? "number"
+                        : "text"
+                  }
+                  min={0}
+                  step={key === "tenureYears" ? "0.1" : undefined}
+                  value={employeeForm[key]}
+                  onChange={(event) =>
+                    setEmployeeForm({ ...employeeForm, [key]: event.target.value })
+                  }
+                />
+              </label>
+            ))}
             <input
               placeholder="工号"
               required
@@ -1145,6 +1219,11 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                   displayName: editing.displayName,
                   hireDate: editing.hireDate,
                   phone: editing.phone,
+                  gender: editing.gender,
+                  age: editing.age,
+                  identityNumber: editing.identityNumber,
+                  tenureYears: editing.tenureYears,
+                  education: editing.education,
                 })
               )
                 setEditing(undefined);
@@ -1164,6 +1243,37 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
               value={editing.phone ?? ""}
               onChange={(event) => setEditing({ ...editing, phone: event.target.value })}
             />
+            {(
+              [
+                ["gender", "性别"],
+                ["age", "年龄"],
+                ["identityNumber", "身份证号"],
+                ["tenureYears", "司龄（年）"],
+                ["education", "学历"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <input
+                  aria-label={label}
+                  type={key === "age" || key === "tenureYears" ? "number" : "text"}
+                  min={0}
+                  step={key === "tenureYears" ? "0.1" : undefined}
+                  value={editing[key] ?? ""}
+                  onChange={(event) =>
+                    setEditing({
+                      ...editing,
+                      [key]:
+                        key === "age" || key === "tenureYears"
+                          ? event.target.value
+                            ? Number(event.target.value)
+                            : undefined
+                          : event.target.value,
+                    })
+                  }
+                />
+              </label>
+            ))}
             <button className="primary-button" type="submit">
               保存资料
             </button>
@@ -1239,6 +1349,27 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
               关闭
             </button>
           </div>
+          <dl className="employee-profile-grid">
+            {(
+              [
+                ["displayName", "姓名"],
+                ["phone", "手机号"],
+                ["gender", "性别"],
+                ["age", "年龄"],
+                ["identityNumber", "身份证号"],
+                ["hireDate", "入职日期"],
+                ["departmentName", "部门"],
+                ["positionName", "职务"],
+                ["tenureYears", "司龄（年）"],
+                ["education", "学历"],
+              ] as const
+            ).map(([key, label]) => (
+              <div key={key}>
+                <dt>{label}</dt>
+                <dd>{history.employee[key] ?? "未填写"}</dd>
+              </div>
+            ))}
+          </dl>
           {history.error ? (
             <p className="form-error">{history.error}</p>
           ) : !history.assignments ? (
@@ -1378,6 +1509,8 @@ export function SkillAdminPanel() {
       }
   >({ status: "loading" });
   const [query, setQuery] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [positionFilter, setPositionFilter] = useState("");
   const [notice, setNotice] = useState("");
   const [skillForm, setSkillForm] = useState<{
     code: string;
@@ -1474,10 +1607,21 @@ export function SkillAdminPanel() {
         </button>
       </section>
     );
-  const filtered = state.skills.filter((item) =>
-    `${item.code} ${item.name} ${skillCategoryLabels[item.category]}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  const filtered = state.skills.filter(
+    (item) =>
+      (!departmentFilter || (item.departments ?? []).some((d) => d.id === departmentFilter)) &&
+      (!positionFilter || (item.positions ?? []).some((p) => p.id === positionFilter)) &&
+      `${item.code} ${item.name} ${skillCategoryLabels[item.category]}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  );
+  const filteredRequirements = state.requirements.filter(
+    (item) =>
+      (!departmentFilter || item.departmentId === departmentFilter) &&
+      (!positionFilter || item.positionId === positionFilter),
+  );
+  const departmentOptions = Array.from(
+    new Map(state.positions.map((p) => [p.departmentId, p.departmentName])).entries(),
   );
   const activePositions = state.positions.filter((item) => item.active);
   const activeSkills = state.skills.filter((item) => item.active);
@@ -1663,6 +1807,43 @@ export function SkillAdminPanel() {
           </button>
         </form>
       </section>
+      <div className="list-filters">
+        <label>
+          部门
+          <select
+            aria-label="技能部门筛选"
+            value={departmentFilter}
+            onChange={(event) => {
+              setDepartmentFilter(event.target.value);
+              setPositionFilter("");
+            }}
+          >
+            <option value="">全部部门</option>
+            {departmentOptions.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          岗位
+          <select
+            aria-label="技能岗位筛选"
+            value={positionFilter}
+            onChange={(event) => setPositionFilter(event.target.value)}
+          >
+            <option value="">全部岗位</option>
+            {state.positions
+              .filter((p) => !departmentFilter || p.departmentId === departmentFilter)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+        </label>
+      </div>
       <section className="panel skill-catalog">
         <div className="panel-heading">
           <div>
@@ -1685,6 +1866,8 @@ export function SkillAdminPanel() {
                 <thead>
                   <tr>
                     <th>编码 / 名称</th>
+                    <th>部门</th>
+                    <th>岗位</th>
                     <th>分类</th>
                     <th>复评</th>
                     <th>状态</th>
@@ -1697,12 +1880,22 @@ export function SkillAdminPanel() {
                       <td>
                         {skill.code} · {skill.name}
                       </td>
+                      <td>{(skill.departments ?? []).map((d) => d.name).join("、") || "未关联"}</td>
+                      <td>{(skill.positions ?? []).map((p) => p.name).join("、") || "未关联"}</td>
                       <td>{skillCategoryLabels[skill.category]}</td>
                       <td>
                         {skill.reassessmentRequired ? `${skill.validityMonths} 个月` : "无需"}
                       </td>
                       <td>{skill.active ? "启用" : "停用"}</td>
                       <td>
+                        {!skill.active && (
+                          <button
+                            type="button"
+                            onClick={() => void mutate(`/api/skills/${skill.id}/archive`, "POST")}
+                          >
+                            删除（归档）
+                          </button>
+                        )}
                         {skill.active && (
                           <>
                             <button type="button" onClick={() => setEditingSkill(skill)}>
@@ -1736,6 +1929,18 @@ export function SkillAdminPanel() {
                     {skill.reassessmentRequired ? `${skill.validityMonths} 个月复评` : "无需复评"} ·{" "}
                     {skill.active ? "启用" : "停用"}
                   </p>
+                  <p>
+                    部门：{(skill.departments ?? []).map((d) => d.name).join("、") || "未关联"}
+                    ；岗位：{(skill.positions ?? []).map((p) => p.name).join("、") || "未关联"}
+                  </p>
+                  {!skill.active && (
+                    <button
+                      type="button"
+                      onClick={() => void mutate(`/api/skills/${skill.id}/archive`, "POST")}
+                    >
+                      删除（归档）
+                    </button>
+                  )}
                   {skill.active && (
                     <footer>
                       <button type="button" onClick={() => setEditingSkill(skill)}>
@@ -1762,6 +1967,7 @@ export function SkillAdminPanel() {
             event.preventDefault();
             if (
               await mutate(`/api/skills/${editingSkill.id}`, "PATCH", {
+                code: editingSkill.code,
                 name: editingSkill.name,
                 category: editingSkill.category,
                 reassessmentRequired: editingSkill.reassessmentRequired,
@@ -1774,6 +1980,14 @@ export function SkillAdminPanel() {
           }}
         >
           <strong>编辑技能 {editingSkill.code}</strong>
+          <label>
+            技能编码
+            <input
+              required
+              value={editingSkill.code}
+              onChange={(event) => setEditingSkill({ ...editingSkill, code: event.target.value })}
+            />
+          </label>
           <input
             value={editingSkill.name}
             onChange={(event) => setEditingSkill({ ...editingSkill, name: event.target.value })}
@@ -1823,10 +2037,10 @@ export function SkillAdminPanel() {
         <div className="panel-heading">
           <div>
             <h2>当前岗位要求</h2>
-            <p>{state.requirements.length} 条唯一要求</p>
+            <p>{filteredRequirements.length} 条唯一要求</p>
           </div>
         </div>
-        {state.requirements.length === 0 ? (
+        {filteredRequirements.length === 0 ? (
           <p className="list-state">尚未配置岗位要求</p>
         ) : (
           <>
@@ -1834,6 +2048,7 @@ export function SkillAdminPanel() {
               <table className="skill-table">
                 <thead>
                   <tr>
+                    <th>部门</th>
                     <th>岗位</th>
                     <th>技能</th>
                     <th>等级</th>
@@ -1841,8 +2056,9 @@ export function SkillAdminPanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {state.requirements.map((item) => (
+                  {filteredRequirements.map((item) => (
                     <tr key={item.id}>
+                      <td>{item.departmentName}</td>
                       <td>
                         {item.positionCode} · {item.positionName}
                       </td>
@@ -1857,10 +2073,10 @@ export function SkillAdminPanel() {
               </table>
             </div>
             <div className="requirement-cards">
-              {state.requirements.map((item) => (
+              {filteredRequirements.map((item) => (
                 <article key={item.id}>
                   <strong>
-                    {item.positionName} · {item.skillName}
+                    {item.departmentName} · {item.positionName} · {item.skillName}
                   </strong>
                   <span>
                     要求 {item.requiredLevel} 级 · {item.required ? "必备" : "非必备"}
@@ -2335,8 +2551,7 @@ export function SkillMatrixPanel({
     }
   };
   useEffect(() => {
-    if (!initialRows)
-      void load({ departmentId: "", employeeId: "", positionId: "", skillId: "" });
+    if (!initialRows) void load({ departmentId: "", employeeId: "", positionId: "", skillId: "" });
   }, [initialRows]);
   if (state.status === "loading")
     return <section className="panel list-state-panel">正在加载技能矩阵…</section>;
@@ -2472,56 +2687,63 @@ export function SkillMatrixPanel({
                 {matrix.employees.map((employee) => {
                   const summary = matrix.employeeSummaries.get(employee.employeeId)!;
                   return (
-                  <tr key={employee.employeeId}>
-                    <th className="matrix-employee-column">
-                      <strong>{employee.employeeName}</strong>
-                      <small>
-                        {employee.employeeNumber} · {employee.positionName}
-                      </small>
-                    </th>
-                    {matrix.skills.map((skill) => {
-                      const cell = matrix.cells.get(`${employee.employeeId}:${skill.skillId}`);
-                      return (
-                        <td className={`heat-${cell?.status ?? "none"}`} key={skill.skillId}>
-                          {cell ? (
-                            <>
-                              <SkillLevelBlocks cell={cell} />
-                              <small>
-                                {statusLabel[cell.status]} ·{" "}
-                                {cell.validityStatus
-                                  ? validityLabel[cell.validityStatus]
-                                  : "未评定"}{" "}
-                                ·{" "}
-                                {cell.validUntil
-                                  ? `有效至 ${cell.validUntil.slice(0, 10)}`
-                                  : "长期有效"}
-                                {cell.gap > 0 ? ` · 差 ${cell.gap} 级` : ""}
-                              </small>
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="matrix-summary-value actual">{summary.actual}</td>
-                    <td className="matrix-summary-value target">{summary.target}</td>
-                    <td className={`matrix-summary-value ${summary.difference < 0 ? "negative" : ""}`}>
-                      {formatMatrixDifference(summary.difference)}
-                    </td>
-                  </tr>
+                    <tr key={employee.employeeId}>
+                      <th className="matrix-employee-column">
+                        <strong>{employee.employeeName}</strong>
+                        <small>
+                          {employee.employeeNumber} · {employee.positionName}
+                        </small>
+                      </th>
+                      {matrix.skills.map((skill) => {
+                        const cell = matrix.cells.get(`${employee.employeeId}:${skill.skillId}`);
+                        return (
+                          <td className={`heat-${cell?.status ?? "none"}`} key={skill.skillId}>
+                            {cell ? (
+                              <>
+                                <SkillLevelBlocks cell={cell} />
+                                <small>
+                                  {statusLabel[cell.status]} ·{" "}
+                                  {cell.validityStatus
+                                    ? validityLabel[cell.validityStatus]
+                                    : "未评定"}{" "}
+                                  ·{" "}
+                                  {cell.validUntil
+                                    ? `有效至 ${cell.validUntil.slice(0, 10)}`
+                                    : "长期有效"}
+                                  {cell.gap > 0 ? ` · 差 ${cell.gap} 级` : ""}
+                                </small>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="matrix-summary-value actual">{summary.actual}</td>
+                      <td className="matrix-summary-value target">{summary.target}</td>
+                      <td
+                        className={`matrix-summary-value ${summary.difference < 0 ? "negative" : ""}`}
+                      >
+                        {formatMatrixDifference(summary.difference)}
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
               <tfoot>
                 {(["actual", "target", "difference"] as const).map((metric) => (
                   <tr className="matrix-summary-row" key={metric}>
-                    <th>{metric === "actual" ? "实际达标" : metric === "target" ? "目标数" : "差异"}</th>
+                    <th>
+                      {metric === "actual" ? "实际达标" : metric === "target" ? "目标数" : "差异"}
+                    </th>
                     {matrix.skills.map((skill) => {
                       const summary = matrix.skillSummaries.get(skill.skillId)!;
                       const value = summary[metric];
                       return (
-                        <td className={metric === "difference" && value < 0 ? "negative" : ""} key={skill.skillId}>
+                        <td
+                          className={metric === "difference" && value < 0 ? "negative" : ""}
+                          key={skill.skillId}
+                        >
                           {metric === "difference" ? formatMatrixDifference(value) : value}
                         </td>
                       );
@@ -2536,35 +2758,35 @@ export function SkillMatrixPanel({
             {matrix.employees.map((employee) => {
               const summary = matrix.employeeSummaries.get(employee.employeeId)!;
               return (
-              <article className="matrix-card" key={employee.employeeId}>
-                <header>
-                  <strong>{employee.employeeName}</strong>
-                  <span>{employee.positionName}</span>
-                </header>
-                <p className="matrix-card-summary">
-                  达标 {summary.actual} / {summary.target}
-                  <span className={summary.difference < 0 ? "negative" : ""}>
-                    差异 {formatMatrixDifference(summary.difference)}
-                  </span>
-                </p>
-                {rows
-                  .filter((item) => item.employeeId === employee.employeeId)
-                  .map((cell) => (
-                    <div className={`matrix-skill heat-${cell.status}`} key={cell.skillId}>
-                      <span>
-                        {cell.skillName}
-                        {cell.required ? " · 必备" : ""}
-                      </span>
-                      <SkillLevelBlocks cell={cell} />
-                      <small>
-                        {statusLabel[cell.status]} ·{" "}
-                        {cell.validityStatus ? `${validityLabel[cell.validityStatus]} · ` : ""}
-                        {cell.validUntil ? `有效至 ${cell.validUntil.slice(0, 10)}` : "长期有效"}
-                        {cell.gap > 0 ? ` · 差 ${cell.gap} 级` : ""}
-                      </small>
-                    </div>
-                  ))}
-              </article>
+                <article className="matrix-card" key={employee.employeeId}>
+                  <header>
+                    <strong>{employee.employeeName}</strong>
+                    <span>{employee.positionName}</span>
+                  </header>
+                  <p className="matrix-card-summary">
+                    达标 {summary.actual} / {summary.target}
+                    <span className={summary.difference < 0 ? "negative" : ""}>
+                      差异 {formatMatrixDifference(summary.difference)}
+                    </span>
+                  </p>
+                  {rows
+                    .filter((item) => item.employeeId === employee.employeeId)
+                    .map((cell) => (
+                      <div className={`matrix-skill heat-${cell.status}`} key={cell.skillId}>
+                        <span>
+                          {cell.skillName}
+                          {cell.required ? " · 必备" : ""}
+                        </span>
+                        <SkillLevelBlocks cell={cell} />
+                        <small>
+                          {statusLabel[cell.status]} ·{" "}
+                          {cell.validityStatus ? `${validityLabel[cell.validityStatus]} · ` : ""}
+                          {cell.validUntil ? `有效至 ${cell.validUntil.slice(0, 10)}` : "长期有效"}
+                          {cell.gap > 0 ? ` · 差 ${cell.gap} 级` : ""}
+                        </small>
+                      </div>
+                    ))}
+                </article>
               );
             })}
           </div>
@@ -3045,6 +3267,135 @@ export function WebhookSettingsPanel() {
   );
 }
 
+const chinaDateTime = (value: string) =>
+  new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+const chinaDate = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : new Date(date.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+};
+const chinaInputTime = (value: string) =>
+  new Date(new Date(value).getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
+const emptyListFilters = {
+  department: "",
+  position: "",
+  employee: "",
+  owner: "",
+  from: "",
+  to: "",
+  status: "",
+  type: "",
+  progress: "",
+};
+type ListFilters = typeof emptyListFilters;
+function ListFilterBar({
+  value,
+  onChange,
+  departments = [],
+  positions = [],
+  employees = [],
+  statuses = {},
+  training = false,
+}: {
+  value: ListFilters;
+  onChange: (value: ListFilters) => void;
+  departments?: Array<{ id: string; name: string }>;
+  positions?: Array<{ id: string; name: string }>;
+  employees?: Array<{ id: string; name: string }>;
+  statuses?: Record<string, string>;
+  training?: boolean;
+}) {
+  const select = (
+    key: keyof ListFilters,
+    label: string,
+    options: Array<{ id: string; name: string }>,
+  ) => (
+    <label key={key}>
+      {label}
+      <select
+        aria-label={label + "筛选"}
+        value={value[key]}
+        onChange={(event) =>
+          onChange({
+            ...value,
+            [key]: event.target.value,
+            ...(key === "department" ? { position: "" } : {}),
+          })
+        }
+      >
+        <option value="">全部</option>
+        {options.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  return (
+    <div className="list-filters">
+      {select("department", "部门", departments)}
+      {training && select("position", "岗位", positions)}
+      {select("employee", "员工", employees)}
+      {training && (
+        <label>
+          负责人
+          <input
+            aria-label="负责人筛选"
+            value={value.owner}
+            onChange={(event) => onChange({ ...value, owner: event.target.value })}
+          />
+        </label>
+      )}
+      {select(
+        "status",
+        "状态",
+        Object.entries(statuses).map(([id, name]) => ({ id, name })),
+      )}
+      {training &&
+        select(
+          "type",
+          "培训类型",
+          Object.entries(trainingTypeLabels).map(([id, name]) => ({ id, name })),
+        )}
+      {training &&
+        select("progress", "进度", [
+          { id: "none", name: "未完成" },
+          { id: "partial", name: "部分完成" },
+          { id: "complete", name: "全部完成" },
+        ])}
+      <label>
+        开始日期
+        <input
+          aria-label="开始日期筛选"
+          type="date"
+          value={value.from}
+          onChange={(event) => onChange({ ...value, from: event.target.value })}
+        />
+      </label>
+      <label>
+        结束日期
+        <input
+          aria-label="结束日期筛选"
+          type="date"
+          value={value.to}
+          onChange={(event) => onChange({ ...value, to: event.target.value })}
+        />
+      </label>
+      <button type="button" onClick={() => onChange({ ...emptyListFilters })}>
+        重置筛选
+      </button>
+    </div>
+  );
+}
+const uniqueOptions = (items: Array<{ id: string; name: string }>) => [
+  ...new Map(items.filter((item) => item.id).map((item) => [item.id, item])).values(),
+];
+const inDateRange = (value: string, filter: ListFilters) =>
+  (!filter.from || chinaDate(value) >= filter.from) &&
+  (!filter.to || chinaDate(value) <= filter.to);
+
 export function AssessmentPanel({ session }: { session: Session }) {
   const canAssess = session.role === "hr_admin" || session.role === "department_manager";
   const [state, setState] = useState<
@@ -3057,6 +3408,8 @@ export function AssessmentPanel({ session }: { session: Session }) {
         skills: SkillView[];
       }
   >({ status: "loading" });
+  const [filters, setFilters] = useState({ ...emptyListFilters });
+  const [entryDepartment, setEntryDepartment] = useState("");
   const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<SkillAssessmentView>();
   const [evidence, setEvidence] = useState<File>();
@@ -3125,8 +3478,22 @@ export function AssessmentPanel({ session }: { session: Session }) {
         </button>
       </section>
     );
+  const assessments = [...state.assessments]
+    .filter(
+      (item) =>
+        (!filters.department || item.departmentId === filters.department) &&
+        (!filters.employee || item.employeeId === filters.employee) &&
+        (!filters.status || item.status === filters.status) &&
+        inDateRange(item.assessedAt, filters),
+    )
+    .sort((a, b) => b.assessedAt.localeCompare(a.assessedAt));
+  const departmentOptions = uniqueOptions([
+    ...state.employees.map((e) => ({ id: e.departmentId ?? "", name: e.departmentName ?? "" })),
+    ...state.assessments.map((e) => ({ id: e.departmentId, name: e.departmentName ?? "" })),
+  ]);
   const beginEdit = (assessment: SkillAssessmentView) => {
     setEditing(assessment);
+    setEntryDepartment(assessment.departmentId);
     setForm({
       employeeId: assessment.employeeId,
       skillId: assessment.skillId,
@@ -3140,7 +3507,10 @@ export function AssessmentPanel({ session }: { session: Session }) {
   };
   const actions = (assessment: SkillAssessmentView) => (
     <div className="row-actions">
-      <a href={`/api/assessments/${assessment.id}/evidence`}>查看证据</a>
+      <MaterialPreviewButton
+        url={`/api/assessments/${assessment.id}/evidence`}
+        label="在线查看证据"
+      />
       {canAssess &&
         assessment.assessorEmployeeId === session.employeeId &&
         ["draft", "returned"].includes(assessment.status) && (
@@ -3247,6 +3617,25 @@ export function AssessmentPanel({ session }: { session: Session }) {
           }}
         >
           <h2>{editing ? "修订退回评定" : "录入线下技能评定"}</h2>
+          <label>
+            部门
+            <select
+              aria-label="录入评定部门"
+              disabled={Boolean(editing)}
+              value={entryDepartment}
+              onChange={(event) => {
+                setEntryDepartment(event.target.value);
+                setForm({ ...form, employeeId: "" });
+              }}
+            >
+              <option value="">选择部门（全部）</option>
+              {departmentOptions.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <select
             disabled={Boolean(editing)}
             required
@@ -3254,11 +3643,13 @@ export function AssessmentPanel({ session }: { session: Session }) {
             onChange={(event) => setForm({ ...form, employeeId: event.target.value })}
           >
             <option value="">选择员工</option>
-            {state.employees.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.employeeNumber} · {item.displayName}
-              </option>
-            ))}
+            {state.employees
+              .filter((item) => !entryDepartment || item.departmentId === entryDepartment)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.employeeNumber} · {item.displayName}
+                </option>
+              ))}
           </select>
           <select
             disabled={Boolean(editing)}
@@ -3337,7 +3728,16 @@ export function AssessmentPanel({ session }: { session: Session }) {
             <p>至少一名独立人员复核并由 HR 归档后才更新当前技能。</p>
           </div>
         </div>
-        {state.assessments.length === 0 ? (
+        <ListFilterBar
+          value={filters}
+          onChange={setFilters}
+          departments={departmentOptions}
+          employees={uniqueOptions(
+            state.assessments.map((e) => ({ id: e.employeeId, name: e.employeeName })),
+          )}
+          statuses={assessmentStatusLabels}
+        />
+        {assessments.length === 0 ? (
           <div className="empty-state">暂无技能评定</div>
         ) : (
           <>
@@ -3346,6 +3746,8 @@ export function AssessmentPanel({ session }: { session: Session }) {
                 <thead>
                   <tr>
                     <th>员工 / 技能</th>
+                    <th>部门</th>
+                    <th>评定方式</th>
                     <th>结果</th>
                     <th>状态</th>
                     <th>评定日期 / 有效期</th>
@@ -3353,7 +3755,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {state.assessments.map((item) => (
+                  {assessments.map((item) => (
                     <tr key={item.id}>
                       <td>
                         <strong>{item.employeeName}</strong>
@@ -3361,6 +3763,8 @@ export function AssessmentPanel({ session }: { session: Session }) {
                           {item.skillCode} · {item.skillName}
                         </small>
                       </td>
+                      <td>{item.departmentName}</td>
+                      <td>{item.method ? assessmentMethodLabels[item.method] : "基线"}</td>
                       <td>{item.passed ? `通过 · ${item.level} 级` : `未通过 · ${item.reason}`}</td>
                       <td>{assessmentStatusLabels[item.status]}</td>
                       <td>
@@ -3373,7 +3777,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
               </table>
             </div>
             <div className="material-cards">
-              {state.assessments.map((item) => (
+              {assessments.map((item) => (
                 <article key={item.id}>
                   <header>
                     <strong>
@@ -3381,6 +3785,10 @@ export function AssessmentPanel({ session }: { session: Session }) {
                     </strong>
                     <span>{assessmentStatusLabels[item.status]}</span>
                   </header>
+                  <p>
+                    {item.departmentName} · {chinaDate(item.assessedAt)} ·{" "}
+                    {item.method ? assessmentMethodLabels[item.method] : "基线"}
+                  </p>
                   <p>{item.passed ? `通过，等级 ${item.level}` : `未通过：${item.reason}`}</p>
                   {item.remediation && <small>整改建议：{item.remediation}</small>}
                   {actions(item)}
@@ -3391,6 +3799,40 @@ export function AssessmentPanel({ session }: { session: Session }) {
         )}
       </section>
     </div>
+  );
+}
+
+export function TrainingTaskCard({
+  task,
+  canManage,
+  children,
+}: {
+  task: TrainingTaskView;
+  canManage: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <article>
+      <header>
+        <strong>{task.planTitle}</strong>
+        <span>{taskStatusLabel[task.status]}</span>
+      </header>
+      <p>{canManage ? task.employeeNumber + " · " + task.employeeName : task.materialTitle}</p>
+      <p>
+        部门：{task.departmentName || "未分配"}；岗位：{task.positionName || "未分配"}
+      </p>
+      <p>
+        培训类型：{trainingTypeLabels[task.trainingType ?? "professional"]}；负责人：
+        {task.ownerName}
+      </p>
+      <p>开始时间（中国时区）：{chinaDateTime(task.startAt)}</p>
+      <p>
+        截止时间（中国时区）：{chinaDateTime(task.dueAt)}
+        {task.overdue && " · 已逾期"}
+      </p>
+      {task.returnReason && <p>退回原因：{task.returnReason}</p>}
+      {children}
+    </article>
   );
 }
 
@@ -3409,11 +3851,14 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
         positions: Position[];
       }
   >({ status: "loading" });
+  const [planFilters, setPlanFilters] = useState({ ...emptyListFilters });
+  const [taskFilters, setTaskFilters] = useState({ ...emptyListFilters });
   const [notice, setNotice] = useState("");
   const [editingId, setEditingId] = useState<string>();
   const [evidence, setEvidence] = useState<File>();
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [form, setForm] = useState({
+    trainingType: "professional" as TrainingType,
     title: "",
     materialId: "",
     ownerEmployeeId: "",
@@ -3493,7 +3938,119 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
         </button>
       </section>
     );
-  const activeTasks = state.tasks;
+  const plans = [...state.plans]
+    .filter(
+      (plan) =>
+        (!planFilters.department ||
+          (plan.departments ?? []).some((d) => d.id === planFilters.department)) &&
+        (!planFilters.position ||
+          (plan.positions ?? []).some((p) => p.id === planFilters.position)) &&
+        (!planFilters.employee ||
+          (plan.status === "draft"
+            ? state.employees.some(
+                (employee) =>
+                  employee.id === planFilters.employee &&
+                  employee.active &&
+                  (plan.scopeType === "employees"
+                    ? plan.scopeEmployeeIds.includes(employee.id)
+                    : plan.scopeType === "department"
+                      ? employee.departmentId === plan.scopeDepartmentId
+                      : employee.positionId === plan.scopePositionId),
+              )
+            : state.tasks.some(
+                (task) =>
+                  task.planId === plan.id &&
+                  task.employeeId === planFilters.employee &&
+                  task.status !== "cancelled",
+              ))) &&
+        (!planFilters.owner || plan.ownerName.includes(planFilters.owner)) &&
+        (!planFilters.status || plan.status === planFilters.status) &&
+        (!planFilters.type || plan.trainingType === planFilters.type) &&
+        (!planFilters.progress ||
+          (planFilters.progress === "none"
+            ? plan.confirmedCount === 0
+            : planFilters.progress === "complete"
+              ? plan.taskCount > 0 && plan.confirmedCount === plan.taskCount
+              : plan.confirmedCount > 0 && plan.confirmedCount < plan.taskCount)) &&
+        inDateRange(plan.startAt, planFilters),
+    )
+    .sort((a, b) => b.startAt.localeCompare(a.startAt));
+  const activeTasks = [...state.tasks]
+    .filter(
+      (task) =>
+        (!taskFilters.department || task.departmentId === taskFilters.department) &&
+        (!taskFilters.position || task.positionId === taskFilters.position) &&
+        (!taskFilters.employee || task.employeeId === taskFilters.employee) &&
+        (!taskFilters.owner || task.ownerName.includes(taskFilters.owner)) &&
+        (!taskFilters.status || task.status === taskFilters.status) &&
+        (!taskFilters.type || task.trainingType === taskFilters.type) &&
+        (!taskFilters.progress ||
+          (taskFilters.progress === "complete"
+            ? task.status === "confirmed"
+            : taskFilters.progress === "none"
+              ? task.status !== "confirmed"
+              : task.status === "submitted")) &&
+        inDateRange(task.startAt, taskFilters),
+    )
+    .sort((a, b) => b.startAt.localeCompare(a.startAt));
+  const filterDepartments = uniqueOptions([
+    ...state.departments,
+    ...state.tasks.map((t) => ({ id: t.departmentId, name: t.departmentName })),
+  ]);
+  const filterPositions = uniqueOptions([
+    ...state.positions,
+    ...state.tasks.map((t) => ({ id: t.positionId ?? "", name: t.positionName ?? "" })),
+  ]);
+  const filterEmployees = uniqueOptions([
+    ...state.employees.map((e) => ({ id: e.id, name: e.displayName })),
+    ...state.tasks.map((t) => ({ id: t.employeeId, name: t.employeeName })),
+  ]);
+  const editPlan = (plan: TrainingPlanView) => {
+    setEditingId(plan.id);
+    setForm({
+      trainingType: plan.trainingType ?? "professional",
+      title: plan.title,
+      materialId: plan.materialId,
+      ownerEmployeeId: plan.ownerEmployeeId,
+      startAt: chinaInputTime(plan.startAt),
+      dueAt: chinaInputTime(plan.dueAt),
+      location: plan.location,
+      scopeType: plan.scopeType,
+      scopeDepartmentId: plan.scopeDepartmentId ?? "",
+      scopePositionId: plan.scopePositionId ?? "",
+      scopeEmployeeIds: plan.scopeEmployeeIds,
+    });
+  };
+  const planActions = (plan: TrainingPlanView) => (
+    <div className="row-actions">
+      {plan.status === "draft" && (
+        <>
+          <button type="button" onClick={() => editPlan(plan)}>
+            编辑
+          </button>
+          <button
+            type="button"
+            onClick={() => void mutate(`/api/training-plans/${plan.id}/publish`)}
+          >
+            发布
+          </button>
+        </>
+      )}
+      {["published", "in_progress"].includes(plan.status) && (
+        <button
+          type="button"
+          onClick={() => void mutate(`/api/training-plans/${plan.id}/withdraw`)}
+        >
+          撤回修改
+        </button>
+      )}
+      {["draft", "published", "in_progress"].includes(plan.status) && (
+        <button type="button" onClick={() => void mutate(`/api/training-plans/${plan.id}/cancel`)}>
+          取消
+        </button>
+      )}
+    </div>
+  );
   return (
     <div className="training-plan-page">
       {notice && (
@@ -3509,6 +4066,8 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
               event.preventDefault();
               const payload = {
                 ...form,
+                startAt: new Date(form.startAt + "+08:00").toISOString(),
+                dueAt: new Date(form.dueAt + "+08:00").toISOString(),
                 ...(form.scopeType === "department"
                   ? { scopeDepartmentId: form.scopeDepartmentId }
                   : { scopeDepartmentId: undefined }),
@@ -3527,6 +4086,7 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
               if (ok) {
                 setEditingId(undefined);
                 setForm({
+                  trainingType: "professional",
                   title: "",
                   materialId: "",
                   ownerEmployeeId: "",
@@ -3542,6 +4102,22 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
             }}
           >
             <h2>{editingId ? "编辑培训草稿" : "新建培训计划"}</h2>
+            <label>
+              选择培训类型
+              <select
+                aria-label="选择培训类型"
+                value={form.trainingType}
+                onChange={(event) =>
+                  setForm({ ...form, trainingType: event.target.value as TrainingType })
+                }
+              >
+                {Object.entries(trainingTypeLabels).map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <input
               required
               placeholder="计划名称"
@@ -3579,12 +4155,14 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
             <input
               required
               type="datetime-local"
+              aria-label="培训开始时间（中国时区）"
               value={form.startAt}
               onChange={(event) => setForm({ ...form, startAt: event.target.value })}
             />
             <input
               required
               type="datetime-local"
+              aria-label="培训截止时间（中国时区）"
               value={form.dueAt}
               onChange={(event) => setForm({ ...form, dueAt: event.target.value })}
             />
@@ -3670,85 +4248,90 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                 <p>发布后固化对象并生成员工任务。</p>
               </div>
             </div>
-            {state.plans.length === 0 ? (
+            <ListFilterBar
+              value={planFilters}
+              onChange={setPlanFilters}
+              departments={filterDepartments}
+              positions={filterPositions}
+              employees={filterEmployees}
+              statuses={planStatusLabel}
+              training
+            />
+            {plans.length === 0 ? (
               <div className="list-state-panel">暂无培训计划</div>
             ) : (
-              <div className="material-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>计划</th>
-                      <th>负责人/时间</th>
-                      <th>进度</th>
-                      <th>状态</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {state.plans.map((plan) => (
-                      <tr key={plan.id}>
-                        <td>
-                          <strong>{plan.title}</strong>
-                          <small>{plan.materialTitle}</small>
-                        </td>
-                        <td>
-                          {plan.ownerName}
-                          <small>
-                            {new Date(plan.startAt).toLocaleString()} —{" "}
-                            {new Date(plan.dueAt).toLocaleString()}
-                          </small>
-                        </td>
-                        <td>
-                          {plan.confirmedCount}/{plan.taskCount}
-                        </td>
-                        <td>{planStatusLabel[plan.status]}</td>
-                        <td>
-                          {plan.status === "draft" && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingId(plan.id);
-                                  setForm({
-                                    title: plan.title,
-                                    materialId: plan.materialId,
-                                    ownerEmployeeId: plan.ownerEmployeeId,
-                                    startAt: plan.startAt.slice(0, 16),
-                                    dueAt: plan.dueAt.slice(0, 16),
-                                    location: plan.location,
-                                    scopeType: plan.scopeType,
-                                    scopeDepartmentId: plan.scopeDepartmentId ?? "",
-                                    scopePositionId: plan.scopePositionId ?? "",
-                                    scopeEmployeeIds: plan.scopeEmployeeIds,
-                                  });
-                                }}
-                              >
-                                编辑
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void mutate(`/api/training-plans/${plan.id}/publish`)
-                                }
-                              >
-                                发布
-                              </button>
-                            </>
-                          )}
-                          {["draft", "published", "in_progress"].includes(plan.status) && (
-                            <button
-                              type="button"
-                              onClick={() => void mutate(`/api/training-plans/${plan.id}/cancel`)}
-                            >
-                              取消
-                            </button>
-                          )}
-                        </td>
+              <>
+                <div className="material-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>计划</th>
+                        <th>部门</th>
+                        <th>岗位</th>
+                        <th>指定员工</th>
+                        <th>培训类型</th>
+                        <th>负责人 / 培训时间（中国时区）</th>
+                        <th>进度</th>
+                        <th>状态</th>
+                        <th>操作</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {plans.map((plan) => (
+                        <tr key={plan.id}>
+                          <td>
+                            <strong>{plan.title}</strong>
+                            <small>{plan.materialTitle}</small>
+                          </td>
+                          <td>{(plan.departments ?? []).map((d) => d.name).join("、") || "—"}</td>
+                          <td>{(plan.positions ?? []).map((p) => p.name).join("、") || "—"}</td>
+                          <td>{(plan.scopeEmployeeNames ?? []).join("、") || "按部门 / 岗位"}</td>
+                          <td>{trainingTypeLabels[plan.trainingType ?? "professional"]}</td>
+                          <td>
+                            {plan.ownerName}
+                            <small>
+                              {chinaDateTime(plan.startAt)} — {chinaDateTime(plan.dueAt)}
+                            </small>
+                          </td>
+                          <td>
+                            {plan.confirmedCount}/{plan.taskCount}
+                          </td>
+                          <td>{planStatusLabel[plan.status]}</td>
+                          <td>{planActions(plan)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="material-cards">
+                  {plans.map((plan) => (
+                    <article key={plan.id}>
+                      <header>
+                        <strong>{plan.title}</strong>
+                        <span>{planStatusLabel[plan.status]}</span>
+                      </header>
+                      <p>
+                        {trainingTypeLabels[plan.trainingType ?? "professional"]} · {plan.ownerName}
+                      </p>
+                      <p>
+                        部门：{(plan.departments ?? []).map((d) => d.name).join("、") || "—"}
+                        ；岗位：{(plan.positions ?? []).map((p) => p.name).join("、") || "—"}
+                      </p>
+                      <p>
+                        指定员工：{(plan.scopeEmployeeNames ?? []).join("、") || "按部门 / 岗位"}
+                      </p>
+                      <p>
+                        培训时间（中国时区）：{chinaDateTime(plan.startAt)} —{" "}
+                        {chinaDateTime(plan.dueAt)}
+                      </p>
+                      <p>
+                        完成进度：{plan.confirmedCount}/{plan.taskCount}
+                      </p>
+                      {planActions(plan)}
+                    </article>
+                  ))}
+                </div>
+              </>
             )}
           </section>
         </>
@@ -3760,6 +4343,15 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
             <p>员工提交后，负责人或部门主管确认才进入正式履历。</p>
           </div>
         </div>
+        <ListFilterBar
+          value={taskFilters}
+          onChange={setTaskFilters}
+          departments={filterDepartments}
+          positions={filterPositions}
+          employees={filterEmployees}
+          statuses={taskStatusLabel}
+          training
+        />
         {activeTasks.length === 0 ? (
           <div className="list-state-panel">暂无培训任务</div>
         ) : (
@@ -3770,7 +4362,9 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                   <tr>
                     {canManage && <th>选择</th>}
                     <th>计划/员工</th>
-                    <th>截止时间</th>
+                    <th>部门</th>
+                    <th>培训类型</th>
+                    <th>培训时间（中国时区）</th>
                     <th>状态</th>
                     <th>操作</th>
                   </tr>
@@ -3804,8 +4398,10 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                             : task.materialTitle}
                         </small>
                       </td>
+                      <td>{task.departmentName}</td>
+                      <td>{trainingTypeLabels[task.trainingType ?? "professional"]}</td>
                       <td>
-                        {new Date(task.dueAt).toLocaleString()}
+                        {chinaDateTime(task.startAt)} — {chinaDateTime(task.dueAt)}
                         {task.overdue && <small> · 已逾期</small>}
                       </td>
                       <td>
@@ -3813,34 +4409,22 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                         {task.returnReason && <small> · {task.returnReason}</small>}
                       </td>
                       <td>
+                        <p>
+                          {task.departmentName} · {task.positionName} ·{" "}
+                          {trainingTypeLabels[task.trainingType ?? "professional"]}
+                        </p>
                         {task.evidence.map((item) => (
-                          <button
+                          <MaterialPreviewButton
                             key={item.id}
-                            type="button"
-                            onClick={() =>
-                              window.open(
-                                `/api/training-evidence/${item.id}/content`,
-                                "_blank",
-                                "noopener,noreferrer",
-                              )
-                            }
-                          >
-                            查看证据
-                          </button>
+                            url={`/api/training-evidence/${item.id}/content`}
+                            label="在线查看证据"
+                          />
                         ))}
                         {task.employeeId === session.employeeId && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              window.open(
-                                `/api/training-materials/${task.materialId}/content`,
-                                "_blank",
-                                "noopener,noreferrer",
-                              )
-                            }
-                          >
-                            查看资料
-                          </button>
+                          <MaterialPreviewButton
+                            url={`/api/training-materials/${task.materialId}/content`}
+                            label="在线查看资料"
+                          />
                         )}
                         {task.employeeId === session.employeeId &&
                           ["assigned", "returned"].includes(task.status) && (
@@ -3887,43 +4471,19 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
             </div>
             <div className="material-cards">
               {activeTasks.map((task) => (
-                <article key={task.id}>
-                  <header>
-                    <strong>{task.planTitle}</strong>
-                    <span>{taskStatusLabel[task.status]}</span>
-                  </header>
-                  <p>
-                    {canManage ? task.employeeName : task.materialTitle} ·{" "}
-                    {new Date(task.dueAt).toLocaleString()}
-                  </p>
+                <TrainingTaskCard key={task.id} task={task} canManage={canManage}>
                   {task.evidence.map((item) => (
-                    <button
+                    <MaterialPreviewButton
                       key={item.id}
-                      type="button"
-                      onClick={() =>
-                        window.open(
-                          `/api/training-evidence/${item.id}/content`,
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
-                    >
-                      查看签到证据
-                    </button>
+                      url={`/api/training-evidence/${item.id}/content`}
+                      label="在线查看证据"
+                    />
                   ))}
                   {task.employeeId === session.employeeId && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        window.open(
-                          `/api/training-materials/${task.materialId}/content`,
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
-                    >
-                      查看培训资料
-                    </button>
+                    <MaterialPreviewButton
+                      url={`/api/training-materials/${task.materialId}/content`}
+                      label="在线查看资料"
+                    />
                   )}
                   {task.employeeId === session.employeeId &&
                     ["assigned", "returned"].includes(task.status) && (
@@ -3935,7 +4495,7 @@ export function TrainingPlanPanel({ session }: { session: Session }) {
                         提交完成
                       </button>
                     )}
-                </article>
+                </TrainingTaskCard>
               ))}
             </div>
           </>
@@ -4232,6 +4792,11 @@ export function TrainingMaterialPanel({ canManage }: { canManage: boolean }) {
                       <td>{material.skills.map((skill) => skill.name).join("、")}</td>
                       <td>{material.active ? "可用" : "已停用"}</td>
                       <td>
+                        {material.kind === "file" && (
+                          <MaterialPreviewButton
+                            url={`/api/training-materials/${material.id}/content`}
+                          />
+                        )}
                         <button type="button" onClick={() => void openContent(material)}>
                           查看/下载
                         </button>
@@ -4297,6 +4862,9 @@ export function TrainingMaterialPanel({ canManage }: { canManage: boolean }) {
                   <p>
                     {material.category} · {material.skills.map((skill) => skill.name).join("、")}
                   </p>
+                  {material.kind === "file" && (
+                    <MaterialPreviewButton url={`/api/training-materials/${material.id}/content`} />
+                  )}
                   <button
                     className="primary-button"
                     type="button"

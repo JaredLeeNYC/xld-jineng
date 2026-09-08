@@ -1,0 +1,44 @@
+[
+  {
+    "file": "document.doc.pdf",
+    "pages": 1,
+    "imageCount": 1,
+    "hasChinese": true,
+    "hasExpectedText": true
+  },
+  {
+    "file": "document.docx.pdf",
+    "pages": 1,
+    "imageCount": 1,
+    "hasChinese": true,
+    "hasExpectedText": true
+  },
+  {
+    "file": "slides.ppt.pdf",
+    "pages": 1,
+    "imageCount": 1,
+    "hasChinese": true,
+    "hasExpectedText": true
+  },
+  {
+    "file": "slides.pptx.pdf",
+    "pages": 1,
+    "imageCount": 1,
+    "hasChinese": true,
+    "hasExpectedText": true
+  },
+  {
+    "file": "workbook.xls.pdf",
+    "pages": 1,
+    "imageCount": 10,
+    "hasChinese": true,
+    "hasExpectedText": true
+  },
+  {
+    "file": "workbook.xlsx.pdf",
+    "pages": 1,
+    "imageCount": 10,
+    "hasChinese": true,
+    "hasExpectedText": true
+  }
+]

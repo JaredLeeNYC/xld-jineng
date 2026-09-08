@@ -10,12 +10,13 @@ ENV_FILE="/etc/skill-matrix/server.env"
 COMPOSE_FILE="/opt/skill-matrix/compose.yaml"
 MATERIALS_DIR="/var/lib/skill-matrix/materials"
 BUN="/usr/local/bin/bun"
+EXPECTED_SHA="${1:?usage: auto-deploy.sh <exact-git-sha>}"
+[[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid release SHA"; exit 1; }
 
 # ── 1. 拉取最新代码 ──
 cd "$REPO_DIR"
 git fetch origin main
-git checkout main --quiet
-git reset --hard origin/main --quiet
+git checkout --detach "$EXPECTED_SHA" --quiet
 SHA=$(git rev-parse --short=12 HEAD)
 FULL_SHA=$(git rev-parse HEAD)
 
@@ -24,29 +25,37 @@ echo "==> deploying $SHA"
 # ── 2. 创建 release 目录 ──
 RELEASE_DIR="$RELEASES_DIR/$SHA"
 if [ -d "$RELEASE_DIR" ]; then
-  echo "    release dir exists, replacing..."
-  rm -rf "$RELEASE_DIR"
+  echo "release directory already exists; preserve it and use a new release SHA"
+  exit 1
 fi
 mkdir -p "$RELEASE_DIR"
-rsync -a --exclude=node_modules --exclude=.git --exclude=apps/web/dist "$REPO_DIR/" "$RELEASE_DIR/"
+git archive "$FULL_SHA" | tar -x -C "$RELEASE_DIR"
 
 # ── 3. 安装依赖 & 构建 ──
 cd "$RELEASE_DIR"
+bash "$RELEASE_DIR/deploy/ensure-office-preview.sh"
 echo "==> bun install"
 "$BUN" install --frozen-lockfile
 echo "==> build:web"
 "$BUN" run build:web
 
 # ── 4. 提取 DATABASE_URL ──
-DATABASE_URL=$(awk -F= '/^DATABASE_URL=/{print $2}' "$ENV_FILE")
+DATABASE_URL=$(sed -n 's/^DATABASE_URL=//p' "$ENV_FILE")
 export DATABASE_URL
 
 # ── 5. 备份数据库（如果 PostgreSQL 已运行） ──
 if docker compose -f "$COMPOSE_FILE" ps postgres 2>/dev/null | grep -q 'Up\|running'; then
   echo "==> backing up database"
   mkdir -p "/var/backups/skill-matrix"
-  "$RELEASE_DIR/deploy/backup-database.sh" "/var/backups/skill-matrix/pre-$SHA-$(date +%Y%m%d%H%M%S).dump" "$COMPOSE_FILE" || \
-    echo "    WARN: backup failed, continuing"
+  "$RELEASE_DIR/deploy/backup-database.sh" "/var/backups/skill-matrix/pre-$SHA-$(date +%Y%m%d%H%M%S).dump" "$COMPOSE_FILE"
+  STORAGE_PROVIDER=$(sed -n 's/^MATERIAL_STORAGE_PROVIDER=//p' "$ENV_FILE")
+  if [ "${STORAGE_PROVIDER:-filesystem}" = "filesystem" ]; then
+    STORAGE_DIR=$(sed -n 's/^MATERIAL_STORAGE_DIR=//p' "$ENV_FILE")
+    bash "$RELEASE_DIR/deploy/backup-materials.sh" "${STORAGE_DIR:-$MATERIALS_DIR}" "/var/backups/skill-matrix/pre-$SHA-materials-$(date +%Y%m%d%H%M%S).tar.gz"
+  fi
+else
+  echo "PostgreSQL unavailable; refusing migration without backup"
+  exit 1
 fi
 
 # ── 6. 迁移 ──
@@ -66,7 +75,8 @@ systemctl restart skill-matrix-server
 echo "==> health check"
 HEALTH_OK=false
 for i in $(seq 1 15); do
-  if curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null | grep -q '"status":"healthy"'; then
+  if curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null | grep -q '"status":"healthy"' && \
+     curl -fsS http://127.0.0.1:3000/api/ready 2>/dev/null | grep -q '"status":"ready"'; then
     HEALTH_OK=true
     break
   fi
@@ -75,14 +85,11 @@ done
 
 if [ "$HEALTH_OK" = "true" ]; then
   echo "==> health check passed"
-  # ready 探针
-  if curl -fsS http://127.0.0.1:3000/api/ready 2>/dev/null | grep -q '"status":"ready"'; then
-    echo "==> ready check passed"
-  else
-    echo "    WARN: ready check not passed yet (may need migration or DB warmup)"
-  fi
-  echo "==> deployed $SHA successfully"
+  echo "==> ready check passed"
   echo "$FULL_SHA" > "$CURRENT_LINK/.deployed-sha"
+  echo "==> applying reviewed manager account changes"
+  "$BUN" packages/db/scripts/promote-reviewed-managers.ts
+  echo "==> deployed $SHA successfully; reviewed accounts verified"
 else
   echo "==> health check FAILED"
   if [ -n "$PREVIOUS_TARGET" ]; then

@@ -1,0 +1,141 @@
+- complementary:
+  - strong: 技能矩阵
+  - generic: 工厂人才管理
+  - navigation "主导航":
+    - paragraph: 我的菜单
+    - button "我的工作台":
+      - generic: 我的工作台
+    - button "个人资料":
+      - generic: 个人资料
+    - button "我的技能":
+      - generic: 我的技能
+    - button "我的培训":
+      - generic: 我的培训
+    - button "我的评定":
+      - generic: 我的评定
+    - button "消息通知":
+      - generic: 消息通知
+  - button "退出登录":
+    - generic: 退出登录
+  - generic: 当前组织
+  - strong: 示范制造工厂
+- main:
+  - generic: 搜索员工、岗位或技能
+  - generic: ⌘ K
+  - button "通知":
+  - generic: 验
+  - strong: 验收EMP001
+  - generic: EMP001 · 员工
+  - heading "我的培训" [level=2]
+  - paragraph: 员工提交后，负责人或部门主管确认才进入正式履历。
+  - text: 部门
+  - combobox "部门筛选":
+    - option "全部" [selected]
+    - option "验收制造部"
+  - text: 岗位
+  - combobox "岗位筛选":
+    - option "全部" [selected]
+    - option "验收操作员"
+  - text: 员工
+  - combobox "员工筛选":
+    - option "全部" [selected]
+    - option "验收EMP001"
+  - text: 负责人
+  - textbox "负责人筛选"
+  - text: 状态
+  - combobox "状态筛选":
+    - option "全部" [selected]
+    - option "待学习"
+    - option "待确认"
+    - option "已退回"
+    - option "已确认"
+    - option "已取消"
+  - text: 培训类型
+  - combobox "培训类型筛选":
+    - option "全部" [selected]
+    - option "专业技能培训"
+    - option "普通培训"
+    - option "其他培训"
+  - text: 进度
+  - combobox "进度筛选":
+    - option "全部" [selected]
+    - option "未完成"
+    - option "部分完成"
+    - option "全部完成"
+  - text: 开始日期
+  - textbox "开始日期筛选"
+  - text: 结束日期
+  - textbox "结束日期筛选"
+  - button "重置筛选" [active]
+  - table:
+    - rowgroup:
+      - row "计划/员工 部门 培训类型 培训时间（中国时区） 状态 操作":
+        - columnheader "计划/员工"
+        - columnheader "部门"
+        - columnheader "培训类型"
+        - columnheader "培训时间（中国时区）"
+        - columnheader "状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "验收培训-general 验收图片资料 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · 验收操作员 · 普通培训 在线查看资料 提交完成":
+        - cell "验收培训-general 验收图片资料":
+          - strong: 验收培训-general
+          - generic: 验收图片资料
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 普通培训 在线查看资料 提交完成":
+          - paragraph: 验收制造部 · 验收操作员 · 普通培训
+          - button "在线查看资料"
+          - button "提交完成"
+      - row "验收培训-professional 验收图片资料 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · 验收操作员 · 专业技能培训 在线查看资料 提交完成":
+        - cell "验收培训-professional 验收图片资料":
+          - strong: 验收培训-professional
+          - generic: 验收图片资料
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 专业技能培训 在线查看资料 提交完成":
+          - paragraph: 验收制造部 · 验收操作员 · 专业技能培训
+          - button "在线查看资料"
+          - button "提交完成"
+      - row "验收培训-other 验收图片资料 验收制造部 其他培训 2026/9/7 08:00:00 — 2026/9/12 17:00:00 已确认 验收制造部 · 验收操作员 · 其他培训 在线查看证据 在线查看资料":
+        - cell "验收培训-other 验收图片资料":
+          - strong: 验收培训-other
+          - generic: 验收图片资料
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/7 08:00:00 — 2026/9/12 17:00:00"
+        - cell "已确认"
+        - cell "验收制造部 · 验收操作员 · 其他培训 在线查看证据 在线查看资料":
+          - paragraph: 验收制造部 · 验收操作员 · 其他培训
+          - button "在线查看证据"
+          - button "在线查看资料"
+  - paragraph: 培训资料
+  - heading "学习资料" [level=1]
+  - paragraph: 查找与岗位技能关联的文档、图片和外部课程。
+  - heading "资料列表" [level=2]
+  - paragraph: 停用资料不会出现在新的员工学习入口。
+  - textbox "搜索资料":
+    - /placeholder: 搜索标题、分类或技能
+  - table:
+    - rowgroup:
+      - row "资料 分类 关联技能 状态 操作":
+        - columnheader "资料"
+        - columnheader "分类"
+        - columnheader "关联技能"
+        - columnheader "状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "验收图片资料 验收图片.png 验收 验收焊接 可用 在线预览 查看/下载":
+        - cell "验收图片资料 验收图片.png":
+          - strong: 验收图片资料
+          - generic: 验收图片.png
+        - cell "验收"
+        - cell "验收焊接"
+        - cell "可用"
+        - cell "在线预览 查看/下载":
+          - button "在线预览"
+          - button "查看/下载"

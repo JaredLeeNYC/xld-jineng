@@ -30,6 +30,39 @@ const isIsoDate = (value: string) => {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 };
 
+const profileErrors = (input: {
+  gender?: string;
+  age?: number;
+  identityNumber?: string;
+  tenureYears?: number;
+  education?: string;
+  phone?: string;
+  role?: string;
+}) => {
+  const errors: Array<{ field: string; message: string }> = [];
+  if (input.gender && !["男", "女", "其他", "未填写"].includes(input.gender))
+    errors.push({ field: "gender", message: "性别应为男、女、其他或未填写" });
+  if (input.age !== undefined && (!Number.isInteger(input.age) || input.age < 0 || input.age > 120))
+    errors.push({ field: "age", message: "年龄应为 0-120 的整数" });
+  if (
+    input.tenureYears !== undefined &&
+    (!Number.isFinite(input.tenureYears) || input.tenureYears < 0 || input.tenureYears > 100)
+  )
+    errors.push({ field: "tenureYears", message: "司龄应为 0-100 年" });
+  if (input.identityNumber && !/^(\d{15}|\d{17}[\dXx])$/.test(input.identityNumber))
+    errors.push({
+      field: "identityNumber",
+      message: "身份证号应为 15 或 18 位，请在 Excel 中使用文本格式",
+    });
+  if (input.education && input.education.length > 100)
+    errors.push({ field: "education", message: "学历不能超过 100 个字符" });
+  if (input.phone && input.phone.length > 30)
+    errors.push({ field: "phone", message: "手机号不能超过 30 个字符" });
+  if (input.role && !["employee", "department_manager"].includes(input.role))
+    errors.push({ field: "role", message: "HR 只能创建普通员工或部门主管" });
+  return errors;
+};
+
 const validateImportRows = async (
   repository: OrganizationRepository,
   inputRows: EmployeeImportRow[],
@@ -49,6 +82,13 @@ const validateImportRows = async (
   }));
   const errors: ImportRowError[] = [];
   for (const row of rows) {
+    errors.push(
+      ...profileErrors(row).map((error) => ({
+        ...error,
+        rowNumber: row.rowNumber,
+        code: "INVALID_VALUE" as const,
+      })),
+    );
     for (const [field, value, label] of [
       ["employeeNumber", row.employeeNumber, "工号"],
       ["displayName", row.displayName, "姓名"],
@@ -290,17 +330,30 @@ export const createOrganizationService = (dependencies: {
     async updateEmployee(
       actor: SessionView,
       employeeId: string,
-      input: { displayName: string; hireDate?: string; phone?: string },
+      input: Pick<
+        EmployeeImportRow,
+        | "displayName"
+        | "hireDate"
+        | "phone"
+        | "gender"
+        | "age"
+        | "identityNumber"
+        | "tenureYears"
+        | "education"
+      >,
     ) {
       const denied = requireHr(actor);
       if (denied) return denied;
       if (!validateName(input.displayName)) {
         return failure("INVALID_EMPLOYEE", "员工姓名不能为空", 400);
       }
+      const invalidProfile = profileErrors(input)[0];
+      if (invalidProfile) return failure("INVALID_EMPLOYEE", invalidProfile.message, 400);
       if (input.hireDate && !isIsoDate(input.hireDate)) {
         return failure("INVALID_EMPLOYEE", "入职日期必须为 YYYY-MM-DD", 400);
       }
       return (await repository.updateEmployee({
+        ...input,
         id: employeeId,
         displayName: input.displayName.trim(),
         ...(input.hireDate ? { hireDate: input.hireDate } : {}),

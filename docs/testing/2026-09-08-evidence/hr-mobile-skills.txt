@@ -1,0 +1,79 @@
+- complementary:
+  - navigation "主导航":
+    - button "全厂概况":
+    - button "组织人员":
+    - button "技能标准" [active]:
+    - button "培训管理":
+    - button "评定归档":
+    - button "报表导出":
+- main:
+  - button "退出登录":
+  - button "通知":
+  - generic: 验
+  - paragraph: 技能标准
+  - heading "岗位技能标准" [level=1]
+  - paragraph: 使用固定三级分类与 0–4 级定义，维护岗位达标口径。
+  - heading "新增技能" [level=2]
+  - textbox "技能编码"
+  - textbox "技能名称"
+  - combobox:
+    - option "通用"
+    - option "专业" [selected]
+    - option "核心"
+  - checkbox "需要复评"
+  - text: 需要复评
+  - button "保存技能"
+  - heading "岗位要求" [level=2]
+  - combobox:
+    - option "QA-OP · 验收操作员" [selected]
+    - option "QA-OTHER-P · 验收其他岗位"
+  - combobox:
+    - option "QA-SKILL-EDIT · 验收焊接" [selected]
+  - combobox:
+    - option "0 · 未掌握"
+    - option "1 · 初级 · 了解并能在指导下操作"
+    - option "2 · 中级 · 可独立完成标准作业" [selected]
+    - option "3 · 高级 · 熟练处理异常并指导他人"
+    - option "4 · 专家 · 可制定标准并持续改进"
+  - checkbox "必备技能" [checked]
+  - text: 必备技能
+  - button "保存要求"
+  - heading "复制岗位要求" [level=2]
+  - combobox:
+    - option "验收操作员" [selected]
+    - option "验收其他岗位"
+  - combobox:
+    - option "验收操作员" [selected]
+    - option "验收其他岗位"
+  - text: 统一调整等级
+  - spinbutton "统一调整等级": "0"
+  - button "复制并调整"
+  - text: 部门
+  - combobox "技能部门筛选":
+    - option "全部部门" [selected]
+    - option "验收制造部"
+    - option "验收其他部门"
+  - text: 岗位
+  - combobox "技能岗位筛选":
+    - option "全部岗位" [selected]
+    - option "验收操作员"
+    - option "验收其他岗位"
+  - heading "技能目录" [level=2]
+  - paragraph: 共 1 项
+  - textbox "筛选编码、名称或分类"
+  - article:
+    - strong: 验收焊接
+    - generic: QA-SKILL-EDIT
+    - paragraph: 专业 · 无需复评 · 启用
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - button "编辑"
+    - button "停用"
+  - heading "当前岗位要求" [level=2]
+  - paragraph: 1 条唯一要求
+  - article:
+    - strong: 验收制造部 · 验收操作员 · 验收焊接
+    - generic: 要求 3 级 · 必备
+  - heading "初始技能 Excel" [level=2]
+  - paragraph: 每行必须包含档案来源，预检通过后才归档。
+  - button "Choose File"
+  - button "预检基线" [disabled]

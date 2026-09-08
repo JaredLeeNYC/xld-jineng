@@ -1,11 +1,17 @@
 import type { SkillLevel } from "./skill";
 
-export const assessmentMethods = ["written", "practical", "comprehensive"] as const;
+export const assessmentMethods = [
+  "written",
+  "practical",
+  "written_practical",
+  "comprehensive",
+] as const;
 export type AssessmentMethod = (typeof assessmentMethods)[number];
 
 export const assessmentMethodLabels: Record<AssessmentMethod, string> = {
   written: "线下笔试",
   practical: "实操",
+  written_practical: "线下笔试+实操",
   comprehensive: "综合评审",
 };
 

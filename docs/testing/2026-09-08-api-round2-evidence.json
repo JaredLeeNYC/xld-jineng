@@ -1,0 +1,107 @@
+{
+  "note": "首次批量确认夹具开课时间在未来，409符合已有业务规则；修正为已开课后复测以下结果。此前三项非产品缺陷。",
+  "initial": [
+    {
+      "name": "R1-001主管HTTP创建返修复测",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "actualRole": "department_manager"
+      }
+    },
+    {
+      "name": "HR001录入笔试加实操",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "MGR001录入笔试加实操",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "HR评定证据实际内容",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "HR评定证据实际内容",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "主管上传培训记录并确认",
+      "pass": false,
+      "detail": {}
+    },
+    {
+      "name": "已确认有证据计划禁止撤回",
+      "pass": false,
+      "detail": {}
+    },
+    {
+      "name": "员工可预览自身培训记录",
+      "pass": false,
+      "detail": {
+        "status": 422
+      }
+    },
+    {
+      "name": "MGR001拒绝他部门评定证据",
+      "pass": true,
+      "detail": {
+        "status": 404
+      }
+    },
+    {
+      "name": "EMP001拒绝他部门评定证据",
+      "pass": true,
+      "detail": {
+        "status": 404
+      }
+    },
+    {
+      "name": "普通员工管理动作403",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "主管拒绝外部门计划",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "停用技能归档",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "归档基础数据保留",
+      "pass": true,
+      "detail": {}
+    }
+  ],
+  "corrected": [
+    {
+      "name": "已开课主管上传培训记录并确认",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "已确认有证据计划禁止撤回",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "员工预览本人真实培训记录",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    }
+  ]
+}

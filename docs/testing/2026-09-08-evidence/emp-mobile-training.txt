@@ -1,0 +1,96 @@
+- complementary:
+  - navigation "主导航":
+    - button "我的工作台":
+    - button "个人资料":
+    - button "我的技能":
+    - button "我的培训" [active]:
+    - button "我的评定":
+    - button "消息通知":
+- main:
+  - button "退出登录":
+  - button "通知":
+  - generic: 验
+  - heading "我的培训" [level=2]
+  - paragraph: 员工提交后，负责人或部门主管确认才进入正式履历。
+  - text: 部门
+  - combobox "部门筛选":
+    - option "全部" [selected]
+    - option "验收制造部"
+  - text: 岗位
+  - combobox "岗位筛选":
+    - option "全部" [selected]
+    - option "验收操作员"
+  - text: 员工
+  - combobox "员工筛选":
+    - option "全部" [selected]
+    - option "验收EMP001"
+  - text: 负责人
+  - textbox "负责人筛选"
+  - text: 状态
+  - combobox "状态筛选":
+    - option "全部" [selected]
+    - option "待学习"
+    - option "待确认"
+    - option "已退回"
+    - option "已确认"
+    - option "已取消"
+  - text: 培训类型
+  - combobox "培训类型筛选":
+    - option "全部" [selected]
+    - option "专业技能培训"
+    - option "普通培训"
+    - option "其他培训"
+  - text: 进度
+  - combobox "进度筛选":
+    - option "全部" [selected]
+    - option "未完成"
+    - option "部分完成"
+    - option "全部完成"
+  - text: 开始日期
+  - textbox "开始日期筛选"
+  - text: 结束日期
+  - textbox "结束日期筛选"
+  - button "重置筛选"
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: 验收图片资料
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+    - button "在线查看资料"
+    - button "提交完成"
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: 验收图片资料
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+    - button "在线查看资料"
+    - button "提交完成"
+  - article:
+    - strong: 验收培训-other
+    - generic: 已确认
+    - paragraph: 验收图片资料
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+    - button "在线查看证据"
+    - button "在线查看资料"
+  - paragraph: 培训资料
+  - heading "学习资料" [level=1]
+  - paragraph: 查找与岗位技能关联的文档、图片和外部课程。
+  - heading "资料列表" [level=2]
+  - paragraph: 停用资料不会出现在新的员工学习入口。
+  - textbox "搜索资料":
+    - /placeholder: 搜索标题、分类或技能
+  - article:
+    - strong: 验收图片资料
+    - generic: 可用
+    - paragraph: 验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"

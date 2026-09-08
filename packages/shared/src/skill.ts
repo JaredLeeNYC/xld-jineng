@@ -12,13 +12,15 @@ export type SkillLevel = (typeof skillLevels)[number];
 
 export const skillLevelMeanings: Record<SkillLevel, string> = {
   0: "未掌握",
-  1: "了解并能在指导下操作",
-  2: "可独立完成标准作业",
-  3: "熟练处理异常并指导他人",
-  4: "专家级，可制定标准并持续改进",
+  1: "初级 · 了解并能在指导下操作",
+  2: "中级 · 可独立完成标准作业",
+  3: "高级 · 熟练处理异常并指导他人",
+  4: "专家 · 可制定标准并持续改进",
 };
 
 export type SkillView = {
+  departments?: Array<{ id: string; name: string }>;
+  positions?: Array<{ id: string; name: string }>;
   id: string;
   code: string;
   name: string;
@@ -29,6 +31,8 @@ export type SkillView = {
 };
 
 export type PositionSkillRequirementView = {
+  departmentId?: string;
+  departmentName?: string;
   id: string;
   positionId: string;
   positionCode: string;

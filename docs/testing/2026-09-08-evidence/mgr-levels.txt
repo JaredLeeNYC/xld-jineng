@@ -1,0 +1,131 @@
+- complementary:
+  - strong: 技能矩阵
+  - generic: 工厂人才管理
+  - navigation "主导航":
+    - paragraph: 我的菜单
+    - button "部门概况":
+      - generic: 部门概况
+    - button "部门员工":
+      - generic: 部门员工
+    - button "技能矩阵" [active]:
+      - generic: 技能矩阵
+    - button "培训管理":
+      - generic: 培训管理
+    - button "评定确认":
+      - generic: 评定确认
+  - button "退出登录":
+    - generic: 退出登录
+  - generic: 当前组织
+  - strong: 示范制造工厂
+- main:
+  - generic: 搜索员工、岗位或技能
+  - generic: ⌘ K
+  - button "通知":
+  - generic: 验
+  - strong: 验收MGR001
+  - generic: MGR001 · 部门主管
+  - paragraph: 技能矩阵
+  - heading "工位技能矩阵表" [level=1]
+  - paragraph: 按员工与技能交叉展示当前等级，并汇总个人及技能达标差异。
+  - combobox:
+    - option "全部部门" [selected]
+    - option "验收制造部"
+  - combobox:
+    - option "全部岗位" [selected]
+    - option "验收操作员"
+  - combobox:
+    - option "全部员工" [selected]
+    - option "EMP001 · 验收EMP001"
+    - option "QA-IMPORT · 全字段导入验收"
+    - option "QA-MANUAL · 手工新增主管验收"
+    - option "QA-MANUAL-R2 · 返修主管验收"
+  - combobox:
+    - option "全部技能" [selected]
+    - option "验收焊接"
+  - button "应用筛选"
+  - textbox "筛选员工、岗位或技能"
+  - table:
+    - rowgroup:
+      - row "员工 / 岗位 验收焊接 QA-SKILL-EDIT 实际达标 目标数 差异":
+        - columnheader "员工 / 岗位"
+        - columnheader "验收焊接 QA-SKILL-EDIT":
+          - strong: 验收焊接
+          - generic: QA-SKILL-EDIT
+        - columnheader "实际达标"
+        - columnheader "目标数"
+        - columnheader "差异"
+    - rowgroup:
+      - row "验收EMP001 EMP001 · 验收操作员 验收焊接：当前 未评定 级，目标 3 级，未达标 未评定 · 未评定 · 长期有效 · 差 3 级 0 1 -1":
+        - rowheader "验收EMP001 EMP001 · 验收操作员":
+          - strong: 验收EMP001
+          - generic: EMP001 · 验收操作员
+        - cell "验收焊接：当前 未评定 级，目标 3 级，未达标 未评定 · 未评定 · 长期有效 · 差 3 级":
+          - generic "验收焊接：当前 未评定 级，目标 3 级，未达标":
+            - strong: 现 — · 目 3
+          - generic: 未评定 · 未评定 · 长期有效 · 差 3 级
+        - cell "0"
+        - cell "1"
+        - cell "-1"
+      - row "全字段导入验收 QA-IMPORT · 验收操作员 验收焊接：当前 未评定 级，目标 3 级，未达标 未评定 · 未评定 · 长期有效 · 差 3 级 0 1 -1":
+        - rowheader "全字段导入验收 QA-IMPORT · 验收操作员":
+          - strong: 全字段导入验收
+          - generic: QA-IMPORT · 验收操作员
+        - cell "验收焊接：当前 未评定 级，目标 3 级，未达标 未评定 · 未评定 · 长期有效 · 差 3 级":
+          - generic "验收焊接：当前 未评定 级，目标 3 级，未达标":
+            - strong: 现 — · 目 3
+          - generic: 未评定 · 未评定 · 长期有效 · 差 3 级
+        - cell "0"
+        - cell "1"
+        - cell "-1"
+      - row "手工新增主管验收 QA-MANUAL · 验收操作员 验收焊接：当前 未评定 级，目标 3 级，未达标 未评定 · 未评定 · 长期有效 · 差 3 级 0 1 -1":
+        - rowheader "手工新增主管验收 QA-MANUAL · 验收操作员":
+          - strong: 手工新增主管验收
+          - generic: QA-MANUAL · 验收操作员
+        - cell "验收焊接：当前 未评定 级，目标 3 级，未达标 未评定 · 未评定 · 长期有效 · 差 3 级":
+          - generic "验收焊接：当前 未评定 级，目标 3 级，未达标":
+            - strong: 现 — · 目 3
+          - generic: 未评定 · 未评定 · 长期有效 · 差 3 级
+        - cell "0"
+        - cell "1"
+        - cell "-1"
+      - row "返修主管验收 QA-MANUAL-R2 · 验收操作员 验收焊接：当前 未评定 级，目标 3 级，未达标 未评定 · 未评定 · 长期有效 · 差 3 级 0 1 -1":
+        - rowheader "返修主管验收 QA-MANUAL-R2 · 验收操作员":
+          - strong: 返修主管验收
+          - generic: QA-MANUAL-R2 · 验收操作员
+        - cell "验收焊接：当前 未评定 级，目标 3 级，未达标 未评定 · 未评定 · 长期有效 · 差 3 级":
+          - generic "验收焊接：当前 未评定 级，目标 3 级，未达标":
+            - strong: 现 — · 目 3
+          - generic: 未评定 · 未评定 · 长期有效 · 差 3 级
+        - cell "0"
+        - cell "1"
+        - cell "-1"
+    - rowgroup:
+      - row "实际达标 0":
+        - rowheader "实际达标"
+        - cell "0"
+        - cell
+      - row "目标数 4":
+        - rowheader "目标数"
+        - cell "4"
+        - cell
+      - row "差异 -4":
+        - rowheader "差异"
+        - cell "-4"
+        - cell
+  - region "能力等级说明":
+    - strong: 能力等级说明
+    - article:
+      - generic: L0
+      - generic: 未掌握
+    - article:
+      - generic: L1
+      - generic: 初级 · 了解并能在指导下操作
+    - article:
+      - generic: L2
+      - generic: 中级 · 可独立完成标准作业
+    - article:
+      - generic: L3
+      - generic: 高级 · 熟练处理异常并指导他人
+    - article:
+      - generic: L4
+      - generic: 专家 · 可制定标准并持续改进

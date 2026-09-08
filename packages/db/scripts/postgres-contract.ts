@@ -1231,6 +1231,7 @@ try {
     [firstCredential.employeeNumber],
   );
   const planPayload = {
+    trainingType: "general",
     title: "点检培训计划",
     materialId: materialUploadBody.data.id,
     ownerEmployeeId: employeeIds.get("department_manager")!,
@@ -1329,6 +1330,78 @@ try {
     task.rowCount !== 1
   )
     throw new Error("培训草稿编辑、发布固化或非法状态跳转失败");
+  const withdrawRequest = () =>
+    app.handle(
+      new Request(`http://localhost/api/training-plans/${createPlanBody.data!.id}/withdraw`, {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      }),
+    );
+  const withdrawn = await withdrawRequest();
+  const withdrawnTask = await contractPool.query("select status from training_tasks where id=$1", [
+    task.rows[0]!.id,
+  ]);
+  if (withdrawn.status !== 200 || withdrawnTask.rows[0]?.status !== "cancelled")
+    throw new Error("培训撤回未保留取消任务");
+  const revised = await app.handle(
+    new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}`, {
+      method: "PATCH",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie!, "content-type": "application/json" },
+      body: JSON.stringify({ ...planPayload, trainingType: "other", location: "撤回修改会议室" }),
+    }),
+  );
+  const publishedAgain = await app.handle(
+    new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}/publish`, {
+      method: "POST",
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const reusedTasks = await contractPool.query(
+    "select id,status from training_tasks where plan_id=$1",
+    [createPlanBody.data.id],
+  );
+  if (
+    revised.status !== 200 ||
+    publishedAgain.status !== 200 ||
+    reusedTasks.rowCount !== 1 ||
+    reusedTasks.rows[0]?.id !== task.rows[0]!.id ||
+    reusedTasks.rows[0]?.status !== "assigned"
+  )
+    throw new Error("撤回重发任务未正确复用");
+  const plansList = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const plansData = (await plansList.json()) as {
+    data: Array<{
+      id: string;
+      trainingType: string;
+      departments: unknown[];
+      positions: unknown[];
+      scopeEmployeeNames: string[];
+    }>;
+  };
+  const revisedPlan = plansData.data.find((item) => item.id === createPlanBody.data!.id);
+  if (
+    revisedPlan?.trainingType !== "other" ||
+    !revisedPlan.departments.length ||
+    !revisedPlan.scopeEmployeeNames.length
+  )
+    throw new Error("培训类型或范围信息未往返");
+  const tasksList = await app.handle(
+    new Request("http://localhost/api/training-tasks", { headers: { cookie: importedCookie! } }),
+  );
+  const tasksData = (await tasksList.json()) as {
+    data: Array<{ id: string; departmentName: string; trainingType: string }>;
+  };
+  if (
+    !tasksData.data.some(
+      (item) =>
+        item.id === task.rows[0]!.id && item.departmentName && item.trainingType === "other",
+    )
+  )
+    throw new Error("培训任务缺少部门或类型");
   const submit = () =>
     app.handle(
       new Request(`http://localhost/api/training-tasks/${task.rows[0]!.id}/submit`, {
@@ -1337,6 +1410,7 @@ try {
       }),
     );
   const firstSubmit = await submit();
+  if ((await withdrawRequest()).status !== 409) throw new Error("已有提交的培训被错误撤回");
   const returnResponse = await app.handle(
     new Request(`http://localhost/api/training-tasks/${task.rows[0]!.id}/return`, {
       method: "POST",
@@ -1714,7 +1788,7 @@ try {
     const data = new FormData();
     data.set("employeeId", assignment.employeeId);
     data.set("skillId", input.skillId);
-    data.set("method", "practical");
+    data.set("method", "written_practical");
     data.set("level", String(input.level));
     data.set("passed", String(input.passed));
     data.set("assessedAt", new Date(Date.now() - 60_000).toISOString());
@@ -1754,6 +1828,12 @@ try {
     level: 3,
     passed: true,
   });
+  const assessmentMethod = await contractPool.query(
+    "select method from skill_assessments where id=$1",
+    [passedAssessmentId],
+  );
+  if (assessmentMethod.rows[0]?.method !== "written_practical")
+    throw new Error("线下笔试+实操未保存");
   const assessmentEvidence = await contractPool.query<{ storageKey: string }>(
     'select evidence_storage_key as "storageKey" from skill_assessments where id=$1',
     [passedAssessmentId],
@@ -2345,6 +2425,51 @@ try {
     JSON.stringify(auditBody).includes("must-not-leak")
   )
     throw new Error("审计权限或敏感摘要脱敏失败");
+
+  // Regression: exercise the actual HTTP schema, service and database write together.
+  const createManagerResponse = await app.handle(
+    new Request("http://localhost/api/organization/employees", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: roleLogins.get("hr_admin")!.cookie! },
+      body: JSON.stringify({
+        employeeNumber: "HTTP-MANAGER-REGRESSION",
+        displayName: "HTTP主管回归",
+        departmentCode: "D001",
+        positionCode: "P001",
+        role: "department_manager",
+        gender: "女",
+        age: 32,
+        identityNumber: "110101199401010028",
+        tenureYears: 3.5,
+        education: "本科",
+      }),
+    }),
+  );
+  const createManagerBody = (await createManagerResponse.json()) as {
+    ok: boolean;
+    data?: { imported: number };
+  };
+  const persistedManager = await contractPool.query<{
+    role: string;
+    gender: string;
+    age: number;
+    tenureYears: string;
+    education: string;
+  }>(
+    'select ua.role,e.gender,e.age,e.tenure_years as "tenureYears",e.education from employees e join user_accounts ua on ua.employee_id=e.id where e.employee_number=$1',
+    ["HTTP-MANAGER-REGRESSION"],
+  );
+  if (
+    createManagerResponse.status !== 200 ||
+    !createManagerBody.ok ||
+    createManagerBody.data?.imported !== 1 ||
+    persistedManager.rows[0]?.role !== "department_manager" ||
+    persistedManager.rows[0].gender !== "女" ||
+    persistedManager.rows[0].age !== 32 ||
+    Number(persistedManager.rows[0].tenureYears) !== 3.5 ||
+    persistedManager.rows[0].education !== "本科"
+  )
+    throw new Error("HR经HTTP创建主管时角色或完整资料未持久化");
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",

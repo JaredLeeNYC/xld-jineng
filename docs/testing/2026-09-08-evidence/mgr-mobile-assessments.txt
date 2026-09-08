@@ -1,0 +1,83 @@
+- complementary:
+  - navigation "主导航":
+    - button "部门概况":
+    - button "部门员工":
+    - button "技能矩阵":
+    - button "培训管理":
+    - button "评定确认" [active]:
+- main:
+  - button "退出登录":
+  - button "通知":
+  - generic: 验
+  - heading "录入线下技能评定" [level=2]
+  - text: 部门
+  - combobox "录入评定部门":
+    - option "选择部门（全部）" [selected]
+    - option "验收制造部"
+  - combobox:
+    - option "选择员工" [selected]
+    - option "0341 · 验收0341"
+    - option "10032 · 验收10032"
+    - option "3761 · 验收3761"
+    - option "4243 · 验收4243"
+    - option "EMP001 · 验收EMP001"
+    - option "HR001 · 验收HR001"
+    - option "MGR001 · 验收MGR001"
+    - option "QA-IMPORT · 全字段导入验收"
+    - option "QA-MANUAL · 手工新增主管验收"
+    - option "QA-MANUAL-R2 · 返修主管验收"
+  - combobox:
+    - option "选择技能" [selected]
+    - option "QA-SKILL-EDIT · 验收焊接"
+  - combobox:
+    - option "线下笔试"
+    - option "实操" [selected]
+    - option "线下笔试+实操"
+    - option "综合评审"
+  - spinbutton: "2"
+  - combobox:
+    - option "通过" [selected]
+    - option "未通过"
+  - textbox: 2026-09-08
+  - textbox "评定说明（可选）"
+  - textbox "整改建议"
+  - button "Choose File"
+  - button "保存草稿"
+  - heading "技能评定流转" [level=2]
+  - paragraph: 至少一名独立人员复核并由 HR 归档后才更新当前技能。
+  - text: 部门
+  - combobox "部门筛选":
+    - option "全部" [selected]
+    - option "验收制造部"
+  - text: 员工
+  - combobox "员工筛选":
+    - option "全部" [selected]
+    - option "验收EMP001"
+  - text: 状态
+  - combobox "状态筛选":
+    - option "全部" [selected]
+    - option "草稿"
+    - option "待主管确认"
+    - option "待 HR 归档"
+    - option "已归档"
+    - option "已退回"
+    - option "已作废"
+  - text: 开始日期
+  - textbox "开始日期筛选"
+  - text: 结束日期
+  - textbox "结束日期筛选"
+  - button "重置筛选"
+  - article:
+    - strong: 验收EMP001 · 验收焊接
+    - generic: 草稿
+    - paragraph: 验收制造部 · 2026-09-07 · 线下笔试+实操
+    - paragraph: 通过，等级 3
+    - button "在线查看证据"
+    - button "修订"
+    - button "提交主管"
+  - article:
+    - strong: 验收EMP001 · 验收焊接
+    - generic: 草稿
+    - paragraph: 验收制造部 · 2026-09-06 · 线下笔试+实操
+    - paragraph: 通过，等级 3
+    - button "在线查看证据"

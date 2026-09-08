@@ -117,7 +117,7 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
        where ($1='hr_admin' or $1='executive_viewer'
          or ($1='department_manager' and e.department_id=$2::uuid)
          or ($1='employee' and e.id=$3::uuid))
-       order by a.created_at desc`,
+       order by a.assessed_at desc,a.created_at desc`,
       [actor.role, actor.departmentId ?? null, actor.employeeId],
     );
     return result.rows.map(normalize);

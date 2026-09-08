@@ -37,11 +37,17 @@ export type EmployeeView = {
   positionName?: string;
   hireDate?: string;
   phone?: string;
+  gender?: string;
+  age?: number;
+  identityNumber?: string;
+  tenureYears?: number;
+  education?: string;
   role: FixedRole;
   active: boolean;
 };
 
 export type EmployeeImportRow = {
+  role?: "employee" | "department_manager";
   rowNumber: number;
   employeeNumber: string;
   displayName: string;
@@ -49,6 +55,11 @@ export type EmployeeImportRow = {
   positionCode: string;
   hireDate?: string;
   phone?: string;
+  gender?: string;
+  age?: number;
+  identityNumber?: string;
+  tenureYears?: number;
+  education?: string;
 };
 
 export type ImportRowError = {

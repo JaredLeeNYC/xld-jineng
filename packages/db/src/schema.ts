@@ -11,6 +11,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   smallint,
@@ -80,6 +81,11 @@ export const employees = pgTable(
     }),
     hireDate: date("hire_date"),
     phone: varchar("phone", { length: 30 }),
+    gender: varchar("gender", { length: 10 }),
+    age: integer("age"),
+    identityNumber: varchar("identity_number", { length: 30 }),
+    tenureYears: numeric("tenure_years", { precision: 6, scale: 2 }),
+    education: varchar("education", { length: 100 }),
     active: boolean("active").notNull().default(true),
     ...timestamps,
   },
@@ -132,6 +138,7 @@ export const skills = pgTable(
     category: skillCategoryEnum("category").notNull(),
     reassessmentRequired: boolean("reassessment_required").notNull().default(false),
     validityMonths: smallint("validity_months"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     active: boolean("active").notNull().default(true),
     ...timestamps,
   },
@@ -225,7 +232,7 @@ export const skillAssessments = pgTable(
     ),
     check(
       "skill_assessments_method",
-      sql`${table.method} is null or ${table.method} in ('written','practical','comprehensive')`,
+      sql`${table.method} is null or ${table.method} in ('written','practical','comprehensive','written_practical')`,
     ),
     uniqueIndex("skill_assessments_identity_unique").on(table.id, table.employeeId, table.skillId),
     index("skill_assessments_employee_skill_idx").on(
@@ -335,6 +342,7 @@ export const trainingPlans = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     title: varchar("title", { length: 150 }).notNull(),
+    trainingType: varchar("training_type", { length: 20 }).notNull().default("professional"),
     status: varchar("status", { length: 20 }).notNull().default("draft"),
     materialId: uuid("material_id")
       .notNull()
@@ -365,6 +373,7 @@ export const trainingPlans = pgTable(
       "training_plans_status",
       sql`${table.status} in ('draft','published','in_progress','completed','cancelled')`,
     ),
+    check("training_plans_type", sql`${table.trainingType} in ('professional','general','other')`),
     check(
       "training_plans_scope",
       sql`(${table.scopeType} = 'department' and ${table.scopeDepartmentId} is not null and ${table.scopePositionId} is null) or (${table.scopeType} = 'position' and ${table.scopePositionId} is not null and ${table.scopeDepartmentId} is null) or (${table.scopeType} = 'employees' and ${table.scopeDepartmentId} is null and ${table.scopePositionId} is null)`,

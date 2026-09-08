@@ -1,0 +1,494 @@
+- complementary:
+  - navigation "主导航":
+    - button "全厂概况":
+    - button "组织人员":
+    - button "技能标准":
+    - button "培训管理" [active]:
+    - button "评定归档":
+    - button "报表导出":
+- main:
+  - button "退出登录":
+  - button "通知":
+  - generic: 验
+  - heading "新建培训计划" [level=2]
+  - text: 选择培训类型
+  - combobox "选择培训类型":
+    - option "专业技能培训" [selected]
+    - option "普通培训"
+    - option "其他培训"
+  - textbox "计划名称"
+  - combobox:
+    - option "选择培训资料" [selected]
+    - option "在线验收-slides.pptx"
+    - option "在线验收-slides.ppt"
+    - option "在线验收-document.docx"
+    - option "在线验收-document.doc"
+    - option "在线验收-slides.pptx"
+    - option "在线验收-slides.ppt"
+    - option "在线验收-document.docx"
+    - option "在线验收-document.doc"
+    - option "验收图片资料"
+  - combobox:
+    - option "选择负责人" [selected]
+    - option "验收0341"
+    - option "验收10032"
+    - option "验收3761"
+    - option "验收4243"
+    - option "验收EMP001"
+    - option "验收HR001"
+    - option "验收MGR001"
+    - option "全字段导入验收"
+    - option "手工新增主管验收"
+    - option "返修主管验收"
+    - option "其他部门验收员工"
+  - textbox "培训开始时间（中国时区）"
+  - textbox "培训截止时间（中国时区）"
+  - textbox "地点"
+  - combobox:
+    - option "按部门" [selected]
+    - option "按岗位"
+    - option "指定员工"
+  - combobox:
+    - option "选择部门" [selected]
+    - option "验收制造部"
+    - option "验收其他部门"
+  - button "保存草稿"
+  - heading "培训计划" [level=2]
+  - paragraph: 发布后固化对象并生成员工任务。
+  - text: 部门
+  - combobox "部门筛选":
+    - option "全部" [selected]
+    - option "验收制造部"
+    - option "验收其他部门"
+  - text: 岗位
+  - combobox "岗位筛选":
+    - option "全部" [selected]
+    - option "验收操作员"
+    - option "验收其他岗位"
+  - text: 员工
+  - combobox "员工筛选":
+    - option "全部" [selected]
+    - option "验收0341"
+    - option "验收10032"
+    - option "验收3761"
+    - option "验收4243"
+    - option "验收EMP001"
+    - option "验收HR001"
+    - option "验收MGR001"
+    - option "全字段导入验收"
+    - option "手工新增主管验收"
+    - option "返修主管验收"
+    - option "其他部门验收员工"
+  - text: 负责人
+  - textbox "负责人筛选"
+  - text: 状态
+  - combobox "状态筛选":
+    - option "全部" [selected]
+    - option "草稿"
+    - option "已发布"
+    - option "进行中"
+    - option "已完成"
+    - option "已取消"
+  - text: 培训类型
+  - combobox "培训类型筛选":
+    - option "全部" [selected]
+    - option "专业技能培训"
+    - option "普通培训"
+    - option "其他培训"
+  - text: 进度
+  - combobox "进度筛选":
+    - option "全部" [selected]
+    - option "未完成"
+    - option "部分完成"
+    - option "全部完成"
+  - text: 开始日期
+  - textbox "开始日期筛选"
+  - text: 结束日期
+  - textbox "结束日期筛选"
+  - button "重置筛选"
+  - article:
+    - strong: 验收培训-general
+    - generic: 已发布
+    - paragraph: 普通培训 · 验收MGR001
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 指定员工：按部门 / 岗位
+    - paragraph: 培训时间（中国时区）：2026/9/11 08:00:00 — 2026/9/11 17:00:00
+    - paragraph: 完成进度：0/9
+    - button "撤回修改"
+    - button "取消"
+  - article:
+    - strong: 验收培训-professional
+    - generic: 已发布
+    - paragraph: 专业技能培训 · 验收MGR001
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 指定员工：按部门 / 岗位
+    - paragraph: 培训时间（中国时区）：2026/9/10 08:00:00 — 2026/9/10 17:00:00
+    - paragraph: 完成进度：0/9
+    - button "撤回修改"
+    - button "取消"
+  - article:
+    - strong: 验收培训-other
+    - generic: 进行中
+    - paragraph: 其他培训 · 验收MGR001
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 指定员工：按部门 / 岗位
+    - paragraph: 培训时间（中国时区）：2026/9/7 08:00:00 — 2026/9/12 17:00:00
+    - paragraph: 完成进度：1/10
+    - button "撤回修改"
+    - button "取消"
+  - heading "培训任务与待办" [level=2]
+  - paragraph: 员工提交后，负责人或部门主管确认才进入正式履历。
+  - text: 部门
+  - combobox "部门筛选":
+    - option "全部" [selected]
+    - option "验收制造部"
+    - option "验收其他部门"
+  - text: 岗位
+  - combobox "岗位筛选":
+    - option "全部" [selected]
+    - option "验收操作员"
+    - option "验收其他岗位"
+  - text: 员工
+  - combobox "员工筛选":
+    - option "全部" [selected]
+    - option "验收0341"
+    - option "验收10032"
+    - option "验收3761"
+    - option "验收4243"
+    - option "验收EMP001"
+    - option "验收HR001"
+    - option "验收MGR001"
+    - option "全字段导入验收"
+    - option "手工新增主管验收"
+    - option "返修主管验收"
+    - option "其他部门验收员工"
+  - text: 负责人
+  - textbox "负责人筛选"
+  - text: 状态
+  - combobox "状态筛选":
+    - option "全部" [selected]
+    - option "待学习"
+    - option "待确认"
+    - option "已退回"
+    - option "已确认"
+    - option "已取消"
+  - text: 培训类型
+  - combobox "培训类型筛选":
+    - option "全部" [selected]
+    - option "专业技能培训"
+    - option "普通培训"
+    - option "其他培训"
+  - text: 进度
+  - combobox "进度筛选":
+    - option "全部" [selected]
+    - option "未完成"
+    - option "部分完成"
+    - option "全部完成"
+  - text: 开始日期
+  - textbox "开始日期筛选"
+  - text: 结束日期
+  - textbox "结束日期筛选"
+  - button "重置筛选"
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: QA-MANUAL · 手工新增主管验收
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: 0341 · 验收0341
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: EMP001 · 验收EMP001
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: 10032 · 验收10032
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: QA-IMPORT · 全字段导入验收
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: HR001 · 验收HR001
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+    - button "在线查看资料"
+    - button "提交完成"
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: 3761 · 验收3761
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: 4243 · 验收4243
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+  - article:
+    - strong: 验收培训-general
+    - generic: 待学习
+    - paragraph: MGR001 · 验收MGR001
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：普通培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/11 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/11 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: QA-IMPORT · 全字段导入验收
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: EMP001 · 验收EMP001
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: MGR001 · 验收MGR001
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: 3761 · 验收3761
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: 0341 · 验收0341
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: 4243 · 验收4243
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: QA-MANUAL · 手工新增主管验收
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: 10032 · 验收10032
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+  - article:
+    - strong: 验收培训-professional
+    - generic: 待学习
+    - paragraph: HR001 · 验收HR001
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：专业技能培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/10 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/10 17:00:00
+    - button "在线查看资料"
+    - button "提交完成"
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: QA-MANUAL-R2 · 返修主管验收
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: 10032 · 验收10032
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+  - article:
+    - strong: 验收培训-other
+    - generic: 已确认
+    - paragraph: EMP001 · 验收EMP001
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+    - button "在线查看证据"
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: QA-IMPORT · 全字段导入验收
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: 4243 · 验收4243
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: MGR001 · 验收MGR001
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: HR001 · 验收HR001
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+    - button "在线查看资料"
+    - button "提交完成"
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: 3761 · 验收3761
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: 0341 · 验收0341
+    - paragraph: 部门：验收制造部；岗位：未分配
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+  - article:
+    - strong: 验收培训-other
+    - generic: 待学习
+    - paragraph: QA-MANUAL · 手工新增主管验收
+    - paragraph: 部门：验收制造部；岗位：验收操作员
+    - paragraph: 培训类型：其他培训；负责人：验收MGR001
+    - paragraph: 开始时间（中国时区）：2026/9/7 08:00:00
+    - paragraph: 截止时间（中国时区）：2026/9/12 17:00:00
+  - button "Choose File"
+  - button "上传证据并批量确认"
+  - paragraph: 培训资料
+  - heading "培训资料库" [level=1]
+  - paragraph: 查找与岗位技能关联的文档、图片和外部课程。
+  - heading "新增资料" [level=2]
+  - textbox "资料标题"
+  - textbox "分类，如：安全培训"
+  - textbox "资料说明（选填）"
+  - listbox "关联技能":
+    - option "QA-SKILL-EDIT · 验收焊接"
+  - textbox "外部网页或视频链接（与文件二选一）"
+  - button "Choose File"
+  - button "保存资料"
+  - heading "资料列表" [level=2]
+  - paragraph: 停用资料不会出现在新的员工学习入口。
+  - textbox "搜索资料":
+    - /placeholder: 搜索标题、分类或技能
+  - article:
+    - strong: 在线验收-slides.pptx
+    - generic: 可用
+    - paragraph: 在线验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"
+  - article:
+    - strong: 在线验收-slides.ppt
+    - generic: 可用
+    - paragraph: 在线验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"
+  - article:
+    - strong: 在线验收-document.docx
+    - generic: 可用
+    - paragraph: 在线验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"
+  - article:
+    - strong: 在线验收-document.doc
+    - generic: 可用
+    - paragraph: 在线验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"
+  - article:
+    - strong: 在线验收-slides.pptx
+    - generic: 可用
+    - paragraph: 在线验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"
+  - article:
+    - strong: 在线验收-slides.ppt
+    - generic: 可用
+    - paragraph: 在线验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"
+  - article:
+    - strong: 在线验收-document.docx
+    - generic: 可用
+    - paragraph: 在线验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"
+  - article:
+    - strong: 在线验收-document.doc
+    - generic: 可用
+    - paragraph: 在线验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"
+  - article:
+    - strong: 验收图片资料
+    - generic: 可用
+    - paragraph: 验收 · 验收焊接
+    - button "在线预览"
+    - button "查看/下载"

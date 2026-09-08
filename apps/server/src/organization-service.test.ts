@@ -208,3 +208,28 @@ describe("organization service", () => {
     );
   });
 });
+
+test("imports the full profile and a manager account while blocking privileged roles", async () => {
+  const { service, getConfirmedRows } = createFixture();
+  const profile = {
+    employeeNumber: "0341",
+    displayName: "张三",
+    departmentCode: "D001",
+    positionCode: "P001",
+    gender: "男",
+    age: 32,
+    identityNumber: "110101199401010011",
+    tenureYears: 2.5,
+    education: "本科",
+    role: "department_manager" as const,
+  };
+  expect(await service.createEmployee(hr, profile)).toMatchObject({ ok: true });
+  expect(getConfirmedRows()[0]).toMatchObject(profile);
+  const invalid = await service.dryRunImport(hr, [
+    { ...profile, rowNumber: 2, age: -1, role: "system_admin" as never },
+  ]);
+  expect(invalid).toMatchObject({
+    ok: true,
+    data: { validRows: 0, errors: [{ field: "age" }, { field: "role" }] },
+  });
+});

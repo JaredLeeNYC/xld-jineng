@@ -37,6 +37,7 @@ const setup = () => {
     updateDraft: async () => true,
     publish: async () => ({ ok: true as const, taskCount: 2, status: "published" as const }),
     cancelPlan: async () => true,
+    withdrawPlan: async () => true,
     listTasks: async () => [],
     submitTask: async () => true,
     taskAuthorization: async () => ({ status: "submitted" }),
@@ -62,6 +63,37 @@ describe("training service", () => {
     expect(events).toEqual(["created"]);
     expect(await service.createPlan(actor("employee"), plan)).toMatchObject({
       error: { code: "FORBIDDEN" },
+    });
+  });
+
+  test("accepts the three training types and rejects unknown values", async () => {
+    const { service } = setup();
+    for (const trainingType of ["professional", "general", "other"] as const) {
+      expect(await service.createPlan(actor("hr_admin"), { ...plan, trainingType })).toMatchObject({
+        ok: true,
+      });
+    }
+    expect(
+      await service.createPlan(actor("hr_admin"), { ...plan, trainingType: "invalid" as never }),
+    ).toMatchObject({ error: { code: "INVALID_TRAINING_PLAN" } });
+  });
+
+  test("withdrawal requires management authorization and preserves repository state conflicts", async () => {
+    const { service } = setup();
+    expect(await service.withdrawPlan(actor("employee"), "plan")).toMatchObject({
+      error: { code: "FORBIDDEN" },
+    });
+    expect(await service.withdrawPlan(actor("hr_admin"), "plan")).toMatchObject({
+      data: { status: "draft" },
+    });
+    const rejected = createTrainingService({
+      repository: { withdrawPlan: async () => false } as unknown as TrainingRepository,
+      storage: createMemoryMaterialStorage(),
+      idSource: () => "id",
+      now: () => new Date(),
+    });
+    expect(await rejected.withdrawPlan(actor("department_manager"), "plan")).toMatchObject({
+      error: { code: "PLAN_WITHDRAW_REJECTED" },
     });
   });
 

@@ -1,0 +1,533 @@
+- complementary:
+  - strong: 技能矩阵
+  - generic: 工厂人才管理
+  - navigation "主导航":
+    - paragraph: 我的菜单
+    - button "全厂概况":
+      - generic: 全厂概况
+    - button "组织人员":
+      - generic: 组织人员
+    - button "技能标准":
+      - generic: 技能标准
+    - button "培训管理":
+      - generic: 培训管理
+    - button "评定归档":
+      - generic: 评定归档
+    - button "报表导出":
+      - generic: 报表导出
+  - button "退出登录":
+    - generic: 退出登录
+  - generic: 当前组织
+  - strong: 示范制造工厂
+- main:
+  - generic: 搜索员工、岗位或技能
+  - generic: ⌘ K
+  - button "通知":
+  - generic: 验
+  - strong: 验收HR001
+  - generic: HR001 · HR / 培训管理员
+  - heading "新建培训计划" [level=2]
+  - text: 选择培训类型
+  - combobox "选择培训类型":
+    - option "专业技能培训" [selected]
+    - option "普通培训"
+    - option "其他培训"
+  - textbox "计划名称"
+  - combobox:
+    - option "选择培训资料" [selected]
+    - option "验收图片资料"
+  - combobox:
+    - option "选择负责人" [selected]
+    - option "验收0341"
+    - option "验收10032"
+    - option "验收3761"
+    - option "验收4243"
+    - option "验收EMP001"
+    - option "验收HR001"
+    - option "验收MGR001"
+    - option "全字段导入验收"
+    - option "手工新增主管验收"
+  - textbox "培训开始时间（中国时区）"
+  - textbox "培训截止时间（中国时区）"
+  - textbox "地点"
+  - combobox:
+    - option "按部门" [selected]
+    - option "按岗位"
+    - option "指定员工"
+  - combobox:
+    - option "选择部门" [selected]
+    - option "验收制造部"
+  - button "保存草稿"
+  - heading "培训计划" [level=2]
+  - paragraph: 发布后固化对象并生成员工任务。
+  - text: 部门
+  - combobox "部门筛选":
+    - option "全部"
+    - option "验收制造部" [selected]
+  - text: 岗位
+  - combobox "岗位筛选":
+    - option "全部"
+    - option "验收操作员" [selected]
+  - text: 员工
+  - combobox "员工筛选":
+    - option "全部"
+    - option "验收0341"
+    - option "验收10032"
+    - option "验收3761"
+    - option "验收4243"
+    - option "验收EMP001" [selected]
+    - option "验收HR001"
+    - option "验收MGR001"
+    - option "全字段导入验收"
+    - option "手工新增主管验收"
+  - text: 负责人
+  - textbox "负责人筛选": MGR001
+  - text: 状态
+  - combobox "状态筛选":
+    - option "全部"
+    - option "草稿"
+    - option "已发布" [selected]
+    - option "进行中"
+    - option "已完成"
+    - option "已取消"
+  - text: 培训类型
+  - combobox "培训类型筛选":
+    - option "全部"
+    - option "专业技能培训"
+    - option "普通培训"
+    - option "其他培训" [selected]
+  - text: 进度
+  - combobox "进度筛选":
+    - option "全部"
+    - option "未完成" [selected]
+    - option "部分完成"
+    - option "全部完成"
+  - text: 开始日期
+  - textbox "开始日期筛选": 2026-09-12
+  - text: 结束日期
+  - textbox "结束日期筛选" [active]: 2026-09-12
+  - button "重置筛选"
+  - table:
+    - rowgroup:
+      - row "计划 部门 岗位 指定员工 培训类型 负责人 / 培训时间（中国时区） 进度 状态 操作":
+        - columnheader "计划"
+        - columnheader "部门"
+        - columnheader "岗位"
+        - columnheader "指定员工"
+        - columnheader "培训类型"
+        - columnheader "负责人 / 培训时间（中国时区）"
+        - columnheader "进度"
+        - columnheader "状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "验收培训-other 验收图片资料 验收制造部 验收操作员 按部门 / 岗位 其他培训 验收MGR0012026/9/12 08:00:00 — 2026/9/12 17:00:00 0/9 已发布 撤回修改 取消":
+        - cell "验收培训-other 验收图片资料":
+          - strong: 验收培训-other
+          - generic: 验收图片资料
+        - cell "验收制造部"
+        - cell "验收操作员"
+        - cell "按部门 / 岗位"
+        - cell "其他培训"
+        - cell "验收MGR0012026/9/12 08:00:00 — 2026/9/12 17:00:00":
+          - text: 验收MGR001
+          - generic: 2026/9/12 08:00:00 — 2026/9/12 17:00:00
+        - cell "0/9"
+        - cell "已发布"
+        - cell "撤回修改 取消":
+          - button "撤回修改"
+          - button "取消"
+  - heading "培训任务与待办" [level=2]
+  - paragraph: 员工提交后，负责人或部门主管确认才进入正式履历。
+  - text: 部门
+  - combobox "部门筛选":
+    - option "全部" [selected]
+    - option "验收制造部"
+  - text: 岗位
+  - combobox "岗位筛选":
+    - option "全部" [selected]
+    - option "验收操作员"
+  - text: 员工
+  - combobox "员工筛选":
+    - option "全部" [selected]
+    - option "验收0341"
+    - option "验收10032"
+    - option "验收3761"
+    - option "验收4243"
+    - option "验收EMP001"
+    - option "验收HR001"
+    - option "验收MGR001"
+    - option "全字段导入验收"
+    - option "手工新增主管验收"
+  - text: 负责人
+  - textbox "负责人筛选"
+  - text: 状态
+  - combobox "状态筛选":
+    - option "全部" [selected]
+    - option "待学习"
+    - option "待确认"
+    - option "已退回"
+    - option "已确认"
+    - option "已取消"
+  - text: 培训类型
+  - combobox "培训类型筛选":
+    - option "全部" [selected]
+    - option "专业技能培训"
+    - option "普通培训"
+    - option "其他培训"
+  - text: 进度
+  - combobox "进度筛选":
+    - option "全部" [selected]
+    - option "未完成"
+    - option "部分完成"
+    - option "全部完成"
+  - text: 开始日期
+  - textbox "开始日期筛选"
+  - text: 结束日期
+  - textbox "结束日期筛选"
+  - button "重置筛选"
+  - table:
+    - rowgroup:
+      - row "选择 计划/员工 部门 培训类型 培训时间（中国时区） 状态 操作":
+        - columnheader "选择"
+        - columnheader "计划/员工"
+        - columnheader "部门"
+        - columnheader "培训类型"
+        - columnheader "培训时间（中国时区）"
+        - columnheader "状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "验收培训-other3761 · 验收3761 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · · 其他培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-other3761 · 验收3761":
+          - strong: 验收培训-other
+          - text: 3761 · 验收3761
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 其他培训":
+          - paragraph: 验收制造部 · · 其他培训
+      - row "验收培训-otherEMP001 · 验收EMP001 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · 验收操作员 · 其他培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-otherEMP001 · 验收EMP001":
+          - strong: 验收培训-other
+          - text: EMP001 · 验收EMP001
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 其他培训":
+          - paragraph: 验收制造部 · 验收操作员 · 其他培训
+      - row "验收培训-other10032 · 验收10032 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · · 其他培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-other10032 · 验收10032":
+          - strong: 验收培训-other
+          - text: 10032 · 验收10032
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 其他培训":
+          - paragraph: 验收制造部 · · 其他培训
+      - row "验收培训-otherQA-MANUAL · 手工新增主管验收 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · 验收操作员 · 其他培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-otherQA-MANUAL · 手工新增主管验收":
+          - strong: 验收培训-other
+          - text: QA-MANUAL · 手工新增主管验收
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 其他培训":
+          - paragraph: 验收制造部 · 验收操作员 · 其他培训
+      - row "验收培训-other0341 · 验收0341 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · · 其他培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-other0341 · 验收0341":
+          - strong: 验收培训-other
+          - text: 0341 · 验收0341
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 其他培训":
+          - paragraph: 验收制造部 · · 其他培训
+      - row "验收培训-otherHR001 · 验收HR001 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · · 其他培训 在线查看资料 提交完成":
+        - cell:
+          - checkbox [disabled]
+        - cell "验收培训-otherHR001 · 验收HR001":
+          - strong: 验收培训-other
+          - text: HR001 · 验收HR001
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 其他培训 在线查看资料 提交完成":
+          - paragraph: 验收制造部 · · 其他培训
+          - button "在线查看资料"
+          - button "提交完成"
+      - row "验收培训-otherQA-IMPORT · 全字段导入验收 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · 验收操作员 · 其他培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-otherQA-IMPORT · 全字段导入验收":
+          - strong: 验收培训-other
+          - text: QA-IMPORT · 全字段导入验收
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 其他培训":
+          - paragraph: 验收制造部 · 验收操作员 · 其他培训
+      - row "验收培训-otherMGR001 · 验收MGR001 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · · 其他培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-otherMGR001 · 验收MGR001":
+          - strong: 验收培训-other
+          - text: MGR001 · 验收MGR001
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 其他培训":
+          - paragraph: 验收制造部 · · 其他培训
+      - row "验收培训-other4243 · 验收4243 验收制造部 其他培训 2026/9/12 08:00:00 — 2026/9/12 17:00:00 待学习 验收制造部 · · 其他培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-other4243 · 验收4243":
+          - strong: 验收培训-other
+          - text: 4243 · 验收4243
+        - cell "验收制造部"
+        - cell "其他培训"
+        - cell "2026/9/12 08:00:00 — 2026/9/12 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 其他培训":
+          - paragraph: 验收制造部 · · 其他培训
+      - row "验收培训-generalMGR001 · 验收MGR001 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · · 普通培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-generalMGR001 · 验收MGR001":
+          - strong: 验收培训-general
+          - text: MGR001 · 验收MGR001
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 普通培训":
+          - paragraph: 验收制造部 · · 普通培训
+      - row "验收培训-general0341 · 验收0341 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · · 普通培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-general0341 · 验收0341":
+          - strong: 验收培训-general
+          - text: 0341 · 验收0341
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 普通培训":
+          - paragraph: 验收制造部 · · 普通培训
+      - row "验收培训-generalEMP001 · 验收EMP001 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · 验收操作员 · 普通培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-generalEMP001 · 验收EMP001":
+          - strong: 验收培训-general
+          - text: EMP001 · 验收EMP001
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 普通培训":
+          - paragraph: 验收制造部 · 验收操作员 · 普通培训
+      - row "验收培训-general10032 · 验收10032 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · · 普通培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-general10032 · 验收10032":
+          - strong: 验收培训-general
+          - text: 10032 · 验收10032
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 普通培训":
+          - paragraph: 验收制造部 · · 普通培训
+      - row "验收培训-generalQA-IMPORT · 全字段导入验收 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · 验收操作员 · 普通培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-generalQA-IMPORT · 全字段导入验收":
+          - strong: 验收培训-general
+          - text: QA-IMPORT · 全字段导入验收
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 普通培训":
+          - paragraph: 验收制造部 · 验收操作员 · 普通培训
+      - row "验收培训-generalHR001 · 验收HR001 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · · 普通培训 在线查看资料 提交完成":
+        - cell:
+          - checkbox [disabled]
+        - cell "验收培训-generalHR001 · 验收HR001":
+          - strong: 验收培训-general
+          - text: HR001 · 验收HR001
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 普通培训 在线查看资料 提交完成":
+          - paragraph: 验收制造部 · · 普通培训
+          - button "在线查看资料"
+          - button "提交完成"
+      - row "验收培训-general3761 · 验收3761 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · · 普通培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-general3761 · 验收3761":
+          - strong: 验收培训-general
+          - text: 3761 · 验收3761
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 普通培训":
+          - paragraph: 验收制造部 · · 普通培训
+      - row "验收培训-general4243 · 验收4243 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · · 普通培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-general4243 · 验收4243":
+          - strong: 验收培训-general
+          - text: 4243 · 验收4243
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 普通培训":
+          - paragraph: 验收制造部 · · 普通培训
+      - row "验收培训-generalQA-MANUAL · 手工新增主管验收 验收制造部 普通培训 2026/9/11 08:00:00 — 2026/9/11 17:00:00 待学习 验收制造部 · 验收操作员 · 普通培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-generalQA-MANUAL · 手工新增主管验收":
+          - strong: 验收培训-general
+          - text: QA-MANUAL · 手工新增主管验收
+        - cell "验收制造部"
+        - cell "普通培训"
+        - cell "2026/9/11 08:00:00 — 2026/9/11 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 普通培训":
+          - paragraph: 验收制造部 · 验收操作员 · 普通培训
+      - row "验收培训-professionalQA-MANUAL · 手工新增主管验收 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · 验收操作员 · 专业技能培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-professionalQA-MANUAL · 手工新增主管验收":
+          - strong: 验收培训-professional
+          - text: QA-MANUAL · 手工新增主管验收
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 专业技能培训":
+          - paragraph: 验收制造部 · 验收操作员 · 专业技能培训
+      - row "验收培训-professionalQA-IMPORT · 全字段导入验收 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · 验收操作员 · 专业技能培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-professionalQA-IMPORT · 全字段导入验收":
+          - strong: 验收培训-professional
+          - text: QA-IMPORT · 全字段导入验收
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 专业技能培训":
+          - paragraph: 验收制造部 · 验收操作员 · 专业技能培训
+      - row "验收培训-professional10032 · 验收10032 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · · 专业技能培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-professional10032 · 验收10032":
+          - strong: 验收培训-professional
+          - text: 10032 · 验收10032
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 专业技能培训":
+          - paragraph: 验收制造部 · · 专业技能培训
+      - row "验收培训-professional4243 · 验收4243 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · · 专业技能培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-professional4243 · 验收4243":
+          - strong: 验收培训-professional
+          - text: 4243 · 验收4243
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 专业技能培训":
+          - paragraph: 验收制造部 · · 专业技能培训
+      - row "验收培训-professionalHR001 · 验收HR001 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · · 专业技能培训 在线查看资料 提交完成":
+        - cell:
+          - checkbox [disabled]
+        - cell "验收培训-professionalHR001 · 验收HR001":
+          - strong: 验收培训-professional
+          - text: HR001 · 验收HR001
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 专业技能培训 在线查看资料 提交完成":
+          - paragraph: 验收制造部 · · 专业技能培训
+          - button "在线查看资料"
+          - button "提交完成"
+      - row "验收培训-professionalEMP001 · 验收EMP001 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · 验收操作员 · 专业技能培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-professionalEMP001 · 验收EMP001":
+          - strong: 验收培训-professional
+          - text: EMP001 · 验收EMP001
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · 验收操作员 · 专业技能培训":
+          - paragraph: 验收制造部 · 验收操作员 · 专业技能培训
+      - row "验收培训-professionalMGR001 · 验收MGR001 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · · 专业技能培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-professionalMGR001 · 验收MGR001":
+          - strong: 验收培训-professional
+          - text: MGR001 · 验收MGR001
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 专业技能培训":
+          - paragraph: 验收制造部 · · 专业技能培训
+      - row "验收培训-professional3761 · 验收3761 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · · 专业技能培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-professional3761 · 验收3761":
+          - strong: 验收培训-professional
+          - text: 3761 · 验收3761
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 专业技能培训":
+          - paragraph: 验收制造部 · · 专业技能培训
+      - row "验收培训-professional0341 · 验收0341 验收制造部 专业技能培训 2026/9/10 08:00:00 — 2026/9/10 17:00:00 待学习 验收制造部 · · 专业技能培训":
+        - cell:
+          - checkbox
+        - cell "验收培训-professional0341 · 验收0341":
+          - strong: 验收培训-professional
+          - text: 0341 · 验收0341
+        - cell "验收制造部"
+        - cell "专业技能培训"
+        - cell "2026/9/10 08:00:00 — 2026/9/10 17:00:00"
+        - cell "待学习"
+        - cell "验收制造部 · · 专业技能培训":
+          - paragraph: 验收制造部 · · 专业技能培训
+  - button "Choose File"
+  - button "上传证据并批量确认"
+  - alert:
+    - paragraph: 暂时无法连接培训资料服务
+    - button "重新加载"

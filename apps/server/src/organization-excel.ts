@@ -1,7 +1,20 @@
 import type { EmployeeImportRow, EmployeeView } from "@jineng/skill-matrix-shared";
 import ExcelJS from "exceljs";
 
-const expectedHeaders = ["工号", "姓名", "部门编码", "岗位编码", "入职日期", "手机号"] as const;
+const expectedHeaders = [
+  "工号",
+  "姓名",
+  "部门编码",
+  "岗位编码",
+  "入职日期",
+  "手机号",
+  "性别",
+  "年龄",
+  "身份证号",
+  "司龄",
+  "学历",
+  "角色",
+] as const;
 
 const textValue = (value: ExcelJS.CellValue): string => {
   if (value === null || value === undefined) return "";
@@ -43,11 +56,29 @@ export const parseEmployeeWorkbook = async (buffer: ArrayBuffer): Promise<Employ
     const row = sheet.getRow(rowNumber);
     const read = (header: string) => {
       const column = headers.get(header);
-      return column ? textValue(row.getCell(column).value).trim() : "";
+      if (!column) return "";
+      const value = row.getCell(column).value;
+      // Excel rounds long numeric identifiers; reject instead of persisting a corrupted ID.
+      if (header === "身份证号" && typeof value === "number" && !Number.isSafeInteger(value))
+        return "请以文本格式填写身份证号";
+      return textValue(value).trim();
     };
     const values = expectedHeaders.map(read);
     if (values.every((value) => !value)) continue;
-    const [employeeNumber, displayName, departmentCode, positionCode, hireDate, phone] = values;
+    const [
+      employeeNumber,
+      displayName,
+      departmentCode,
+      positionCode,
+      hireDate,
+      phone,
+      gender,
+      age,
+      identityNumber,
+      tenureYears,
+      education,
+      role,
+    ] = values;
     rows.push({
       rowNumber,
       employeeNumber: employeeNumber ?? "",
@@ -56,6 +87,20 @@ export const parseEmployeeWorkbook = async (buffer: ArrayBuffer): Promise<Employ
       positionCode: positionCode ?? "",
       ...(hireDate ? { hireDate } : {}),
       ...(phone ? { phone } : {}),
+      ...(gender ? { gender } : {}),
+      ...(age ? { age: Number(age) } : {}),
+      ...(identityNumber ? { identityNumber } : {}),
+      ...(tenureYears ? { tenureYears: Number(tenureYears) } : {}),
+      ...(education ? { education } : {}),
+      ...(role
+        ? {
+            role: (role === "主管" || role === "部门主管"
+              ? "department_manager"
+              : role === "普通员工" || role === "员工"
+                ? "employee"
+                : role) as NonNullable<EmployeeImportRow["role"]>,
+          }
+        : {}),
     });
   }
   return rows;
@@ -74,6 +119,12 @@ export const createEmployeeExport = async (employees: EmployeeView[]): Promise<A
     { header: "入职日期", key: "hireDate", width: 14 },
     { header: "手机号", key: "phone", width: 16 },
     { header: "状态", key: "status", width: 10 },
+    { header: "性别", key: "gender", width: 10 },
+    { header: "年龄", key: "age", width: 10 },
+    { header: "身份证号", key: "identityNumber", width: 24 },
+    { header: "司龄", key: "tenureYears", width: 10 },
+    { header: "学历", key: "education", width: 16 },
+    { header: "角色", key: "role", width: 22 },
   ];
   for (const employee of employees) {
     sheet.addRow({ ...employee, status: employee.active ? "在职" : "停用" });
@@ -87,18 +138,12 @@ export const createEmployeeExport = async (employees: EmployeeView[]): Promise<A
 };
 
 export const createEmployeeImportWorkbook = async (
-  rows: Array<{
-    employeeNumber: string;
-    displayName: string;
-    departmentCode: string;
-    positionCode: string;
-    hireDate?: string;
-    phone?: string;
-  }>,
+  rows: Array<Omit<EmployeeImportRow, "rowNumber">>,
 ): Promise<ArrayBuffer> => {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("员工导入");
   sheet.addRow(expectedHeaders);
+  for (const index of [1, 6, 9]) sheet.getColumn(index).numFmt = "@";
   for (const row of rows) {
     sheet.addRow([
       row.employeeNumber,
@@ -107,6 +152,12 @@ export const createEmployeeImportWorkbook = async (
       row.positionCode,
       row.hireDate ?? "",
       row.phone ?? "",
+      row.gender ?? "",
+      row.age ?? "",
+      row.identityNumber ?? "",
+      row.tenureYears ?? "",
+      row.education ?? "",
+      row.role ?? "employee",
     ]);
   }
   const output = (await workbook.xlsx.writeBuffer()) as unknown as Uint8Array;

@@ -237,7 +237,8 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       `select e.id, e.employee_number as "employeeNumber", e.display_name as "displayName",
               e.department_id as "departmentId", d.name as "departmentName",
               pa.position_id as "positionId", p.name as "positionName",
-              e.hire_date::text as "hireDate", e.phone, a.role,
+              e.hire_date::text as "hireDate", e.phone, e.gender, e.age,
+              e.identity_number as "identityNumber", e.tenure_years::float as "tenureYears", e.education, a.role,
               (e.active and a.active) as active
        from employees e
        join user_accounts a on a.employee_id = e.id
@@ -268,6 +269,11 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       displayName: row.displayName,
       role: row.role,
       active: row.active,
+      ...(row.gender ? { gender: row.gender } : {}),
+      ...(row.age != null ? { age: row.age } : {}),
+      ...(row.identityNumber ? { identityNumber: row.identityNumber } : {}),
+      ...(row.tenureYears != null ? { tenureYears: row.tenureYears } : {}),
+      ...(row.education ? { education: row.education } : {}),
       ...(row.departmentId ? { departmentId: row.departmentId } : {}),
       ...(row.departmentName ? { departmentName: row.departmentName } : {}),
       ...(row.positionId ? { positionId: row.positionId } : {}),
@@ -299,6 +305,11 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
     displayName: string;
     hireDate?: string;
     phone?: string;
+    gender?: string;
+    age?: number;
+    identityNumber?: string;
+    tenureYears?: number;
+    education?: string;
     actorAccountId: string;
   }): Promise<boolean> {
     return withTransaction(pool, async (client) => {
@@ -306,9 +317,22 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
         `update employees set display_name = $2,
            hire_date = coalesce($3, hire_date),
            phone = coalesce($4, phone),
+           gender = coalesce($5, gender), age = coalesce($6, age),
+           identity_number = coalesce($7, identity_number),
+           tenure_years = coalesce($8, tenure_years), education = coalesce($9, education),
            updated_at = now()
          where id = $1 returning id`,
-        [input.id, input.displayName, input.hireDate ?? null, input.phone ?? null],
+        [
+          input.id,
+          input.displayName,
+          input.hireDate ?? null,
+          input.phone ?? null,
+          input.gender ?? null,
+          input.age ?? null,
+          input.identityNumber ?? null,
+          input.tenureYears ?? null,
+          input.education ?? null,
+        ],
       );
       if (result.rowCount === 0) return false;
       await audit(client, {
@@ -491,20 +515,25 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
         if (!target) throw new Error(`IMPORT_REFERENCE_CHANGED:${row.rowNumber}`);
         const employee = await client.query<{ id: string }>(
           `insert into employees (
-             employee_number, display_name, department_id, hire_date, phone
-           ) values ($1, $2, $3, $4, $5) returning id`,
+             employee_number, display_name, department_id, hire_date, phone, gender, age, identity_number, tenure_years, education
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
           [
             row.employeeNumber,
             row.displayName,
             target.departmentId,
             row.hireDate ?? null,
             row.phone ?? null,
+            row.gender ?? null,
+            row.age ?? null,
+            row.identityNumber ?? null,
+            row.tenureYears ?? null,
+            row.education ?? null,
           ],
         );
         await client.query(
           `insert into user_accounts (employee_id, password_hash, role, must_change_password)
-           values ($1, $2, 'employee', true)`,
-          [employee.rows[0]!.id, row.passwordHash],
+           values ($1, $2, $3, true)`,
+          [employee.rows[0]!.id, row.passwordHash, row.role ?? "employee"],
         );
         await client.query(
           `insert into position_assignments (

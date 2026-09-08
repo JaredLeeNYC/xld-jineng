@@ -1,0 +1,102 @@
+- complementary:
+  - strong: 技能矩阵
+  - generic: 工厂人才管理
+  - navigation "主导航":
+    - paragraph: 我的菜单
+    - button "全厂概况":
+      - generic: 全厂概况
+    - button "组织人员":
+      - generic: 组织人员
+    - button "技能标准":
+      - generic: 技能标准
+    - button "培训管理":
+      - generic: 培训管理
+    - button "评定归档":
+      - generic: 评定归档
+    - button "报表导出":
+      - generic: 报表导出
+  - button "退出登录":
+    - generic: 退出登录
+  - generic: 当前组织
+  - strong: 示范制造工厂
+- main:
+  - generic: 搜索员工、岗位或技能
+  - generic: ⌘ K
+  - button "通知":
+  - generic: 验
+  - strong: 验收HR001
+  - generic: HR001 · HR / 培训管理员
+  - heading "录入线下技能评定" [level=2]
+  - text: 部门
+  - combobox "录入评定部门":
+    - option "选择部门（全部）"
+    - option "验收制造部"
+    - option "验收其他部门" [selected]
+  - combobox:
+    - option "选择员工" [selected]
+    - option "QA-OTHER-E · 其他部门验收员工"
+  - combobox:
+    - option "选择技能" [selected]
+    - option "QA-SKILL-EDIT · 验收焊接"
+  - combobox:
+    - option "线下笔试"
+    - option "实操" [selected]
+    - option "线下笔试+实操"
+    - option "综合评审"
+  - spinbutton: "2"
+  - combobox:
+    - option "通过" [selected]
+    - option "未通过"
+  - textbox: 2026-09-08
+  - textbox "评定说明（可选）"
+  - textbox "整改建议"
+  - button "Choose File"
+  - button "保存草稿"
+  - heading "技能评定流转" [level=2]
+  - paragraph: 至少一名独立人员复核并由 HR 归档后才更新当前技能。
+  - text: 部门
+  - combobox "部门筛选":
+    - option "全部"
+    - option "验收制造部" [selected]
+    - option "验收其他部门"
+  - text: 员工
+  - combobox "员工筛选":
+    - option "全部" [selected]
+    - option "其他部门验收员工"
+    - option "验收EMP001"
+  - text: 状态
+  - combobox "状态筛选":
+    - option "全部" [selected]
+    - option "草稿"
+    - option "待主管确认"
+    - option "待 HR 归档"
+    - option "已归档"
+    - option "已退回"
+    - option "已作废"
+  - text: 开始日期
+  - textbox "开始日期筛选" [active]: 2026-09-07
+  - text: 结束日期
+  - textbox "结束日期筛选"
+  - button "重置筛选"
+  - table:
+    - rowgroup:
+      - row "员工 / 技能 部门 评定方式 结果 状态 评定日期 / 有效期 操作":
+        - columnheader "员工 / 技能"
+        - columnheader "部门"
+        - columnheader "评定方式"
+        - columnheader "结果"
+        - columnheader "状态"
+        - columnheader "评定日期 / 有效期"
+        - columnheader "操作"
+    - rowgroup:
+      - row "验收EMP001 QA-SKILL-EDIT · 验收焊接 验收制造部 线下笔试+实操 通过 · 3 级 草稿 2026-09-07 / 长期 在线查看证据":
+        - cell "验收EMP001 QA-SKILL-EDIT · 验收焊接":
+          - strong: 验收EMP001
+          - generic: QA-SKILL-EDIT · 验收焊接
+        - cell "验收制造部"
+        - cell "线下笔试+实操"
+        - cell "通过 · 3 级"
+        - cell "草稿"
+        - cell "2026-09-07 / 长期"
+        - cell "在线查看证据":
+          - button "在线查看证据"

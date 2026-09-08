@@ -1,0 +1,87 @@
+[
+  {
+    "name": "HR手工新增主管角色真实落库",
+    "pass": false,
+    "detail": {
+      "status": 200,
+      "actualRole": "employee"
+    }
+  },
+  {
+    "name": "完整字段导入预览",
+    "pass": true,
+    "detail": {
+      "data": {
+        "previewId": "f805cdd8-4955-4d5c-a10d-7cbeffecc0a5",
+        "totalRows": 1,
+        "validRows": 1,
+        "errors": [],
+        "expiresAt": "2026-09-08T08:46:38.717Z"
+      }
+    }
+  },
+  {
+    "name": "完整字段和主管导入读回",
+    "pass": true,
+    "detail": {
+      "imported": {
+        "id": "66391d23-2320-46d0-a392-644e861842c4",
+        "employeeNumber": "QA-IMPORT",
+        "displayName": "全字段导入验收",
+        "departmentId": "cb718336-2de5-4ed0-aecc-615821a6d54d",
+        "departmentName": "验收制造部",
+        "positionId": "3b217c46-0820-4bbf-8b02-6b5d885ae53d",
+        "positionName": "验收操作员",
+        "hireDate": "2020-01-02",
+        "phone": "13800000000",
+        "gender": "女",
+        "age": 30,
+        "identityNumber": "110101199601010028",
+        "tenureYears": 6.5,
+        "education": "本科",
+        "role": "department_manager",
+        "active": true
+      }
+    }
+  },
+  {
+    "name": "主管创建发布professional",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "name": "主管撤回",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "name": "撤回再发布保留任务且无重复活动任务",
+    "pass": true,
+    "detail": {
+      "before": 9,
+      "after": 9
+    }
+  },
+  {
+    "name": "主管创建发布general",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "name": "主管创建发布other",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "name": "员工任务数据包含类型部门日期",
+    "pass": true,
+    "detail": {
+      "count": 3
+    }
+  },
+  {
+    "name": "员工禁止创建培训",
+    "pass": true,
+    "detail": {}
+  }
+]

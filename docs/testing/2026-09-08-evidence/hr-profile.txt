@@ -1,0 +1,255 @@
+- complementary:
+  - strong: 技能矩阵
+  - generic: 工厂人才管理
+  - navigation "主导航":
+    - paragraph: 我的菜单
+    - button "全厂概况":
+      - generic: 全厂概况
+    - button "组织人员":
+      - generic: 组织人员
+    - button "技能标准":
+      - generic: 技能标准
+    - button "培训管理":
+      - generic: 培训管理
+    - button "评定归档":
+      - generic: 评定归档
+    - button "报表导出":
+      - generic: 报表导出
+  - button "退出登录":
+    - generic: 退出登录
+  - generic: 当前组织
+  - strong: 示范制造工厂
+- main:
+  - generic: 搜索员工、岗位或技能
+  - generic: ⌘ K
+  - button "通知":
+  - generic: 验
+  - strong: 验收HR001
+  - generic: HR001 · HR / 培训管理员
+  - paragraph: 组织与人员
+  - heading "工厂人员与岗位" [level=1]
+  - paragraph: 维护稳定业务编码、当前岗位与可追溯任职履历。
+  - link "导出当前数据":
+    - /url: /api/organization/employees/export.xlsx
+  - heading "新增部门" [level=2]
+  - textbox "部门编码"
+  - textbox "部门名称"
+  - button "保存部门"
+  - heading "新增岗位" [level=2]
+  - textbox "岗位编码"
+  - textbox "岗位名称"
+  - combobox:
+    - option "QA · 验收制造部" [selected]
+  - button "保存岗位"
+  - heading "新增员工" [level=2]
+  - text: 账号角色
+  - combobox "账号角色":
+    - option "普通员工" [selected]
+    - option "部门主管"
+  - text: 手机号
+  - textbox "手机号"
+  - text: 入职日期
+  - textbox "入职日期"
+  - text: 性别
+  - textbox "性别"
+  - text: 年龄
+  - spinbutton "年龄"
+  - text: 身份证号
+  - textbox "身份证号"
+  - text: 司龄（年）
+  - spinbutton "司龄（年）"
+  - text: 学历
+  - textbox "学历"
+  - textbox "工号"
+  - textbox "姓名"
+  - textbox "部门编码"
+  - textbox "岗位编码"
+  - button "创建并生成账号"
+  - text: 筛选部门与岗位
+  - textbox "筛选部门与岗位":
+    - /placeholder: 输入编码、名称或所属部门
+  - heading "部门" [level=2]
+  - paragraph: 停用后不影响历史记录
+  - table:
+    - rowgroup:
+      - row "编码 名称 状态 操作":
+        - columnheader "编码"
+        - columnheader "名称"
+        - columnheader "状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "QA 验收制造部 启用 编辑 停用":
+        - cell "QA"
+        - cell "验收制造部"
+        - cell "启用"
+        - cell "编辑 停用":
+          - button "编辑"
+          - button "停用"
+  - heading "岗位" [level=2]
+  - paragraph: 岗位编码作为稳定业务键
+  - table:
+    - rowgroup:
+      - row "编码 / 岗位 部门 状态 操作":
+        - columnheader "编码 / 岗位"
+        - columnheader "部门"
+        - columnheader "状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "QA-OP · 验收操作员 验收制造部 启用 编辑 停用":
+        - cell "QA-OP · 验收操作员"
+        - cell "验收制造部"
+        - cell "启用"
+        - cell "编辑 停用":
+          - button "编辑"
+          - button "停用"
+  - heading "Excel 批量导入" [level=2]
+  - paragraph: 先预检，全部通过后才能事务性写入。
+  - button "Choose File"
+  - button "预检文件" [disabled]
+  - heading "全字段导入验收的岗位履历" [level=2]
+  - paragraph: QA-IMPORT
+  - button "关闭"
+  - term: 姓名
+  - definition: 全字段导入验收
+  - term: 手机号
+  - definition: "13800000000"
+  - term: 性别
+  - definition: 女
+  - term: 年龄
+  - definition: "30"
+  - term: 身份证号
+  - definition: "110101199601010028"
+  - term: 入职日期
+  - definition: 2020-01-02
+  - term: 部门
+  - definition: 验收制造部
+  - term: 职务
+  - definition: 验收操作员
+  - term: 司龄（年）
+  - definition: "6.5"
+  - term: 学历
+  - definition: 本科
+  - table:
+    - rowgroup:
+      - row "部门 / 岗位 开始 结束 变更原因":
+        - columnheader "部门 / 岗位"
+        - columnheader "开始"
+        - columnheader "结束"
+        - columnheader "变更原因"
+    - rowgroup:
+      - row "验收制造部 · 验收操作员 2026-09-08 当前 Excel 初始导入":
+        - cell "验收制造部 · 验收操作员"
+        - cell "2026-09-08"
+        - cell "当前"
+        - cell "Excel 初始导入"
+  - heading "员工列表" [level=2]
+  - paragraph: 9 名员工
+  - textbox "筛选工号、姓名、部门或岗位"
+  - table:
+    - rowgroup:
+      - row "工号 / 姓名 部门 岗位 状态 操作":
+        - columnheader "工号 / 姓名"
+        - columnheader "部门"
+        - columnheader "岗位"
+        - columnheader "状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "0341 验收0341 验收制造部 未分配 在职 履历 编辑 停用":
+        - cell "0341 验收0341":
+          - strong: "0341"
+          - generic: 验收0341
+        - cell "验收制造部"
+        - cell "未分配"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历"
+          - button "编辑"
+          - button "停用"
+      - row "10032 验收10032 验收制造部 未分配 在职 履历 编辑 停用":
+        - cell "10032 验收10032":
+          - strong: "10032"
+          - generic: 验收10032
+        - cell "验收制造部"
+        - cell "未分配"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历"
+          - button "编辑"
+          - button "停用"
+      - row "3761 验收3761 验收制造部 未分配 在职 履历 编辑 停用":
+        - cell "3761 验收3761":
+          - strong: "3761"
+          - generic: 验收3761
+        - cell "验收制造部"
+        - cell "未分配"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历"
+          - button "编辑"
+          - button "停用"
+      - row "4243 验收4243 验收制造部 未分配 在职 履历 编辑 停用":
+        - cell "4243 验收4243":
+          - strong: "4243"
+          - generic: 验收4243
+        - cell "验收制造部"
+        - cell "未分配"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历"
+          - button "编辑"
+          - button "停用"
+      - row "EMP001 验收EMP001 验收制造部 验收操作员 在职 履历 编辑 停用":
+        - cell "EMP001 验收EMP001":
+          - strong: EMP001
+          - generic: 验收EMP001
+        - cell "验收制造部"
+        - cell "验收操作员"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历"
+          - button "编辑"
+          - button "停用"
+      - row "HR001 验收HR001 验收制造部 未分配 在职 履历 编辑 停用":
+        - cell "HR001 验收HR001":
+          - strong: HR001
+          - generic: 验收HR001
+        - cell "验收制造部"
+        - cell "未分配"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历"
+          - button "编辑"
+          - button "停用"
+      - row "MGR001 验收MGR001 验收制造部 未分配 在职 履历 编辑 停用":
+        - cell "MGR001 验收MGR001":
+          - strong: MGR001
+          - generic: 验收MGR001
+        - cell "验收制造部"
+        - cell "未分配"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历"
+          - button "编辑"
+          - button "停用"
+      - row "QA-IMPORT 全字段导入验收 验收制造部 验收操作员 在职 履历 编辑 停用":
+        - cell "QA-IMPORT 全字段导入验收":
+          - strong: QA-IMPORT
+          - generic: 全字段导入验收
+        - cell "验收制造部"
+        - cell "验收操作员"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历" [active]
+          - button "编辑"
+          - button "停用"
+      - row "QA-MANUAL 手工新增主管验收 验收制造部 验收操作员 在职 履历 编辑 停用":
+        - cell "QA-MANUAL 手工新增主管验收":
+          - strong: QA-MANUAL
+          - generic: 手工新增主管验收
+        - cell "验收制造部"
+        - cell "验收操作员"
+        - cell "在职"
+        - cell "履历 编辑 停用":
+          - button "履历"
+          - button "编辑"
+          - button "停用"

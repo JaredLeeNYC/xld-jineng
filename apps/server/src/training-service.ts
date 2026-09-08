@@ -3,6 +3,8 @@ import {
   allowedMaterialMimeTypes,
   maximumMaterialBytes,
   trainingScopeTypes,
+  trainingTypes,
+  type TrainingType,
   type TrainingScopeType,
 } from "@jineng/skill-matrix-shared";
 import { createHash } from "node:crypto";
@@ -43,6 +45,7 @@ const evidenceSignature = (mime: string, bytes: Uint8Array) => {
 };
 
 type PlanInput = {
+  trainingType?: TrainingType;
   title: string;
   materialId: string;
   ownerEmployeeId: string;
@@ -74,7 +77,8 @@ export const createTrainingService = (dependencies: {
       !startAt ||
       !dueAt ||
       dueAt <= startAt ||
-      !trainingScopeTypes.includes(input.scopeType)
+      !trainingScopeTypes.includes(input.scopeType) ||
+      !trainingTypes.includes(input.trainingType ?? "professional")
     )
       return undefined;
     if (
@@ -85,6 +89,7 @@ export const createTrainingService = (dependencies: {
       return undefined;
     return {
       title: input.title.trim(),
+      trainingType: input.trainingType ?? "professional",
       materialId: input.materialId,
       ownerEmployeeId: input.ownerEmployeeId,
       startAt,
@@ -139,6 +144,12 @@ export const createTrainingService = (dependencies: {
         ok: true as const,
         data: { id, taskCount: result.taskCount, status: result.status },
       };
+    },
+    async withdrawPlan(actor: SessionView, id: string) {
+      if (!manager(actor)) return fail("FORBIDDEN", "无权撤回培训计划", 403);
+      return (await repository.withdrawPlan(id, actorScope(actor), now()))
+        ? { ok: true as const, data: { id, status: "draft" as const } }
+        : fail("PLAN_WITHDRAW_REJECTED", "仅无提交、确认或证据记录的已发布计划可撤回修改", 409);
     },
     async cancelPlan(actor: SessionView, id: string) {
       if (!manager(actor)) return fail("FORBIDDEN", "无权取消培训计划", 403);

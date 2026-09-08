@@ -1,0 +1,30 @@
+[
+  {
+    "name": "document.doc",
+    "pass": true,
+    "status": 200,
+    "bytes": 32874,
+    "id": "1efe31b8-872d-4215-bbf7-dbe40716b951"
+  },
+  {
+    "name": "document.docx",
+    "pass": true,
+    "status": 200,
+    "bytes": 32854,
+    "id": "42b6f6b7-c191-4679-94f4-625b61773667"
+  },
+  {
+    "name": "slides.ppt",
+    "pass": true,
+    "status": 200,
+    "bytes": 29095,
+    "id": "1067256b-1fe0-40f3-bd53-73ba26d93b8f"
+  },
+  {
+    "name": "slides.pptx",
+    "pass": true,
+    "status": 200,
+    "bytes": 29115,
+    "id": "bf61adf6-c151-4aad-b535-5bf30eaea7a7"
+  }
+]
