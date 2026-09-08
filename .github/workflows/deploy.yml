@@ -23,4 +23,16 @@ jobs:
           script: |
             set -euo pipefail
             git -C /opt/skill-matrix/repo fetch origin ${{ github.sha }}
-            git -C /opt/skill-matrix/repo show ${{ github.sha }}:deploy/auto-deploy.sh | bash -s -- ${{ github.sha }}
+            EXPECTED_SHA='${{ github.sha }}'
+            DEPLOY_SCRIPT=$(mktemp /tmp/skill-matrix-deploy.XXXXXX)
+            DEPLOY_LOG=''
+            trap 'rm -f -- "$DEPLOY_SCRIPT" "$DEPLOY_LOG"' EXIT
+            DEPLOY_LOG=$(mktemp /tmp/skill-matrix-deploy-log.XXXXXX)
+            git -C /opt/skill-matrix/repo show "$EXPECTED_SHA:deploy/auto-deploy.sh" > "$DEPLOY_SCRIPT"
+            bash "$DEPLOY_SCRIPT" "$EXPECTED_SHA" </dev/null | tee "$DEPLOY_LOG"
+            test "$(cat /opt/skill-matrix/current/.deployed-sha)" = "$EXPECTED_SHA"
+            grep -Fx "==> reviewed accounts verified $EXPECTED_SHA" "$DEPLOY_LOG"
+            for employee_number in 0341 10032 3761 4243; do
+              grep -F "\"employeeNumber\": \"$employee_number\"" "$DEPLOY_LOG"
+            done
+            echo "==> deployment readback verified $EXPECTED_SHA"

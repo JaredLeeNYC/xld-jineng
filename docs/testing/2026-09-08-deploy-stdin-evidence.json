@@ -1,0 +1,14 @@
+[
+  {
+    "name": "old_bash_stdin",
+    "exitCode": 0,
+    "stdout": "backup_started\n",
+    "stderr": ""
+  },
+  {
+    "name": "file_with_devnull",
+    "exitCode": 0,
+    "stdout": "backup_started\ndb_migrate\ncurrent_switched\naccounts_verified\n",
+    "stderr": ""
+  }
+]

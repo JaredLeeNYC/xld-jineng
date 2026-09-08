@@ -86,9 +86,10 @@ done
 if [ "$HEALTH_OK" = "true" ]; then
   echo "==> health check passed"
   echo "==> ready check passed"
-  echo "$FULL_SHA" > "$CURRENT_LINK/.deployed-sha"
   echo "==> applying reviewed manager account changes"
-  "$BUN" packages/db/scripts/promote-reviewed-managers.ts
+  "$BUN" packages/db/scripts/promote-reviewed-managers.ts </dev/null
+  echo "==> reviewed accounts verified $FULL_SHA"
+  echo "$FULL_SHA" > "$CURRENT_LINK/.deployed-sha"
   echo "==> deployed $SHA successfully; reviewed accounts verified"
 else
   echo "==> health check FAILED"
