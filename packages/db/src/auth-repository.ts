@@ -2,6 +2,7 @@ import type { FixedRole } from "@jineng/skill-matrix-shared";
 import type { Pool, PoolClient } from "pg";
 
 type AuthAccount = {
+  factoryRead?: boolean;
   id: string;
   employeeId: string;
   employeeNumber: string;
@@ -55,6 +56,7 @@ const insertSecurityEvent = async (
 };
 
 type AccountRow = {
+  factoryRead: boolean;
   id: string;
   employeeId: string;
   employeeNumber: string;
@@ -69,6 +71,7 @@ type AccountRow = {
 };
 
 const accountFromRow = (row: AccountRow): AuthAccount => ({
+  factoryRead: row.factoryRead,
   id: row.id,
   employeeId: row.employeeId,
   employeeNumber: row.employeeNumber,
@@ -83,6 +86,7 @@ const accountFromRow = (row: AccountRow): AuthAccount => ({
 
 const accountSelection = `
   select
+    a.factory_read as "factoryRead",
     a.id,
     a.employee_id as "employeeId",
     e.employee_number as "employeeNumber",
@@ -319,7 +323,7 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
          e.employee_number as "employeeNumber",
          e.display_name as "displayName",
          e.department_id as "departmentId",
-         a.role,
+         a.role, a.factory_read as "factoryRead",
          a.password_hash as "passwordHash",
          a.must_change_password as "mustChangePassword",
          a.active,
@@ -451,7 +455,7 @@ export const createPostgresAuthRepository = (pool: Pool) => ({
            e.employee_number as "employeeNumber",
            e.display_name as "displayName",
            e.department_id as "departmentId",
-           a.role,
+           a.role, a.factory_read as "factoryRead",
            a.password_hash as "passwordHash",
            a.must_change_password as "mustChangePassword",
            a.active,

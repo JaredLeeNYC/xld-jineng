@@ -1,15 +1,17 @@
-export const trainingTypes = ["professional", "general", "other"] as const;
+export const trainingTypes = ["professional", "general", "safety", "other"] as const;
 
 export type TrainingType = (typeof trainingTypes)[number];
 
 export const trainingTypeLabels: Record<TrainingType, string> = {
-  professional: "专业技能培训",
-  general: "普通培训",
+  professional: "技能培训",
+  general: "内部培训",
+  safety: "安全培训",
   other: "其他培训",
 };
 
 export const trainingPlanStatuses = [
   "draft",
+  "pending_approval",
 
   "published",
 
@@ -24,6 +26,7 @@ export type TrainingPlanStatus = (typeof trainingPlanStatuses)[number];
 
 export const trainingTaskStatuses = [
   "assigned",
+  "in_progress",
 
   "submitted",
 
@@ -55,6 +58,10 @@ export type TrainingPlanView = {
 
   status: TrainingPlanStatus;
 
+  materialIds?: string[];
+  materials?: Array<{ id: string; title: string; skillIds?: string[] }>;
+  ownerEmployeeIds?: string[];
+  ownerNames?: string[];
   materialId: string;
 
   materialTitle: string;
@@ -71,6 +78,10 @@ export type TrainingPlanView = {
 
   scopeType: TrainingScopeType;
 
+  createdByAccountId?: string;
+  approvalComment?: string;
+  scopeDepartmentIds?: string[];
+  scopePositionIds?: string[];
   scopeDepartmentId?: string;
 
   scopePositionId?: string;
@@ -107,6 +118,10 @@ export type TrainingTaskView = {
 
   employeeNumber: string;
 
+  materialIds?: string[];
+  materials?: Array<{ id: string; title: string; skillIds?: string[] }>;
+  ownerEmployeeIds?: string[];
+  ownerNames?: string[];
   materialId: string;
 
   materialTitle: string;
@@ -125,6 +140,8 @@ export type TrainingTaskView = {
 
   overdue: boolean;
 
+  actualStartAt?: string;
+  actualCompletedAt?: string;
   submittedAt?: string;
 
   confirmedAt?: string;

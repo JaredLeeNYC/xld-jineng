@@ -66,6 +66,7 @@ function MaterialPreview({ url, onClose }: { url: string; onClose: () => void })
           "image/png",
           "image/webp",
           "video/mp4",
+          "video/webm",
           "audio/mpeg",
         ].includes(mime);
         if (!disposed)

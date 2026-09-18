@@ -47,8 +47,8 @@ export const permissions = [
 export type Permission = (typeof permissions)[number];
 
 const rolePermissions: Record<FixedRole, readonly Permission[]> = {
-  employee: ["self:read", "training:self-submit"],
-  department_manager: ["self:read", "training:self-submit", "department:read", "department:manage"],
+  employee: ["self:read"],
+  department_manager: ["self:read", "department:read", "department:manage"],
   hr_admin: ["self:read", "factory:read", "factory:manage", "report:export"],
   executive_viewer: ["factory:read", "report:export"],
   system_admin: ["factory:read", "system:manage"],
@@ -70,7 +70,7 @@ const roleNavigation: Record<FixedRole, readonly NavigationItem[]> = {
     { id: "my-workspace", label: "我的工作台", access: "read" },
     { id: "profile", label: "个人资料", access: "read" },
     { id: "my-skills", label: "我的技能", access: "read" },
-    { id: "my-training", label: "我的培训", access: "write" },
+    { id: "my-training", label: "我的培训", access: "read" },
     { id: "my-assessments", label: "我的评定", access: "read" },
     { id: "notifications", label: "消息通知", access: "read" },
   ],
@@ -122,6 +122,7 @@ export * from "./skill";
 export * from "./training-material";
 export * from "./training-plan";
 export * from "./assessment";
+export * from "./training-exam";
 export * from "./report";
 export * from "./mes-v1";
 export * from "./password-policy";

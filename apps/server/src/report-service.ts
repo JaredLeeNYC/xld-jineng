@@ -41,7 +41,7 @@ export const createReportService = (dependencies: {
   const build = async (actor: SessionView, filters: ReportFilters) => {
     if (!["department_manager", "hr_admin", "executive_viewer"].includes(actor.role))
       return fail("FORBIDDEN", "无权查看管理报表", 403);
-    if (actor.role === "department_manager" && !actor.departmentId)
+    if (actor.role === "department_manager" && !actor.factoryRead && !actor.departmentId)
       return fail("FORBIDDEN", "主管账号未关联部门", 403);
     const dateFrom = date(filters.dateFrom);
     const dateTo = date(filters.dateTo);
@@ -50,7 +50,9 @@ export const createReportService = (dependencies: {
     const generatedAt = dependencies.now();
     const scopedFilters = {
       ...filters,
-      ...(actor.role === "department_manager" ? { departmentId: actor.departmentId } : {}),
+      ...(actor.role === "department_manager" && !actor.factoryRead
+        ? { departmentId: actor.departmentId }
+        : {}),
     };
     const facts = await dependencies.repository.loadFacts({
       ...(scopedFilters.departmentId ? { departmentId: scopedFilters.departmentId } : {}),

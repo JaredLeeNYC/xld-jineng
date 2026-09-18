@@ -1,3 +1,4 @@
+import { grantReviewedFactoryRead } from "../src/reviewed-factory-access";
 import { createApp } from "../../../apps/server/src/app";
 import { createAuthService } from "../../../apps/server/src/auth-service";
 import { createOrganizationService } from "../../../apps/server/src/organization-service";
@@ -7,6 +8,7 @@ import { createSkillService } from "../../../apps/server/src/skill-service";
 import { createMaterialService } from "../../../apps/server/src/material-service";
 import { createMemoryMaterialStorage } from "../../../apps/server/src/material-storage";
 import { createTrainingService } from "../../../apps/server/src/training-service";
+import { createTrainingExamService } from "../../../apps/server/src/training-exam-service";
 import { createAssessmentService } from "../../../apps/server/src/assessment-service";
 import { createNotificationService } from "../../../apps/server/src/notification-service";
 import { createReportService } from "../../../apps/server/src/report-service";
@@ -20,6 +22,7 @@ import {
   createPostgresMaterialRepository,
   createPostgresTrainingRepository,
   createPostgresAssessmentRepository,
+  createPostgresTrainingExamRepository,
   createPostgresNotificationRepository,
   createPostgresReportRepository,
   createPostgresAuditRepository,
@@ -265,6 +268,10 @@ try {
     skillService,
     materialService,
     trainingService,
+    trainingExamService: createTrainingExamService({
+      repository: createPostgresTrainingExamRepository(contractPool),
+      now: () => new Date(),
+    }),
     assessmentService,
     notificationService,
     reportService,
@@ -323,6 +330,45 @@ try {
     roleLogins.set(role, result);
   }
 
+  const independentHrEmployee = await contractPool.query<{ id: string }>(
+    "insert into employees(employee_number,display_name,department_id) values ('HRQA','独立审批HR',$1) returning id",
+    [department.rows[0]!.id],
+  );
+  await contractPool.query(
+    "insert into user_accounts(employee_id,password_hash,role,must_change_password) values ($1,$2,'hr_admin',false)",
+    [independentHrEmployee.rows[0]!.id, passwordHash],
+  );
+  const independentHrCookie = (await login("HRQA")).cookie!;
+  const approveTraining = async (id: string) => {
+    const submitted = await app.handle(
+      new Request(`http://localhost/api/training-plans/${id}/submit`, {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      }),
+    );
+    if (submitted.status !== 200)
+      throw new Error(`培训计划提交审批失败 ${submitted.status}: ${await submitted.text()}`);
+    const selfApproved = await app.handle(
+      new Request(`http://localhost/api/training-plans/${id}/approve`, {
+        method: "POST",
+        headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      }),
+    );
+    if (selfApproved.status !== 409) throw new Error("培训计划允许自审批");
+    return app.handle(
+      new Request(`http://localhost/api/training-plans/${id}/approve`, {
+        method: "POST",
+        headers: { cookie: independentHrCookie },
+      }),
+    );
+  };
+  const executeTraining = (id: string, action: "start" | "complete", cookie: string) =>
+    app.handle(
+      new Request(`http://localhost/api/training-tasks/${id}/${action}`, {
+        method: "POST",
+        headers: { cookie },
+      }),
+    );
   const employeeLogin = roleLogins.get("employee")!;
   const changeResponse = await app.handle(
     new Request("http://localhost/api/auth/change-password", {
@@ -1275,8 +1321,8 @@ try {
       }),
     }),
   );
-  if (unrelatedMaterialResponse.status !== 200 || managerCrossScopePlan.status !== 409)
-    throw new Error("部门主管可绕过资料业务范围创建培训计划");
+  if (unrelatedMaterialResponse.status !== 200 || managerCrossScopePlan.status !== 200)
+    throw new Error("通用培训资料不应要求关联本部门岗位技能才能创建计划");
   const employeeCreatePlan = await app.handle(
     new Request("http://localhost/api/training-plans", {
       method: "POST",
@@ -1307,12 +1353,7 @@ try {
       body: JSON.stringify({ ...planPayload, location: "二号会议室" }),
     }),
   );
-  const publishPlanResponse = await app.handle(
-    new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}/publish`, {
-      method: "POST",
-      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
-    }),
-  );
+  const publishPlanResponse = await approveTraining(createPlanBody.data.id);
   const republishResponse = await app.handle(
     new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}/publish`, {
       method: "POST",
@@ -1350,12 +1391,7 @@ try {
       body: JSON.stringify({ ...planPayload, trainingType: "other", location: "撤回修改会议室" }),
     }),
   );
-  const publishedAgain = await app.handle(
-    new Request(`http://localhost/api/training-plans/${createPlanBody.data.id}/publish`, {
-      method: "POST",
-      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
-    }),
-  );
+  const publishedAgain = await approveTraining(createPlanBody.data.id);
   const reusedTasks = await contractPool.query(
     "select id,status from training_tasks where plan_id=$1",
     [createPlanBody.data.id],
@@ -1410,26 +1446,24 @@ try {
       }),
     );
   const firstSubmit = await submit();
-  if ((await withdrawRequest()).status !== 409) throw new Error("已有提交的培训被错误撤回");
-  const returnResponse = await app.handle(
-    new Request(`http://localhost/api/training-tasks/${task.rows[0]!.id}/return`, {
-      method: "POST",
-      headers: {
-        cookie: successfulConcurrentCookie,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ reason: "请重新阅读安全章节" }),
-    }),
+  const unauthorizedStart = await executeTraining(task.rows[0]!.id, "start", importedCookie!);
+  const prematureComplete = await executeTraining(
+    task.rows[0]!.id,
+    "complete",
+    successfulConcurrentCookie,
   );
-  const secondSubmit = await submit();
-  const trainingConfirmResponse = await app.handle(
-    new Request(`http://localhost/api/training-tasks/${task.rows[0]!.id}/confirm`, {
-      method: "POST",
-      headers: { cookie: successfulConcurrentCookie },
-    }),
-  );
+  const startedTask = await executeTraining(task.rows[0]!.id, "start", successfulConcurrentCookie);
+  if ((await withdrawRequest()).status !== 409) throw new Error("已经开始的培训被错误撤回");
+  const completeResponses = await Promise.all([
+    executeTraining(task.rows[0]!.id, "complete", successfulConcurrentCookie),
+    executeTraining(task.rows[0]!.id, "complete", successfulConcurrentCookie),
+  ]);
   const trainingRecord = await contractPool.query(
     "select 1 from training_records where task_id=$1",
+    [task.rows[0]!.id],
+  );
+  const actualTimes = await contractPool.query(
+    "select actual_start_at,actual_completed_at from training_tasks where id=$1",
     [task.rows[0]!.id],
   );
   const cancelConfirmed = await app.handle(
@@ -1439,16 +1473,20 @@ try {
     }),
   );
   if (
-    firstSubmit.status !== 200 ||
-    returnResponse.status !== 200 ||
-    secondSubmit.status !== 200 ||
-    trainingConfirmResponse.status !== 200 ||
+    firstSubmit.status !== 403 ||
+    unauthorizedStart.status !== 403 ||
+    prematureComplete.status !== 409 ||
+    startedTask.status !== 200 ||
+    completeResponses
+      .map((r) => r.status)
+      .sort((a, b) => a - b)
+      .join(",") !== "200,409" ||
     trainingRecord.rowCount !== 1 ||
+    !actualTimes.rows[0]?.actual_start_at ||
+    !actualTimes.rows[0]?.actual_completed_at ||
     cancelConfirmed.status !== 409
   )
-    throw new Error(
-      `员工提交、退回重提、双确认或正式履历规则失败：${firstSubmit.status}/${returnResponse.status}/${secondSubmit.status}/${trainingConfirmResponse.status}/records=${trainingRecord.rowCount}/cancel=${cancelConfirmed.status}`,
-    );
+    throw new Error("员工只读、负责人开始完成、实际时间或并发履历保护失败");
   let confirmedTaskMutationRejected = false;
   try {
     await contractPool.query("update training_tasks set status='returned' where id=$1", [
@@ -1472,12 +1510,8 @@ try {
     }),
   );
   const batchPlanBody = (await batchPlanResponse.json()) as { data?: { id: string } };
-  await app.handle(
-    new Request(`http://localhost/api/training-plans/${batchPlanBody.data!.id}/publish`, {
-      method: "POST",
-      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
-    }),
-  );
+  if ((await approveTraining(batchPlanBody.data!.id)).status !== 200)
+    throw new Error("培训审批发布失败");
   const batchTasks = await contractPool.query<{ id: string; employeeId: string }>(
     'select id,employee_id as "employeeId" from training_tasks where plan_id=$1 order by id',
     [batchPlanBody.data!.id],
@@ -1497,8 +1531,12 @@ try {
       headers: { cookie: successfulConcurrentCookie },
     }),
   );
-  if (managerSelfSubmit.status !== 200 || managerSelfConfirm.status !== 403)
+  if (managerSelfSubmit.status !== 403 || managerSelfConfirm.status !== 403)
     throw new Error("主管不能提交本人任务或可自行完成双确认");
+  for (const batchTask of batchTasks.rows) {
+    if ((await executeTraining(batchTask.id, "start", successfulConcurrentCookie)).status !== 200)
+      throw new Error("负责人开始集中培训失败");
+  }
   const attendance = new FormData();
   attendance.set("taskIds", JSON.stringify(batchTasks.rows.map((row) => row.id)));
   attendance.set(
@@ -1510,7 +1548,7 @@ try {
   const batchConfirmResponse = await app.handle(
     new Request(`http://localhost/api/training-plans/${batchPlanBody.data!.id}/batch-confirm`, {
       method: "POST",
-      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+      headers: { cookie: successfulConcurrentCookie },
       body: attendance,
     }),
   );
@@ -1559,12 +1597,8 @@ try {
     }),
   );
   const futurePlanBody = (await futurePlanResponse.json()) as { data?: { id: string } };
-  await app.handle(
-    new Request(`http://localhost/api/training-plans/${futurePlanBody.data!.id}/publish`, {
-      method: "POST",
-      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
-    }),
-  );
+  if ((await approveTraining(futurePlanBody.data!.id)).status !== 200)
+    throw new Error("培训审批发布失败");
   const futureTasks = await contractPool.query<{ id: string }>(
     "select id from training_tasks where plan_id=$1",
     [futurePlanBody.data!.id],
@@ -1609,12 +1643,8 @@ try {
     }),
   );
   const overduePlanBody = (await overduePlanResponse.json()) as { data?: { id: string } };
-  await app.handle(
-    new Request(`http://localhost/api/training-plans/${overduePlanBody.data!.id}/publish`, {
-      method: "POST",
-      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
-    }),
-  );
+  if ((await approveTraining(overduePlanBody.data!.id)).status !== 200)
+    throw new Error("培训审批发布失败");
   const overdueTasksResponse = await app.handle(
     new Request("http://localhost/api/training-tasks", {
       headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
@@ -1784,6 +1814,7 @@ try {
     reason?: string;
     replacesAssessmentId?: string;
     cookie?: string;
+    withoutEvidence?: boolean;
   }) => {
     const data = new FormData();
     data.set("employeeId", assignment.employeeId);
@@ -1794,12 +1825,13 @@ try {
     data.set("assessedAt", new Date(Date.now() - 60_000).toISOString());
     if (input.reason) data.set("reason", input.reason);
     if (input.replacesAssessmentId) data.set("replacesAssessmentId", input.replacesAssessmentId);
-    data.set(
-      "file",
-      new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 1])], "实操评定.pdf", {
-        type: "application/pdf",
-      }),
-    );
+    if (!input.withoutEvidence)
+      data.set(
+        "file",
+        new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 1])], "实操评定.pdf", {
+          type: "application/pdf",
+        }),
+      );
     const response = await app.handle(
       new Request("http://localhost/api/assessments", {
         method: "POST",
@@ -1807,8 +1839,9 @@ try {
         body: data,
       }),
     );
-    const body = (await response.json()) as { data?: { id: string } };
-    if (response.status !== 200 || !body.data) throw new Error("技能评定草稿创建失败");
+    const body = (await response.json()) as { data?: { id: string; status: string } };
+    if (response.status !== 200 || !body.data || body.data.status !== "pending_hr")
+      throw new Error(`技能评定应保存为待HR归档 ${response.status} ${JSON.stringify(body)}`);
     return body.data.id;
   };
   const transitionAssessment = (id: string, action: string, cookie: string, body?: unknown) =>
@@ -1845,10 +1878,17 @@ try {
     "submit",
     evaluatorCookie,
   );
-  const assessmentReturn = await transitionAssessment(
+  const unauthorizedManagerReturn = await transitionAssessment(
     passedAssessmentId,
     "return",
     successfulConcurrentCookie,
+    { reason: "无权退回待HR归档记录" },
+  );
+  if (unauthorizedManagerReturn.status !== 409) throw new Error("主管可退回待HR归档记录");
+  const assessmentReturn = await transitionAssessment(
+    passedAssessmentId,
+    "return",
+    roleLogins.get("hr_admin")!.cookie!,
     { reason: "补充整改建议" },
   );
   const assessmentRevise = await app.handle(
@@ -1951,20 +1991,20 @@ try {
     [assignment.employeeId, createdSkills.get("S001")!],
   );
   if (
-    assessmentSubmit.status !== 200 ||
+    assessmentSubmit.status !== 409 ||
     assessmentReturn.status !== 200 ||
     assessmentRevise.status !== 200 ||
-    assessmentResubmit.status !== 200 ||
+    assessmentResubmit.status !== 409 ||
     crossDepartmentConfirm.status !== 403 ||
-    assessmentManagerConfirm.status !== 200 ||
+    assessmentManagerConfirm.status !== 409 ||
     assessmentHrReturn.status !== 200 ||
     assessmentSecondRevise.status !== 200 ||
-    assessmentSecondResubmit.status !== 200 ||
-    assessmentSecondManagerConfirm.status !== 200 ||
-    assessmentReminderVersions.rows[0]?.pendingManager !== 3 ||
-    assessmentReminderVersions.rows[0]?.pendingHr !== 2 ||
-    evaluatorArchiveAfterIndependentReview.status !== 200 ||
-    duplicateAssessmentArchive.status !== 409 ||
+    assessmentSecondResubmit.status !== 409 ||
+    assessmentSecondManagerConfirm.status !== 409 ||
+    assessmentReminderVersions.rows[0]?.pendingManager !== 0 ||
+    assessmentReminderVersions.rows[0]?.pendingHr !== 3 ||
+    evaluatorArchiveAfterIndependentReview.status !== 409 ||
+    duplicateAssessmentArchive.status !== 200 ||
     currentPassedAssessment.rows[0]?.assessmentId !== passedAssessmentId ||
     currentPassedAssessment.rows[0]?.level !== 3 ||
     !currentPassedAssessment.rows[0]?.validUntil
@@ -1976,6 +2016,7 @@ try {
     level: 1,
     passed: false,
     reason: "实操不合格",
+    withoutEvidence: true,
   });
   await transitionAssessment(failedAssessmentId, "submit", evaluatorCookie);
   await transitionAssessment(failedAssessmentId, "manager-confirm", successfulConcurrentCookie);
@@ -2093,7 +2134,7 @@ try {
     roleLogins.get("hr_admin")!.cookie!,
   );
   if (
-    managerAssessmentSubmit.status !== 200 ||
+    managerAssessmentSubmit.status !== 409 ||
     managerAuthoredState.rows[0]?.status !== "pending_hr" ||
     managerAssessmentSelfConfirm.status !== 403 ||
     managerAuthoredArchive.status !== 200
@@ -2292,10 +2333,10 @@ try {
     data?: Array<{ type: string }>;
   };
   const trainingPendingOutbox = await contractPool.query(
-    "select 1 from notification_outbox where event_type='training_pending_confirmation' limit 1",
+    "select 1 from notification_outbox where event_type='training_published' limit 1",
   );
   if (
-    pendingAssessment.rows[0]?.status !== "pending_manager" ||
+    pendingAssessment.rows[0]?.status !== "pending_hr" ||
     firstOutboxCount.rows[0]?.count !== secondOutboxCount.rows[0]?.count ||
     !employeeNotificationsBody.data?.some((item) => item.type === "assessment_archived") ||
     !trainingPendingOutbox.rowCount ||
@@ -2305,7 +2346,7 @@ try {
   const maximumReasonReturn = await transitionAssessment(
     notificationAssessmentId,
     "return",
-    successfulConcurrentCookie,
+    roleLogins.get("hr_admin")!.cookie!,
     { reason: "退".repeat(500) },
   );
   if (maximumReasonReturn.status !== 200) throw new Error("合法的 500 字退回原因被通知写入回滚");
@@ -2407,7 +2448,7 @@ try {
   for (const expectedAction of [
     "employee.assignment_changed",
     "training_plan.published",
-    "training_task.confirmed",
+    "training_task.completed",
     "skill_assessment.archived",
     "skill_assessment.voided",
     "reports.exported",
@@ -2470,6 +2511,364 @@ try {
     persistedManager.rows[0].education !== "本科"
   )
     throw new Error("HR经HTTP创建主管时角色或完整资料未持久化");
+
+  // September 2026 requirements: run through HTTP contracts and durable rows.
+  const qaRequest = (
+    path: string,
+    method = "GET",
+    body?: unknown,
+    cookie = roleLogins.get("hr_admin")!.cookie!,
+  ) =>
+    app.handle(
+      new Request(`http://localhost${path}`, {
+        method,
+        headers: { cookie, ...(body ? { "content-type": "application/json" } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+    );
+  const departmentEdit = await qaRequest(
+    `/api/organization/departments/${otherDepartment.rows[0]!.id}`,
+    "PATCH",
+    { name: "其他部门改名", code: "D002NEW" },
+  );
+  const departmentConflict = await qaRequest(
+    `/api/organization/departments/${otherDepartment.rows[0]!.id}`,
+    "PATCH",
+    { name: "编码冲突", code: "D001" },
+  );
+  const editablePosition = await contractPool.query<{ id: string }>(
+    "insert into positions(code,name,department_id) values ('QA-POS','可调整岗位',$1) returning id",
+    [department.rows[0]!.id],
+  );
+  await contractPool.query(
+    "insert into position_skill_requirements(position_id,skill_id,required_level,required) select $1,skill_id,required_level,required from position_skill_requirements where position_id=$2",
+    [editablePosition.rows[0]!.id, copyPosition.rows[0]!.id],
+  );
+  const positionEdit = await qaRequest(
+    `/api/organization/positions/${editablePosition.rows[0]!.id}`,
+    "PATCH",
+    { name: "改码岗位", code: "P003NEW", departmentId: otherDepartment.rows[0]!.id },
+  );
+  const positionConflict = await qaRequest(
+    `/api/organization/positions/${editablePosition.rows[0]!.id}`,
+    "PATCH",
+    { name: "冲突岗位", code: "P001", departmentId: otherDepartment.rows[0]!.id },
+  );
+  const moved = await contractPool.query("select code,department_id from positions where id=$1", [
+    editablePosition.rows[0]!.id,
+  ]);
+  if (
+    departmentEdit.status !== 200 ||
+    departmentConflict.status !== 409 ||
+    positionEdit.status !== 200 ||
+    positionConflict.status !== 409 ||
+    moved.rows[0]?.code !== "P003NEW" ||
+    moved.rows[0]?.department_id !== otherDepartment.rows[0]!.id
+  )
+    throw new Error(
+      `部门/岗位编码编辑冲突或所属部门变更合同失败 department=${departmentEdit.status}/${await departmentEdit.text()} conflict=${departmentConflict.status}/${await departmentConflict.text()} position=${positionEdit.status}/${await positionEdit.text()} conflict=${positionConflict.status}/${await positionConflict.text()} moved=${JSON.stringify(moved.rows)}`,
+    );
+  const requirement = await contractPool.query<{ id: string }>(
+    "select id from position_skill_requirements where position_id=$1 and skill_id=$2",
+    [assignment.positionId, createdSkills.get("S004")!],
+  );
+  const deniedDeleteRequirement = await qaRequest(
+    `/api/position-skill-requirements/${requirement.rows[0]!.id}`,
+    "DELETE",
+    undefined,
+    successfulConcurrentCookie,
+  );
+  const beforeDelete = await (
+    await qaRequest(`/api/skill-matrix?employeeId=${assignment.employeeId}`)
+  ).json();
+  const deletedRequirement = await qaRequest(
+    `/api/position-skill-requirements/${requirement.rows[0]!.id}`,
+    "DELETE",
+  );
+  const afterDelete = await (
+    await qaRequest(`/api/skill-matrix?employeeId=${assignment.employeeId}`)
+  ).json();
+  const retainedRequirement = await contractPool.query(
+    "select active from position_skill_requirements where id=$1",
+    [requirement.rows[0]!.id],
+  );
+  if (
+    deniedDeleteRequirement.status !== 403 ||
+    deletedRequirement.status !== 200 ||
+    !beforeDelete.data.some((r: { skillId: string }) => r.skillId === createdSkills.get("S004")) ||
+    afterDelete.data.some((r: { skillId: string }) => r.skillId === createdSkills.get("S004")) ||
+    retainedRequirement.rows[0]?.active !== false
+  )
+    throw new Error("岗位要求逻辑删除/权限/矩阵排除失败");
+  const filteredRequirements = await (
+    await qaRequest(`/api/position-skill-requirements?departmentId=${otherDepartment.rows[0]!.id}`)
+  ).json();
+  if (
+    !filteredRequirements.data.length ||
+    filteredRequirements.data.some(
+      (r: { departmentId: string }) => r.departmentId !== otherDepartment.rows[0]!.id,
+    )
+  )
+    throw new Error("岗位要求按部门筛选失败");
+  await contractPool.query("update user_accounts set factory_read=true where id=$1", [
+    accountIds.get("department_manager")!,
+  ]);
+  const readableDepartments = await (
+    await qaRequest("/api/organization/departments", "GET", undefined, successfulConcurrentCookie)
+  ).json();
+  const readableCrossProfile = await qaRequest(
+    `/api/employees/${otherEmployee.rows[0]!.id}/profile`,
+    "GET",
+    undefined,
+    successfulConcurrentCookie,
+  );
+  const deniedOrganizationWrite = await qaRequest(
+    `/api/organization/departments/${otherDepartment.rows[0]!.id}`,
+    "PATCH",
+    { name: "跨部门写入", code: "DENIED" },
+    successfulConcurrentCookie,
+  );
+  const deniedScopeWrite = await qaRequest(
+    "/api/training-plans",
+    "POST",
+    { ...planPayload, scopeEmployeeIds: [otherEmployee.rows[0]!.id] },
+    successfulConcurrentCookie,
+  );
+  if (
+    !readableDepartments.data.some((d: { id: string }) => d.id === otherDepartment.rows[0]!.id) ||
+    readableCrossProfile.status !== 200 ||
+    deniedOrganizationWrite.status !== 403 ||
+    deniedScopeWrite.status !== 409
+  )
+    throw new Error("全厂只读授权错误扩大写入范围或未扩大读取范围");
+  const extraMaterial = await (
+    await qaRequest("/api/training-materials/link", "POST", {
+      title: "多选验收资料",
+      trainingType: "safety",
+      trainingName: "安全宣导",
+      category: "安全",
+      externalUrl: "https://example.com/safety",
+      skillIds: [unrelatedSkill.rows[0]!.id],
+    })
+  ).json();
+  const multiPayload = {
+    ...planPayload,
+    trainingType: "safety",
+    materialIds: [materialUploadBody.data.id, extraMaterial.data.id],
+    ownerEmployeeIds: [employeeIds.get("department_manager")!, independentHrEmployee.rows[0]!.id],
+    scopeType: "department",
+    scopeDepartmentIds: [department.rows[0]!.id, otherDepartment.rows[0]!.id],
+    scopeEmployeeIds: [],
+  };
+  // Original material has been deactivated to exercise history above: reactivate only this isolated fixture.
+  await contractPool.query("update training_materials set active=true where id=$1", [
+    materialUploadBody.data.id,
+  ]);
+  const multiResponse = await qaRequest("/api/training-plans", "POST", multiPayload);
+  const multiBody = await multiResponse.json();
+  if (multiResponse.status !== 200)
+    throw new Error(`多选HTTP创建失败 ${JSON.stringify(multiBody)}`);
+  const bypassResponse = await qaRequest(
+    `/api/training-plans/${multiBody.data.id}/publish`,
+    "POST",
+  );
+  const multiApproved = await approveTraining(multiBody.data.id);
+  const multiStored = await contractPool.query(
+    "select material_ids,owner_employee_ids,scope_department_ids from training_plans where id=$1",
+    [multiBody.data.id],
+  );
+  const multiTargets = await contractPool.query(
+    "select employee_id from training_tasks where plan_id=$1",
+    [multiBody.data.id],
+  );
+  const multiGrants = await contractPool.query(
+    "select distinct material_id from training_material_access_grants where employee_id=$1 and source_reference in (select id::text from training_tasks where plan_id=$2)",
+    [otherEmployee.rows[0]!.id, multiBody.data.id],
+  );
+  if (
+    bypassResponse.status !== 409 ||
+    multiApproved.status !== 200 ||
+    multiStored.rows[0]?.material_ids.length !== 2 ||
+    multiStored.rows[0]?.owner_employee_ids.length !== 2 ||
+    multiStored.rows[0]?.scope_department_ids.length !== 2 ||
+    !multiTargets.rows.some((r) => r.employee_id === otherEmployee.rows[0]!.id) ||
+    multiGrants.rowCount !== 2
+  )
+    throw new Error("多资料/负责人/部门持久化、审批或访问授权失败");
+  // Migrated in_progress plans with no actual execution remain withdrawable.
+  await contractPool.query("update training_plans set status='in_progress' where id=$1", [
+    multiBody.data.id,
+  ]);
+  const withdrawUnstartedLegacy = await qaRequest(
+    `/api/training-plans/${multiBody.data.id}/withdraw`,
+    "POST",
+  );
+  if (
+    withdrawUnstartedLegacy.status !== 200 ||
+    (await approveTraining(multiBody.data.id)).status !== 200
+  )
+    throw new Error("历史进行中未实际开始计划不能撤回修改重审");
+  const legacyTask = await contractPool.query<{ id: string }>(
+    "select id from training_tasks where plan_id=$1 and employee_id=$2",
+    [multiBody.data.id, importedEmployee.rows[0]!.id],
+  );
+  await contractPool.query(
+    "update training_tasks set status='returned',returned_at=now(),return_reason='历史退回' where id=$1",
+    [legacyTask.rows[0]!.id],
+  );
+  if (
+    (await executeTraining(legacyTask.rows[0]!.id, "start", successfulConcurrentCookie)).status !==
+      200 ||
+    (await executeTraining(legacyTask.rows[0]!.id, "complete", successfulConcurrentCookie))
+      .status !== 200
+  )
+    throw new Error("历史returned任务无法由负责人恢复执行");
+  const legacyCompleted = await contractPool.query(
+    "select return_reason,actual_start_at,actual_completed_at from training_tasks where id=$1",
+    [legacyTask.rows[0]!.id],
+  );
+  if (
+    legacyCompleted.rows[0]?.return_reason !== "历史退回" ||
+    !legacyCompleted.rows[0]?.actual_start_at ||
+    !legacyCompleted.rows[0]?.actual_completed_at
+  )
+    throw new Error("恢复培训未保留历史退回或实际时间");
+
+  const secondMaterialReport = await qaRequest(
+    `/api/reports/dashboard?employeeId=${importedEmployee.rows[0]!.id}&skillId=${unrelatedSkill.rows[0]!.id}`,
+  );
+  const secondMaterialReportBody = await secondMaterialReport.json();
+  if (
+    secondMaterialReport.status !== 200 ||
+    secondMaterialReportBody.data.metrics.trainingCompletion.numerator !== 1 ||
+    secondMaterialReportBody.data.metrics.trainingCompletion.denominator !== 1
+  )
+    throw new Error("报表按第二份培训资料关联技能筛选漏计完成记录");
+
+  const examResponse = await qaRequest("/api/training-exams", "POST", {
+    planId: createPlanBody.data.id,
+    employeeId: importedEmployee.rows[0]!.id,
+    skillId: materialSkill.rows[0]!.id,
+    method: "written_practical",
+    score: 88.5,
+    passed: true,
+    completedAt: new Date().toISOString(),
+    remarks: "验收考核",
+  });
+  const examBody = await examResponse.json();
+  const ownExams = await (
+    await qaRequest("/api/training-exams", "GET", undefined, importedCookie!)
+  ).json();
+  await contractPool.query(
+    "insert into user_accounts(employee_id,password_hash,role,must_change_password) values ($1,$2,'employee',false)",
+    [otherEmployee.rows[0]!.id, passwordHash],
+  );
+  const isolatedEmployeeCookie = (await login("E0099")).cookie!;
+  const otherExams = await (
+    await qaRequest("/api/training-exams", "GET", undefined, isolatedEmployeeCookie)
+  ).json();
+  if (
+    examResponse.status !== 200 ||
+    !ownExams.data.some((e: { id: string }) => e.id === examBody.data.id) ||
+    otherExams.data.some((e: { id: string }) => e.id === examBody.data.id)
+  )
+    throw new Error(`考核档案录入或个人隔离失败 ${JSON.stringify(examBody)}`);
+
+  const emptyDepartment = await contractPool.query<{ id: string }>(
+    "insert into departments(code,name) values ('QA-EMPTY','逻辑删除验收') returning id",
+  );
+  const emptyPosition = await contractPool.query<{ id: string }>(
+    "insert into positions(code,name,department_id) values ('QA-EMPTY-P','逻辑删除岗位',$1) returning id",
+    [emptyDepartment.rows[0]!.id],
+  );
+  const removedPosition = await qaRequest(
+    `/api/organization/positions/${emptyPosition.rows[0]!.id}/deactivate`,
+    "POST",
+  );
+  const removedDepartment = await qaRequest(
+    `/api/organization/departments/${emptyDepartment.rows[0]!.id}/deactivate`,
+    "POST",
+  );
+  const softDeleted = await contractPool.query(
+    "select active from positions where id=$1 union all select active from departments where id=$2",
+    [emptyPosition.rows[0]!.id, emptyDepartment.rows[0]!.id],
+  );
+  if (
+    removedPosition.status !== 200 ||
+    removedDepartment.status !== 200 ||
+    softDeleted.rowCount !== 2 ||
+    softDeleted.rows.some((r) => r.active)
+  )
+    throw new Error("基础数据停用应保留行，不可物理删除");
+
+  const positionsPlanResponse = await qaRequest("/api/training-plans", "POST", {
+    ...multiPayload,
+    scopeType: "position",
+    scopeDepartmentIds: [],
+    scopePositionIds: [assignment.positionId, editablePosition.rows[0]!.id],
+  });
+  const positionsPlanBody = await positionsPlanResponse.json();
+  const employeeOwnerDenied = await qaRequest("/api/training-plans", "POST", {
+    ...planPayload,
+    ownerEmployeeIds: [importedEmployee.rows[0]!.id],
+  });
+  if (
+    positionsPlanResponse.status !== 200 ||
+    employeeOwnerDenied.status !== 409 ||
+    (await approveTraining(positionsPlanBody.data.id)).status !== 200
+  )
+    throw new Error("岗位多选发布或普通员工负责人限制失败");
+  const positionsStored = await contractPool.query(
+    "select scope_position_ids from training_plans where id=$1",
+    [positionsPlanBody.data.id],
+  );
+  if (positionsStored.rows[0]?.scope_position_ids.length !== 2)
+    throw new Error("岗位多选未完整持久化");
+
+  let missingFactoryGrantRejected = false;
+  try {
+    await grantReviewedFactoryRead(contractPool);
+  } catch {
+    missingFactoryGrantRejected = true;
+  }
+  await contractPool.query("update employees set display_name='邓华明' where id=any($1::uuid[])", [
+    [employeeIds.get("department_manager")!, independentHrEmployee.rows[0]!.id],
+  ]);
+  let duplicateFactoryGrantRejected = false;
+  try {
+    await grantReviewedFactoryRead(contractPool);
+  } catch {
+    duplicateFactoryGrantRejected = true;
+  }
+  await contractPool.query("update employees set display_name='独立审批HR' where id=$1", [
+    independentHrEmployee.rows[0]!.id,
+  ]);
+  await contractPool.query("update user_accounts set factory_read=false where id=$1", [
+    accountIds.get("department_manager")!,
+  ]);
+  const reviewedGrant = await grantReviewedFactoryRead(contractPool);
+  const repeatedGrant = await grantReviewedFactoryRead(contractPool);
+  const grantedAccount = await contractPool.query(
+    "select role,factory_read from user_accounts where id=$1",
+    [accountIds.get("department_manager")!],
+  );
+  const grantAudit = await contractPool.query(
+    "select 1 from audit_logs where action='account.factory_read_granted' and object_id=$1",
+    [accountIds.get("department_manager")!],
+  );
+  if (
+    !missingFactoryGrantRejected ||
+    !duplicateFactoryGrantRejected ||
+    reviewedGrant.status !== "granted" ||
+    repeatedGrant.status !== "already_granted" ||
+    grantedAccount.rows[0]?.role !== "department_manager" ||
+    grantedAccount.rows[0]?.factory_read !== true ||
+    grantAudit.rowCount !== 1
+  )
+    throw new Error("邓华明唯一账号授权、缺失/重名拒绝、幂等或角色保持失败");
+  await contractPool.query("update employees set display_name='部门主管' where id=$1", [
+    employeeIds.get("department_manager")!,
+  ]);
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",

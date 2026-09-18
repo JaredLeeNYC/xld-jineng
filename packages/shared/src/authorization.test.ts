@@ -15,6 +15,7 @@ describe("fixed role authorization", () => {
   test("keeps employee access personal and executive access read-only", () => {
     expect(hasPermission("employee", "self:read")).toBeTrue();
     expect(hasPermission("employee", "department:read")).toBeFalse();
+    expect(hasPermission("employee", "training:self-submit")).toBeFalse();
     expect(hasPermission("executive_viewer", "factory:read")).toBeTrue();
     expect(hasPermission("executive_viewer", "factory:manage")).toBeFalse();
     expect(hasPermission("executive_viewer", "system:manage")).toBeFalse();

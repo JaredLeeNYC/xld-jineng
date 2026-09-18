@@ -156,12 +156,20 @@ export const createSkillService = (dependencies: {
     },
 
     async listRequirements(actor: SessionView, positionId?: string, departmentId?: string) {
-      const denied = hrOnly(actor);
-      if (denied) return denied;
+      if (actor.role !== "hr_admin" && actor.role !== "executive_viewer" && !actor.factoryRead)
+        return fail("FORBIDDEN", "无权查看岗位技能要求", 403);
       return {
         ok: true as const,
         data: await repository.listRequirements(positionId, departmentId),
       };
+    },
+
+    async deactivateRequirement(actor: SessionView, id: string) {
+      const denied = hrOnly(actor);
+      if (denied) return denied;
+      return (await repository.deactivateRequirement({ id, actorAccountId: actor.accountId }))
+        ? { ok: true as const, data: { id, active: false } }
+        : fail("REQUIREMENT_NOT_FOUND", "岗位要求不存在或已删除", 404);
     },
 
     async saveRequirement(
@@ -363,13 +371,15 @@ export const createSkillService = (dependencies: {
       } = {},
     ) {
       if (actor.role === "system_admin") return fail("FORBIDDEN", "无权查看业务技能矩阵", 403);
-      if (actor.role === "department_manager" && !actor.departmentId)
+      if (actor.role === "department_manager" && !actor.factoryRead && !actor.departmentId)
         return fail("FORBIDDEN", "主管账号未关联部门", 403);
       return {
         ok: true as const,
         data: await repository.listMatrix({
           ...filters,
-          ...(actor.role === "department_manager" ? { departmentId: actor.departmentId } : {}),
+          ...(actor.role === "department_manager" && !actor.factoryRead
+            ? { departmentId: actor.departmentId }
+            : {}),
           ...(actor.role === "employee" ? { employeeId: actor.employeeId } : {}),
           now: now(),
         }),

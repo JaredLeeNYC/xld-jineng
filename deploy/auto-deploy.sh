@@ -88,6 +88,8 @@ if [ "$HEALTH_OK" = "true" ]; then
   echo "==> ready check passed"
   echo "==> applying reviewed manager account changes"
   "$BUN" packages/db/scripts/promote-reviewed-managers.ts </dev/null
+  "$BUN" packages/db/scripts/grant-reviewed-factory-read.ts </dev/null
+  echo "==> factory read permission verified $FULL_SHA"
   echo "==> reviewed accounts verified $FULL_SHA"
   echo "$FULL_SHA" > "$CURRENT_LINK/.deployed-sha"
   echo "==> deployed $SHA successfully; reviewed accounts verified"

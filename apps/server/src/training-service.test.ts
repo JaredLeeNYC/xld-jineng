@@ -35,6 +35,10 @@ const setup = () => {
       return "plan";
     },
     updateDraft: async () => true,
+    submitPlan: async () => true,
+    rejectPlan: async () => true,
+    deletePlan: async () => true,
+    executeTask: async () => true,
     publish: async () => ({ ok: true as const, taskCount: 2, status: "published" as const }),
     cancelPlan: async () => true,
     withdrawPlan: async () => true,
@@ -66,9 +70,9 @@ describe("training service", () => {
     });
   });
 
-  test("accepts the three training types and rejects unknown values", async () => {
+  test("accepts all four training types and rejects unknown values", async () => {
     const { service } = setup();
-    for (const trainingType of ["professional", "general", "other"] as const) {
+    for (const trainingType of ["professional", "general", "safety", "other"] as const) {
       expect(await service.createPlan(actor("hr_admin"), { ...plan, trainingType })).toMatchObject({
         ok: true,
       });
@@ -112,13 +116,13 @@ describe("training service", () => {
     ).toMatchObject({ error: { code: "INVALID_TRAINING_PLAN" } });
   });
 
-  test("keeps submit and manager confirmation as separate transitions", async () => {
+  test("disables employee submission while preserving legacy confirmation", async () => {
     const { service } = setup();
     expect(await service.submitTask(actor("employee"), "task")).toMatchObject({
-      data: { status: "submitted" },
+      error: { code: "EMPLOYEE_SUBMISSION_DISABLED" },
     });
     expect(await service.submitTask(actor("department_manager"), "task")).toMatchObject({
-      data: { status: "submitted" },
+      error: { code: "EMPLOYEE_SUBMISSION_DISABLED" },
     });
     expect(await service.confirmTask(actor("department_manager"), "task")).toMatchObject({
       data: { status: "confirmed" },
@@ -143,5 +147,52 @@ describe("training service", () => {
         bytes: pdf,
       }),
     ).toMatchObject({ ok: true, data: { confirmed: 1 } });
+  });
+});
+
+test("approval cannot be bypassed; draft submission and approval are separate", async () => {
+  const { service } = setup();
+  expect(await service.publishPlan(actor("hr_admin"), "plan")).toMatchObject({
+    error: { code: "APPROVAL_REQUIRED" },
+  });
+  expect(await service.submitPlan(actor("hr_admin"), "plan")).toMatchObject({
+    data: { status: "pending_approval" },
+  });
+  expect(await service.approvePlan(actor("employee"), "plan")).toMatchObject({
+    error: { code: "FORBIDDEN" },
+  });
+  expect(await service.approvePlan(actor("hr_admin"), "plan")).toMatchObject({
+    data: { status: "published" },
+  });
+  expect(await service.rejectPlan(actor("hr_admin"), "plan", " ")).toMatchObject({
+    error: { code: "RETURN_REASON_REQUIRED" },
+  });
+});
+test("multi-selection draft is normalized and empty materials rejected", async () => {
+  const { service } = setup();
+  expect(
+    await service.createPlan(actor("hr_admin"), {
+      ...plan,
+      materialIds: [plan.materialId],
+      ownerEmployeeIds: [plan.ownerEmployeeId],
+      scopeDepartmentIds: [plan.scopeDepartmentId],
+    }),
+  ).toMatchObject({ ok: true });
+  expect(await service.createPlan(actor("hr_admin"), { ...plan, materialIds: [] })).toMatchObject({
+    error: { code: "INVALID_TRAINING_PLAN" },
+  });
+});
+test("task execution rejects unauthorized owner or invalid state returned by repository", async () => {
+  const service = createTrainingService({
+    repository: { executeTask: async () => false } as unknown as TrainingRepository,
+    storage: createMemoryMaterialStorage(),
+    idSource: () => "id",
+    now: () => new Date(),
+  });
+  expect(await service.startTask(actor("employee"), "task")).toMatchObject({
+    error: { code: "FORBIDDEN" },
+  });
+  expect(await service.completeTask(actor("hr_admin"), "task")).toMatchObject({
+    error: { code: "TASK_COMPLETE_REJECTED" },
   });
 });

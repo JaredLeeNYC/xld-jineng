@@ -1,0 +1,9 @@
+.training-exam-page { display: grid; gap: 20px; }
+.exam-entry-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.training-exam-page label { display: grid; gap: 7px; color: #334155; font-size: 14px; }
+.training-exam-page input, .training-exam-page select { width: 100%; min-height: 42px; border: 1px solid #cbd5e1; border-radius: 7px; padding: 9px 12px; background: white; color: #0f172a; }
+.training-exam-page input:focus, .training-exam-page select:focus { outline: 2px solid #93c5fd; outline-offset: 1px; }
+.training-exam-page button { border-radius: 7px; padding: 10px 16px; background: #2563eb; color: white; cursor: pointer; }
+.training-exam-page button:disabled { opacity: .6; cursor: wait; }
+.training-exam-page .master-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; }
+@media(max-width: 760px) { .exam-entry-form { grid-template-columns: 1fr; padding: 14px; } }

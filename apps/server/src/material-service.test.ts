@@ -21,10 +21,24 @@ const setup = (storage: MaterialStorage = createMemoryMaterialStorage()) => {
     list: async () => (record ? [record] : []),
     get: async () => record,
     create: async (input: any) => {
-      record = { ...input, active: true, skills: [], createdAt: new Date().toISOString() };
+      record = {
+        ...input,
+        createdByAccountId: input.actorAccountId,
+        active: true,
+        skills: [],
+        createdAt: new Date().toISOString(),
+      };
       return input.id;
     },
-    update: async () => true,
+    update: async (input: any) => {
+      record = { ...record, ...input };
+      return true;
+    },
+    archive: async () => {
+      record.active = false;
+      record.archivedAt = new Date().toISOString();
+      return true;
+    },
     deactivate: async () => {
       if (!record) return false;
       record.active = false;
@@ -48,6 +62,135 @@ const setup = (storage: MaterialStorage = createMemoryMaterialStorage()) => {
 };
 
 describe("training material service", () => {
+  test("manager creates optional-skill material and edits all business metadata", async () => {
+    const { service, getRecord } = setup();
+    const result = await service.upload(actor("department_manager"), {
+      title: "内部说明",
+      category: "内部培训",
+      trainingType: "general",
+      trainingName: "入职培训",
+      skillIds: [],
+      filename: "说明.pdf",
+      mimeType: "application/pdf",
+      bytes: pdf,
+    });
+    expect(result.ok).toBe(true);
+    expect(getRecord()).toMatchObject({
+      skillIds: [],
+      trainingType: "general",
+      trainingName: "入职培训",
+    });
+    expect(
+      await service.update(actor("department_manager"), getRecord().id, {
+        title: "安全说明",
+        category: "安全培训",
+        trainingType: "safety",
+        trainingName: "",
+        skillIds: [],
+      }),
+    ).toMatchObject({ ok: true });
+    expect(getRecord()).toMatchObject({
+      title: "安全说明",
+      trainingType: "safety",
+      trainingName: "",
+      skillIds: [],
+    });
+    const list = await service.list(actor("department_manager"));
+    expect(list).toMatchObject({ ok: true, data: [{ canManage: true }] });
+    if (list.ok) {
+      expect(list.data[0]).not.toHaveProperty("createdByAccountId");
+      expect(list.data[0]).not.toHaveProperty("storageKey");
+    }
+  });
+
+  test("factory-wide read never permits another manager's material maintenance", async () => {
+    const { service, getRecord } = setup();
+    await service.createLink(actor("hr_admin"), {
+      title: "资料",
+      category: "安全",
+      externalUrl: "https://example.com",
+      skillIds: [],
+    });
+    const other = {
+      ...actor("department_manager"),
+      accountId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      factoryRead: true,
+    };
+    expect(
+      await service.update(other, getRecord().id, {
+        title: "越权",
+        category: "安全",
+        skillIds: [],
+      }),
+    ).toMatchObject({ error: { code: "FORBIDDEN" } });
+    expect(await service.deactivate(other, getRecord().id)).toMatchObject({
+      error: { code: "FORBIDDEN" },
+    });
+    expect(await service.archive(other, getRecord().id)).toMatchObject({
+      error: { code: "FORBIDDEN" },
+    });
+  });
+
+  test("logical removal preserves file and historical access", async () => {
+    const { service, getRecord, grantHistoricalAccess } = setup();
+    await service.upload(actor("hr_admin"), {
+      title: "资料",
+      category: "安全",
+      skillIds: [],
+      filename: "a.pdf",
+      mimeType: "application/pdf",
+      bytes: pdf,
+    });
+    const id = getRecord().id;
+    expect(await service.archive(actor("hr_admin"), id)).toMatchObject({ ok: true });
+    expect(getRecord().archivedAt).toBeDefined();
+    expect(await service.content(actor("employee"), id)).toMatchObject({
+      error: { code: "MATERIAL_NOT_FOUND" },
+    });
+    grantHistoricalAccess();
+    expect(await service.content(actor("employee"), id)).toMatchObject({
+      ok: true,
+      data: { kind: "file", bytes: pdf },
+    });
+    expect(
+      await service.update(actor("hr_admin"), id, {
+        title: "改归档",
+        category: "安全",
+        skillIds: [],
+      }),
+    ).toMatchObject({ error: { code: "MATERIAL_NOT_FOUND" } });
+  });
+
+  test("supports MP4 and WebM signatures and rejects disguised video", async () => {
+    for (const [mimeType, bytes] of [
+      ["video/mp4", new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109])],
+      ["video/webm", new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 1])],
+    ] as const) {
+      const { service } = setup();
+      expect(
+        await service.upload(actor("hr_admin"), {
+          title: "操作视频",
+          category: "技能培训",
+          trainingType: "professional",
+          skillIds: [],
+          filename: "操作视频",
+          mimeType,
+          bytes,
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        await service.upload(actor("hr_admin"), {
+          title: "伪装视频",
+          category: "技能培训",
+          skillIds: [],
+          filename: "伪装.mp4",
+          mimeType,
+          bytes: pdf,
+        }),
+      ).toMatchObject({ error: { code: "FILE_SIGNATURE_MISMATCH" } });
+    }
+  });
+
   test("uploads with checksum and storage key unrelated to filename", async () => {
     const { service, getRecord } = setup();
     const result = await service.upload(actor("hr_admin"), {

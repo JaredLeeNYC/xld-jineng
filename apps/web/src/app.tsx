@@ -1,3 +1,7 @@
+import { TrainingManagement } from "./training-management";
+import { MaterialLibrary } from "./material-library";
+import { TrainingExamsPage } from "./training-exams";
+import { RequirementsView } from "./requirements-view";
 import {
   navigationForRole,
   maximumPasswordLength,
@@ -44,6 +48,7 @@ import { MaterialPreviewButton } from "./material-preview";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 export type Session = {
+  factoryRead?: boolean;
   accountId: string;
   employeeId: string;
   employeeNumber: string;
@@ -731,6 +736,15 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
         >
           停用
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm("删除后停用该基础数据，历史记录保留，是否继续？"))
+              void mutate(`/api/organization/departments/${department.id}/deactivate`, "POST");
+          }}
+        >
+          删除
+        </button>
       </>
     ) : null;
   const positionActions = (position: Position) =>
@@ -746,6 +760,15 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
           }
         >
           停用
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm("删除后停用该基础数据，历史记录保留，是否继续？"))
+              void mutate(`/api/organization/positions/${position.id}/deactivate`, "POST");
+          }}
+        >
+          删除
         </button>
       </>
     ) : null;
@@ -1109,6 +1132,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
             if (
               await mutate(`/api/organization/departments/${editingDepartment.id}`, "PATCH", {
                 name: editingDepartment.name,
+                code: editingDepartment.code,
               })
             ) {
               setEditingDepartment(undefined);
@@ -1116,6 +1140,17 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
           }}
         >
           <strong>编辑部门 {editingDepartment.code}</strong>
+          <label>
+            部门编码
+            <input
+              required
+              maxLength={30}
+              value={editingDepartment.code}
+              onChange={(event) =>
+                setEditingDepartment({ ...editingDepartment, code: event.target.value })
+              }
+            />
+          </label>
           <input
             value={editingDepartment.name}
             onChange={(event) =>
@@ -1139,6 +1174,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
             if (
               await mutate(`/api/organization/positions/${editingPosition.id}`, "PATCH", {
                 name: editingPosition.name,
+                code: editingPosition.code,
                 departmentId: editingPosition.departmentId,
               })
             ) {
@@ -1147,13 +1183,41 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
           }}
         >
           <strong>编辑岗位 {editingPosition.code}</strong>
+          <label>
+            岗位编码
+            <input
+              required
+              maxLength={30}
+              value={editingPosition.code}
+              onChange={(event) =>
+                setEditingPosition({ ...editingPosition, code: event.target.value })
+              }
+            />
+          </label>
           <input
             value={editingPosition.name}
             onChange={(event) =>
               setEditingPosition({ ...editingPosition, name: event.target.value })
             }
           />
-          <span className="locked-field">所属部门：{editingPosition.departmentName}</span>
+          <label>
+            所属部门
+            <select
+              value={editingPosition.departmentId}
+              onChange={(event) =>
+                setEditingPosition({ ...editingPosition, departmentId: event.target.value })
+              }
+            >
+              {state.departments
+                .filter((item) => item.active)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <p>变更所属部门前，请先调整该岗位员工的任职关系。</p>
           <button className="primary-button" type="submit">
             保存
           </button>
@@ -2053,6 +2117,7 @@ export function SkillAdminPanel() {
                     <th>技能</th>
                     <th>等级</th>
                     <th>类型</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2067,6 +2132,17 @@ export function SkillAdminPanel() {
                       </td>
                       <td>{item.requiredLevel}</td>
                       <td>{item.required ? "必备" : "非必备"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm("删除此岗位要求？历史评定仍会保留。"))
+                              void mutate(`/api/position-skill-requirements/${item.id}`, "DELETE");
+                          }}
+                        >
+                          删除
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -2081,6 +2157,15 @@ export function SkillAdminPanel() {
                   <span>
                     要求 {item.requiredLevel} 级 · {item.required ? "必备" : "非必备"}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("删除此岗位要求？历史评定仍会保留。"))
+                        void mutate(`/api/position-skill-requirements/${item.id}`, "DELETE");
+                    }}
+                  >
+                    删除
+                  </button>{" "}
                 </article>
               ))}
             </div>
@@ -2244,12 +2329,6 @@ export function ReportDashboardPanel({
       tone: "green",
     },
     {
-      label: "部门技能覆盖率",
-      value: percentage(report.metrics.departmentSkillCoverage.rate),
-      note: `${report.metrics.departmentSkillCoverage.numerator} / ${report.metrics.departmentSkillCoverage.denominator}`,
-      tone: "blue",
-    },
-    {
       label: "培训任务完成率",
       value: percentage(report.metrics.trainingCompletion.rate),
       note: `${report.metrics.trainingCompletion.numerator} / ${report.metrics.trainingCompletion.denominator}`,
@@ -2274,7 +2353,7 @@ export function ReportDashboardPanel({
           导出当前 Excel
         </a>
       </section>
-      <section className="stat-grid" aria-label="四类核心指标">
+      <section className="stat-grid" aria-label="核心指标">
         {cards.map((card) => (
           <article className="stat-card" key={card.label}>
             <div className={`metric-icon ${card.tone}`}>
@@ -2809,13 +2888,15 @@ export function SkillMatrixPanel({
 
 const planStatusLabel: Record<TrainingPlanView["status"], string> = {
   draft: "草稿",
+  pending_approval: "待审批",
   published: "已发布",
   in_progress: "进行中",
   completed: "已完成",
   cancelled: "已取消",
 };
 const taskStatusLabel: Record<TrainingTaskView["status"], string> = {
-  assigned: "待学习",
+  assigned: "待开始",
+  in_progress: "进行中",
   submitted: "待确认",
   returned: "已退回",
   confirmed: "已确认",
@@ -3406,6 +3487,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
         assessments: SkillAssessmentView[];
         employees: Employee[];
         skills: SkillView[];
+        exams: import("../../../packages/shared/src/training-exam").TrainingExamView[];
       }
   >({ status: "loading" });
   const [filters, setFilters] = useState({ ...emptyListFilters });
@@ -3418,6 +3500,8 @@ export function AssessmentPanel({ session }: { session: Session }) {
     skillId: "",
     method: "practical" as AssessmentMethod,
     level: 2,
+    score: "",
+    trainingExamId: "",
     passed: true,
     reason: "",
     remediation: "",
@@ -3426,14 +3510,19 @@ export function AssessmentPanel({ session }: { session: Session }) {
   const load = async () => {
     setState({ status: "loading" });
     try {
-      const [assessments, employees, skills] = await Promise.all([
+      const [assessments, employees, skills, exams] = await Promise.all([
         request<SkillAssessmentView[]>("/api/assessments"),
         canAssess
           ? request<Employee[]>("/api/organization/employees?active=true")
           : Promise.resolve(undefined),
         canAssess ? request<SkillView[]>("/api/skills") : Promise.resolve(undefined),
+        canAssess
+          ? request<import("../../../packages/shared/src/training-exam").TrainingExamView[]>(
+              "/api/training-exams",
+            )
+          : Promise.resolve(undefined),
       ]);
-      const failed = [assessments, employees, skills]
+      const failed = [assessments, employees, skills, exams]
         .filter(Boolean)
         .find((item) => item && !item.result.ok);
       if (failed && !failed.result.ok) {
@@ -3446,6 +3535,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
         assessments: assessments.result.data,
         employees: employees?.result.ok ? employees.result.data : [],
         skills: skills?.result.ok ? skills.result.data : [],
+        exams: exams?.result.ok ? exams.result.data : [],
       });
     } catch {
       setState({ status: "error", message: "暂时无法连接技能评定服务" });
@@ -3491,6 +3581,17 @@ export function AssessmentPanel({ session }: { session: Session }) {
     ...state.employees.map((e) => ({ id: e.departmentId ?? "", name: e.departmentName ?? "" })),
     ...state.assessments.map((e) => ({ id: e.departmentId, name: e.departmentName ?? "" })),
   ]);
+  const selectExam = (next: typeof form) => {
+    const exam = state.exams
+      .filter(
+        (item) =>
+          item.employeeId === next.employeeId &&
+          item.skillId === next.skillId &&
+          chinaDate(item.completedAt) <= next.assessedAt,
+      )
+      .sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
+    setForm({ ...next, trainingExamId: exam?.id ?? "", score: exam ? String(exam.score) : "" });
+  };
   const beginEdit = (assessment: SkillAssessmentView) => {
     setEditing(assessment);
     setEntryDepartment(assessment.departmentId);
@@ -3499,6 +3600,8 @@ export function AssessmentPanel({ session }: { session: Session }) {
       skillId: assessment.skillId,
       method: assessment.method ?? "practical",
       level: assessment.level,
+      score: assessment.score === undefined ? "" : String(assessment.score),
+      trainingExamId: assessment.trainingExamId ?? "",
       passed: assessment.passed,
       reason: assessment.reason ?? "",
       remediation: assessment.remediation ?? "",
@@ -3507,22 +3610,18 @@ export function AssessmentPanel({ session }: { session: Session }) {
   };
   const actions = (assessment: SkillAssessmentView) => (
     <div className="row-actions">
-      <MaterialPreviewButton
-        url={`/api/assessments/${assessment.id}/evidence`}
-        label="在线查看证据"
-      />
+      {assessment.evidence && (
+        <MaterialPreviewButton
+          url={`/api/assessments/${assessment.id}/evidence`}
+          label="在线查看证据"
+        />
+      )}
       {canAssess &&
         assessment.assessorEmployeeId === session.employeeId &&
         ["draft", "returned"].includes(assessment.status) && (
           <>
             <button onClick={() => beginEdit(assessment)} type="button">
               修订
-            </button>
-            <button
-              onClick={() => mutate(`/api/assessments/${assessment.id}/submit`)}
-              type="button"
-            >
-              提交主管
             </button>
           </>
         )}
@@ -3591,26 +3690,35 @@ export function AssessmentPanel({ session }: { session: Session }) {
           className="panel compact-form"
           onSubmit={async (event) => {
             event.preventDefault();
-            const payload = { ...form, assessedAt: new Date(form.assessedAt).toISOString() };
+            if (form.assessedAt > chinaDate(new Date().toISOString())) {
+              setNotice("评定日期不得晚于今天");
+              return;
+            }
+            const { score, trainingExamId, ...fields } = form;
+            const payload = {
+              ...fields,
+              ...(score !== "" ? { score: Number(score) } : {}),
+              ...(trainingExamId ? { trainingExamId } : {}),
+              assessedAt:
+                new Date(`${form.assessedAt}T23:59:59+08:00`).getTime() > Date.now()
+                  ? new Date().toISOString()
+                  : new Date(`${form.assessedAt}T23:59:59+08:00`).toISOString(),
+            };
             if (editing) {
               const ok = await mutate(`/api/assessments/${editing.id}`, payload, "PUT");
               if (ok) setEditing(undefined);
               return;
             }
-            if (!evidence) {
-              setNotice("请选择评定证据");
-              return;
-            }
             const data = new FormData();
             Object.entries(payload).forEach(([key, value]) => data.set(key, String(value)));
-            data.set("file", evidence);
+            if (evidence) data.set("file", evidence);
             const response = await request<{ id: string }>("/api/assessments", {
               method: "POST",
               body: data,
             });
             if (!response.result.ok) setNotice(response.result.error.message);
             else {
-              setNotice("评定草稿已保存");
+              setNotice("评定已保存，待 HR 归档");
               setEvidence(undefined);
               await load();
             }
@@ -3625,7 +3733,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
               value={entryDepartment}
               onChange={(event) => {
                 setEntryDepartment(event.target.value);
-                setForm({ ...form, employeeId: "" });
+                selectExam({ ...form, employeeId: "" });
               }}
             >
               <option value="">选择部门（全部）</option>
@@ -3640,7 +3748,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
             disabled={Boolean(editing)}
             required
             value={form.employeeId}
-            onChange={(event) => setForm({ ...form, employeeId: event.target.value })}
+            onChange={(event) => selectExam({ ...form, employeeId: event.target.value })}
           >
             <option value="">选择员工</option>
             {state.employees
@@ -3655,7 +3763,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
             disabled={Boolean(editing)}
             required
             value={form.skillId}
-            onChange={(event) => setForm({ ...form, skillId: event.target.value })}
+            onChange={(event) => selectExam({ ...form, skillId: event.target.value })}
           >
             <option value="">选择技能</option>
             {state.skills
@@ -3672,19 +3780,40 @@ export function AssessmentPanel({ session }: { session: Session }) {
               setForm({ ...form, method: event.target.value as AssessmentMethod })
             }
           >
-            {Object.entries(assessmentMethodLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
+            {Object.entries(assessmentMethodLabels)
+              .filter(([key]) => key !== "comprehensive")
+              .map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
           </select>
-          <input
-            max={4}
-            min={0}
-            type="number"
-            value={form.level}
-            onChange={(event) => setForm({ ...form, level: Number(event.target.value) })}
-          />
+          <label>
+            考核成绩
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              value={form.score}
+              onChange={(event) => setForm({ ...form, score: event.target.value })}
+              placeholder="可手动填写或修改"
+            />
+          </label>
+          {form.trainingExamId && <small>已关联培训考核档案，成绩可手动修改</small>}
+          <label>
+            评定等级
+            <select
+              value={form.level}
+              onChange={(event) => setForm({ ...form, level: Number(event.target.value) })}
+            >
+              {[1, 2, 3, 4].map((level) => (
+                <option key={level} value={level}>
+                  L{level}
+                </option>
+              ))}
+            </select>
+          </label>
           <select
             value={String(form.passed)}
             onChange={(event) => setForm({ ...form, passed: event.target.value === "true" })}
@@ -3695,16 +3824,15 @@ export function AssessmentPanel({ session }: { session: Session }) {
           <input
             type="date"
             value={form.assessedAt}
-            onChange={(event) => setForm({ ...form, assessedAt: event.target.value })}
+            onChange={(event) => selectExam({ ...form, assessedAt: event.target.value })}
           />
           <input
-            placeholder={form.passed ? "评定说明（可选）" : "未通过原因（必填）"}
-            required={!form.passed}
+            placeholder="评定说明（可选）"
             value={form.reason}
             onChange={(event) => setForm({ ...form, reason: event.target.value })}
           />
           <input
-            placeholder="整改建议"
+            placeholder="整改建议（可选）"
             value={form.remediation}
             onChange={(event) => setForm({ ...form, remediation: event.target.value })}
           />
@@ -3712,12 +3840,12 @@ export function AssessmentPanel({ session }: { session: Session }) {
             <input
               accept="application/pdf,image/jpeg,image/png,image/webp"
               onChange={(event) => setEvidence(event.target.files?.[0])}
-              required
+              aria-label="评定证据（可选）"
               type="file"
             />
           )}
           <button className="primary-button" type="submit">
-            {editing ? "保存修订" : "保存草稿"}
+            {editing ? "保存修订" : "保存并送 HR 归档"}
           </button>
         </form>
       )}
@@ -3748,7 +3876,9 @@ export function AssessmentPanel({ session }: { session: Session }) {
                     <th>员工 / 技能</th>
                     <th>部门</th>
                     <th>评定方式</th>
+                    <th>考核成绩</th>
                     <th>结果</th>
+                    <th>评定说明 / 整改建议</th>
                     <th>状态</th>
                     <th>评定日期 / 有效期</th>
                     <th>操作</th>
@@ -3765,7 +3895,12 @@ export function AssessmentPanel({ session }: { session: Session }) {
                       </td>
                       <td>{item.departmentName}</td>
                       <td>{item.method ? assessmentMethodLabels[item.method] : "基线"}</td>
-                      <td>{item.passed ? `通过 · ${item.level} 级` : `未通过 · ${item.reason}`}</td>
+                      <td>{item.score ?? "—"}</td>
+                      <td>{item.passed ? `通过 · L${item.level}` : `未通过 · L${item.level}`}</td>
+                      <td>
+                        {item.reason || "—"}
+                        <small>{item.remediation || "—"}</small>
+                      </td>
                       <td>{assessmentStatusLabels[item.status]}</td>
                       <td>
                         {item.assessedAt.slice(0, 10)} / {item.validUntil?.slice(0, 10) ?? "长期"}
@@ -3789,7 +3924,11 @@ export function AssessmentPanel({ session }: { session: Session }) {
                     {item.departmentName} · {chinaDate(item.assessedAt)} ·{" "}
                     {item.method ? assessmentMethodLabels[item.method] : "基线"}
                   </p>
-                  <p>{item.passed ? `通过，等级 ${item.level}` : `未通过：${item.reason}`}</p>
+                  <p>
+                    考核成绩：{item.score ?? "—"} · {item.passed ? "通过" : "未通过"} · L
+                    {item.level}
+                  </p>
+                  <p>评定说明：{item.reason || "—"}</p>
                   {item.remediation && <small>整改建议：{item.remediation}</small>}
                   {actions(item)}
                 </article>
@@ -4901,7 +5040,21 @@ export function MatrixNavigationPanel({
 }
 
 function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session: Session }) {
-  const navigation = navigationForRole(session.role);
+  const navigation = [
+    ...navigationForRole(session.role),
+    ...(session.factoryRead && session.role !== "hr_admin"
+      ? [{ id: "requirements", label: "技能标准", access: "read" as const }]
+      : []),
+    ...(["employee", "department_manager", "hr_admin", "executive_viewer"].includes(session.role)
+      ? [
+          {
+            id: "training-exams",
+            label: session.role === "employee" ? "个人培训考核档案" : "培训考核档案",
+            access: "read" as const,
+          },
+        ]
+      : []),
+  ];
   const [activeNavigation, setActiveNavigation] = useState(navigation[0]?.id ?? "dashboard");
   const statistics = statisticsForRole(session.role);
   const isManagement = ["department_manager", "hr_admin", "executive_viewer"].includes(
@@ -4984,6 +5137,10 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
           activeNavigation === "employees" ||
           activeNavigation === "profile" ? (
             <OrganizationPanel canManage={session.role === "hr_admin"} />
+          ) : activeNavigation === "requirements" ? (
+            <RequirementsView />
+          ) : activeNavigation === "training-exams" ? (
+            <TrainingExamsPage session={session} />
           ) : activeNavigation === "skills" ? (
             <SkillAdminPanel />
           ) : activeNavigation === "matrix" || activeNavigation === "reports" ? (
@@ -4994,8 +5151,10 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             <SkillMatrixPanel personal />
           ) : activeNavigation === "training" || activeNavigation === "my-training" ? (
             <div className="training-workspace">
-              <TrainingPlanPanel session={session} />
-              <TrainingMaterialPanel canManage={session.role === "hr_admin"} />
+              <TrainingManagement session={session} />
+              <MaterialLibrary
+                canManage={session.role === "hr_admin" || session.role === "department_manager"}
+              />
             </div>
           ) : activeNavigation === "assessments" || activeNavigation === "my-assessments" ? (
             <AssessmentPanel session={session} />

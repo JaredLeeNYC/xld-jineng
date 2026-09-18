@@ -1,7 +1,11 @@
-import type { TrainingMaterialView } from "@jineng/skill-matrix-shared";
+import type { TrainingMaterialView, TrainingType } from "@jineng/skill-matrix-shared";
 import type { Pool, PoolClient } from "pg";
 
-type MaterialRecord = TrainingMaterialView & { storageKey?: string };
+type MaterialRecord = TrainingMaterialView & {
+  storageKey?: string;
+  createdByAccountId?: string;
+  archivedAt?: string;
+};
 
 const transaction = async <T>(pool: Pool, operation: (client: PoolClient) => Promise<T>) => {
   const client = await pool.connect();
@@ -19,6 +23,8 @@ const transaction = async <T>(pool: Pool, operation: (client: PoolClient) => Pro
 };
 
 const selectMaterials = `select m.id, m.title, m.category, m.description, m.kind,
+  m.training_type as "trainingType", m.training_name as "trainingName",
+  m.created_by_account_id as "createdByAccountId", m.archived_at as "archivedAt",
   m.external_url as "externalUrl", m.storage_key as "storageKey",
   m.original_filename as "originalFilename", m.mime_type as "mimeType",
   m.size_bytes as "sizeBytes", m.checksum, m.active, m.created_at as "createdAt",
@@ -48,15 +54,28 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
     role: "employee" | "department_manager" | "hr_admin" | "executive_viewer";
     employeeId: string;
     departmentId?: string;
+    accountId?: string;
+    factoryRead?: boolean;
   }) {
     const result = await pool.query<MaterialRecord>(
       `${selectMaterials}
-       where (m.active = true or $1 = true)
+       where m.archived_at is null and (m.active = true or $1 = true)
          and ($2::text is null or m.title ilike '%' || $2 || '%' or m.category ilike '%' || $2 || '%')
          and (
-           $3 = 'hr_admin' or $3 = 'executive_viewer' or exists (
+           $3 = 'hr_admin' or $3 = 'executive_viewer' or $7 = true
+           or m.created_by_account_id = $6::uuid or exists (
+             select 1 from training_plans owner_plan where m.id=any(owner_plan.material_ids)
+               and $4::uuid=any(owner_plan.owner_employee_ids) and owner_plan.status<>'cancelled'
+           ) or exists (
+             select 1 from training_material_access_grants g
+             where g.material_id=m.id and g.employee_id=$4::uuid
+               and (g.source_type<>'training_task' or exists (
+                 select 1 from training_tasks t join training_plans p on p.id=t.plan_id
+                 where t.id::text=g.source_reference and t.status<>'cancelled' and g.material_id=any(p.material_ids)
+               ))
+           ) or exists (
              select 1 from training_material_skills access_ms
-             join position_skill_requirements psr on psr.skill_id = access_ms.skill_id
+             join position_skill_requirements psr on psr.skill_id = access_ms.skill_id and psr.active=true
              join position_assignments pa on pa.position_id = psr.position_id and pa.ended_at is null
              where access_ms.material_id = m.id and access_ms.active = true
                and (($3 = 'employee' and pa.employee_id = $4::uuid)
@@ -70,6 +89,8 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
         input.role,
         input.employeeId,
         input.departmentId ?? null,
+        input.accountId ?? null,
+        input.factoryRead ?? false,
       ],
     );
     return result.rows.map(normalize);
@@ -85,6 +106,8 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
     id: string;
     title: string;
     category: string;
+    trainingType?: TrainingType;
+    trainingName?: string;
     description?: string;
     kind: "file" | "link";
     externalUrl?: string;
@@ -105,8 +128,8 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
       await client.query(
         `insert into training_materials
          (id, title, category, description, kind, external_url, storage_key, original_filename,
-          mime_type, size_bytes, checksum, created_by_account_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          mime_type, size_bytes, checksum, created_by_account_id, training_type, training_name)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           input.id,
           input.title,
@@ -120,6 +143,8 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
           input.sizeBytes ?? null,
           input.checksum ?? null,
           input.actorAccountId,
+          input.trainingType ?? "other",
+          input.trainingName?.trim() || null,
         ],
       );
       for (const skillId of input.skillIds)
@@ -139,6 +164,8 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
     id: string;
     title: string;
     category: string;
+    trainingType?: TrainingType;
+    trainingName?: string;
     description?: string;
     skillIds: string[];
     actorAccountId: string;
@@ -150,8 +177,15 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
       );
       if (valid.rows[0]?.count !== input.skillIds.length) return false;
       const result = await client.query(
-        "update training_materials set title=$2, category=$3, description=$4, updated_at=now() where id=$1 returning id",
-        [input.id, input.title, input.category, input.description ?? null],
+        "update training_materials set title=$2, category=$3, description=$4, training_type=coalesce($5,training_type), training_name=$6, updated_at=now() where id=$1 and archived_at is null returning id",
+        [
+          input.id,
+          input.title,
+          input.category,
+          input.description ?? null,
+          input.trainingType ?? null,
+          input.trainingName?.trim() || null,
+        ],
       );
       if (!result.rowCount) return false;
       await client.query(
@@ -174,12 +208,26 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
   async deactivate(id: string, actorAccountId: string) {
     return transaction(pool, async (client) => {
       const result = await client.query(
-        "update training_materials set active=false,updated_at=now() where id=$1 and active=true returning id",
+        "update training_materials set active=false,updated_at=now() where id=$1 and active=true and archived_at is null returning id",
         [id],
       );
       if (!result.rowCount) return false;
       await client.query(
         "insert into audit_logs (actor_account_id,action,object_type,object_id) values ($1,'training_material.deactivated','training_material',$2)",
+        [actorAccountId, id],
+      );
+      return true;
+    });
+  },
+  async archive(id: string, actorAccountId: string) {
+    return transaction(pool, async (client) => {
+      const result = await client.query(
+        "update training_materials set active=false, archived_at=now(), updated_at=now() where id=$1 and archived_at is null returning id",
+        [id],
+      );
+      if (!result.rowCount) return false;
+      await client.query(
+        "insert into audit_logs (actor_account_id,action,object_type,object_id) values ($1,'training_material.archived','training_material',$2)",
         [actorAccountId, id],
       );
       return true;
@@ -198,11 +246,26 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
     role: "employee" | "department_manager" | "hr_admin" | "executive_viewer";
     employeeId: string;
     departmentId?: string;
+    accountId?: string;
+    factoryRead?: boolean;
   }) {
-    if (input.role === "hr_admin" || input.role === "executive_viewer") return true;
+    if (input.role === "hr_admin" || input.role === "executive_viewer" || input.factoryRead)
+      return true;
+    if (input.accountId) {
+      const own = await pool.query(
+        "select 1 from training_materials where id=$1 and created_by_account_id=$2",
+        [input.materialId, input.accountId],
+      );
+      if (own.rowCount) return true;
+    }
+    const ownedPlan = await pool.query(
+      "select 1 from training_plans where $1::uuid=any(material_ids) and $2::uuid=any(owner_employee_ids) and status<>'cancelled' limit 1",
+      [input.materialId, input.employeeId],
+    );
+    if (ownedPlan.rowCount) return true;
     const result = await pool.query(
       `select 1 from training_material_skills ms
-       join position_skill_requirements psr on psr.skill_id = ms.skill_id
+       join position_skill_requirements psr on psr.skill_id = ms.skill_id and psr.active=true
        join position_assignments pa on pa.position_id = psr.position_id and pa.ended_at is null
        where ms.material_id = $1 and ms.active = true
          and (($2 = 'employee' and pa.employee_id = $3::uuid)
@@ -217,7 +280,7 @@ export const createPostgresMaterialRepository = (pool: Pool) => ({
       `select 1 from training_material_access_grants g
        where g.material_id=$1 and g.employee_id=$2 and
          (g.source_type<>'training_task' or exists (
-           select 1 from training_tasks t join training_plans p on p.id=t.plan_id where t.id::text=g.source_reference and t.status<>'cancelled' and p.material_id=g.material_id
+           select 1 from training_tasks t join training_plans p on p.id=t.plan_id where t.id::text=g.source_reference and t.status<>'cancelled' and g.material_id=any(p.material_ids)
          )) limit 1`,
       [materialId, employeeId],
     );

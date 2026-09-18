@@ -47,8 +47,12 @@ const evidenceSignature = (mime: string, bytes: Uint8Array) => {
 type PlanInput = {
   trainingType?: TrainingType;
   title: string;
-  materialId: string;
-  ownerEmployeeId: string;
+  materialId?: string;
+  materialIds?: string[];
+  ownerEmployeeId?: string;
+  ownerEmployeeIds?: string[];
+  scopeDepartmentIds?: string[];
+  scopePositionIds?: string[];
   startAt: string;
   dueAt: string;
   location: string;
@@ -67,6 +71,21 @@ export const createTrainingService = (dependencies: {
 }) => {
   const { repository, storage, idSource, now, storageWarning = console.error } = dependencies;
   const parsePlan = (input: PlanInput) => {
+    const materialIds = [
+      ...new Set(input.materialIds ?? (input.materialId ? [input.materialId] : [])),
+    ];
+    const ownerEmployeeIds = [
+      ...new Set(input.ownerEmployeeIds ?? (input.ownerEmployeeId ? [input.ownerEmployeeId] : [])),
+    ];
+    const scopeDepartmentIds = [
+      ...new Set(
+        input.scopeDepartmentIds ?? (input.scopeDepartmentId ? [input.scopeDepartmentId] : []),
+      ),
+    ];
+    const scopePositionIds = [
+      ...new Set(input.scopePositionIds ?? (input.scopePositionId ? [input.scopePositionId] : [])),
+    ];
+    if (!materialIds.length || !ownerEmployeeIds.length) return undefined;
     const startAt = validDate(input.startAt);
     const dueAt = validDate(input.dueAt);
     if (
@@ -82,22 +101,26 @@ export const createTrainingService = (dependencies: {
     )
       return undefined;
     if (
-      (input.scopeType === "department" && !input.scopeDepartmentId) ||
-      (input.scopeType === "position" && !input.scopePositionId) ||
+      (input.scopeType === "department" && !scopeDepartmentIds.length) ||
+      (input.scopeType === "position" && !scopePositionIds.length) ||
       (input.scopeType === "employees" && !input.scopeEmployeeIds?.length)
     )
       return undefined;
     return {
       title: input.title.trim(),
       trainingType: input.trainingType ?? "professional",
-      materialId: input.materialId,
-      ownerEmployeeId: input.ownerEmployeeId,
+      materialId: materialIds[0]!,
+      materialIds,
+      ownerEmployeeId: ownerEmployeeIds[0]!,
+      ownerEmployeeIds,
+      scopeDepartmentIds: input.scopeType === "department" ? scopeDepartmentIds : [],
+      scopePositionIds: input.scopeType === "position" ? scopePositionIds : [],
       startAt,
       dueAt,
       location: input.location.trim(),
       scopeType: input.scopeType,
-      ...(input.scopeType === "department" ? { scopeDepartmentId: input.scopeDepartmentId } : {}),
-      ...(input.scopeType === "position" ? { scopePositionId: input.scopePositionId } : {}),
+      ...(input.scopeType === "department" ? { scopeDepartmentId: scopeDepartmentIds[0] } : {}),
+      ...(input.scopeType === "position" ? { scopePositionId: scopePositionIds[0] } : {}),
       scopeEmployeeIds: input.scopeType === "employees" ? [...new Set(input.scopeEmployeeIds)] : [],
     };
   };
@@ -105,7 +128,12 @@ export const createTrainingService = (dependencies: {
     async listPlans(actor: SessionView) {
       if (!manager(actor)) return fail("FORBIDDEN", "无权查看培训计划", 403);
       await repository.advanceStatuses(now());
-      return { ok: true as const, data: await repository.listPlans(actorScope(actor)) };
+      return {
+        ok: true as const,
+        data: await repository.listPlans(
+          actorScope(actor.factoryRead ? { ...actor, role: "hr_admin" } : actor),
+        ),
+      };
     },
     async createPlan(actor: SessionView, input: PlanInput) {
       if (!manager(actor)) return fail("FORBIDDEN", "无权创建培训计划", 403);
@@ -127,23 +155,54 @@ export const createTrainingService = (dependencies: {
         ? { ok: true as const, data: { id } }
         : fail("INVALID_PLAN_STATE", "计划不存在、无权编辑或已不再是草稿", 409);
     },
-    async publishPlan(actor: SessionView, id: string) {
-      if (!manager(actor)) return fail("FORBIDDEN", "无权发布培训计划", 403);
+    async publishPlan(
+      _actor: SessionView,
+      _id: string,
+    ): Promise<ReturnType<typeof fail> | { ok: true; data: { id: string } }> {
+      return fail("APPROVAL_REQUIRED", "请提交领导审批，审批通过后自动发布", 409);
+    },
+    async submitPlan(actor: SessionView, id: string) {
+      if (!manager(actor)) return fail("FORBIDDEN", "无权提交培训计划", 403);
+      return (await repository.submitPlan(id, actorScope(actor), now()))
+        ? { ok: true as const, data: { id, status: "pending_approval" as const } }
+        : fail("PLAN_SUBMIT_REJECTED", "仅可提交有权限的草稿计划", 409);
+    },
+    async approvePlan(actor: SessionView, id: string) {
+      if (!manager(actor)) return fail("FORBIDDEN", "无权审批培训计划", 403);
       const result = await repository.publish(id, actorScope(actor), now());
-      if (!result.ok)
-        return fail(
-          "PLAN_PUBLISH_REJECTED",
-          result.reason === "scope"
-            ? "培训对象为空或超出权限范围"
-            : result.reason === "material"
-              ? "培训资料已停用"
-              : "仅草稿计划可以发布",
-          409,
-        );
-      return {
-        ok: true as const,
-        data: { id, taskCount: result.taskCount, status: result.status },
-      };
+      return result.ok
+        ? { ok: true as const, data: { id, ...result } }
+        : fail(
+            "PLAN_APPROVAL_REJECTED",
+            "审批失败：禁止自审批，且资料、负责人和培训对象必须有效并在管理范围内",
+            409,
+          );
+    },
+    async rejectPlan(actor: SessionView, id: string, reason: string) {
+      if (!manager(actor)) return fail("FORBIDDEN", "无权审批培训计划", 403);
+      if (!reason.trim() || reason.trim().length > 500)
+        return fail("RETURN_REASON_REQUIRED", "请填写 500 字以内的退回原因", 400);
+      return (await repository.rejectPlan(id, actorScope(actor), reason.trim(), now()))
+        ? { ok: true as const, data: { id, status: "draft" as const } }
+        : fail("PLAN_APPROVAL_REJECTED", "计划不在待审批状态、超出权限或属于本人", 409);
+    },
+    async deletePlan(actor: SessionView, id: string) {
+      if (!manager(actor)) return fail("FORBIDDEN", "无权删除培训计划", 403);
+      return (await repository.deletePlan(id, actorScope(actor), now()))
+        ? { ok: true as const, data: { id } }
+        : fail("PLAN_DELETE_REJECTED", "仅草稿或已取消计划可以逻辑删除", 409);
+    },
+    async startTask(actor: SessionView, id: string) {
+      if (!manager(actor)) return fail("FORBIDDEN", "员工仅可查看和下载培训资料", 403);
+      return (await repository.executeTask(id, actor.employeeId, actor.accountId, now(), false))
+        ? { ok: true as const, data: { id, status: "in_progress" as const } }
+        : fail("TASK_START_REJECTED", "仅指定负责人可开始待开始培训", 409);
+    },
+    async completeTask(actor: SessionView, id: string) {
+      if (!manager(actor)) return fail("FORBIDDEN", "员工仅可查看和下载培训资料", 403);
+      return (await repository.executeTask(id, actor.employeeId, actor.accountId, now(), true))
+        ? { ok: true as const, data: { id, status: "confirmed" as const } }
+        : fail("TASK_COMPLETE_REJECTED", "仅指定负责人可完成已开始培训", 409);
     },
     async withdrawPlan(actor: SessionView, id: string) {
       if (!manager(actor)) return fail("FORBIDDEN", "无权撤回培训计划", 403);
@@ -165,19 +224,22 @@ export const createTrainingService = (dependencies: {
         ok: true as const,
         data: await repository.listTasks({
           now: now(),
-          actorRole: actor.role,
+          actorRole: actor.factoryRead ? "hr_admin" : actor.role,
           employeeId: actor.employeeId,
           accountId: actor.accountId,
           ...(actor.departmentId ? { departmentId: actor.departmentId } : {}),
         }),
       };
     },
-    async submitTask(actor: SessionView, id: string) {
-      if (!["employee", "department_manager"].includes(actor.role))
-        return fail("FORBIDDEN", "仅参训员工本人可以提交培训任务", 403);
-      return (await repository.submitTask(id, actor.employeeId, now(), actor.accountId))
-        ? { ok: true as const, data: { id, status: "submitted" as const } }
-        : fail("TASK_SUBMIT_REJECTED", "任务不存在、已取消或当前状态不可提交", 409);
+    async submitTask(
+      _actor: SessionView,
+      _id: string,
+    ): Promise<ReturnType<typeof fail> | { ok: true; data: { id: string } }> {
+      return fail(
+        "EMPLOYEE_SUBMISSION_DISABLED",
+        "员工仅可查看和下载资料，由负责人记录培训开始与完成",
+        403,
+      );
     },
     async confirmTask(actor: SessionView, id: string) {
       if (!manager(actor)) return fail("FORBIDDEN", "无权确认培训任务", 403);
@@ -285,7 +347,7 @@ export const createTrainingService = (dependencies: {
         return fail("FORBIDDEN", "无权查看培训证据", 403);
       const evidence = await repository.getEvidence({
         evidenceId: id,
-        actorRole: actor.role,
+        actorRole: actor.factoryRead ? "hr_admin" : actor.role,
         employeeId: actor.employeeId,
         ...(actor.departmentId ? { departmentId: actor.departmentId } : {}),
       });

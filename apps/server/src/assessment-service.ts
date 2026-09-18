@@ -51,6 +51,8 @@ type AssessmentInput = {
   remediation?: string;
   assessedAt: string;
   replacesAssessmentId?: string;
+  trainingExamId?: string;
+  score?: number;
 };
 
 export const createAssessmentService = (dependencies: {
@@ -70,7 +72,8 @@ export const createAssessmentService = (dependencies: {
       assessedAt > now() ||
       (input.reason?.length ?? 0) > 500 ||
       (input.remediation?.length ?? 0) > 500 ||
-      (!input.passed && !input.reason?.trim())
+      (input.score !== undefined &&
+        (!Number.isFinite(input.score) || input.score < 0 || input.score > 100))
     )
       return undefined;
     return {
@@ -82,53 +85,69 @@ export const createAssessmentService = (dependencies: {
       ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
       ...(input.remediation?.trim() ? { remediation: input.remediation.trim() } : {}),
       assessedAt,
+      ...(input.trainingExamId ? { trainingExamId: input.trainingExamId } : {}),
+      ...(input.score !== undefined ? { score: input.score } : {}),
       ...(input.replacesAssessmentId ? { replacesAssessmentId: input.replacesAssessmentId } : {}),
     };
   };
   return {
     async list(actor: SessionView) {
       if (!canRead(actor)) return fail("FORBIDDEN", "无权查看技能评定", 403);
-      return { ok: true as const, data: await repository.list(actorScope(actor)) };
+      return {
+        ok: true as const,
+        data: await repository.list(
+          actorScope(
+            "factoryRead" in actor && actor.factoryRead
+              ? { ...actor, role: "executive_viewer" }
+              : actor,
+          ),
+        ),
+      };
     },
     async create(
       actor: SessionView,
-      input: AssessmentInput & { filename: string; mimeType: string; bytes: Uint8Array },
+      input: AssessmentInput & { filename?: string; mimeType?: string; bytes?: Uint8Array },
     ) {
       if (!canAssess(actor)) return fail("FORBIDDEN", "无权录入技能评定", 403);
-      const parsed = parse(input);
+      const parsed = input.level === 0 ? undefined : parse(input);
+      const hasEvidence =
+        input.bytes !== undefined || input.filename !== undefined || input.mimeType !== undefined;
       if (
         !parsed ||
-        !safeFilename(input.filename) ||
-        !validEvidence(input.mimeType, input.bytes) ||
-        input.bytes.byteLength === 0 ||
-        input.bytes.byteLength > maximumMaterialBytes
+        (hasEvidence &&
+          (!safeFilename(input.filename ?? "") ||
+            !validEvidence(input.mimeType ?? "", input.bytes ?? new Uint8Array()) ||
+            !input.bytes?.byteLength ||
+            (input.bytes?.byteLength ?? 0) > maximumMaterialBytes))
       )
-        return fail(
-          "INVALID_ASSESSMENT",
-          "评定信息无效；未通过时原因必填，证据仅支持 25MB 内 PDF 或图片",
-          400,
-        );
+        return fail("INVALID_ASSESSMENT", "评定信息无效；可选证据仅支持 25MB 内 PDF 或图片", 400);
+      if (!hasEvidence) {
+        const id = await repository.create(actorScope(actor), parsed);
+        return id
+          ? { ok: true as const, data: { id, status: "pending_hr" as const } }
+          : fail("ASSESSMENT_TARGET_NOT_FOUND", "员工、技能、考核档案或被替换评定无效", 404);
+      }
       const storageKey = idSource();
       let locked = false;
       try {
         await storage.beginWrite(storageKey);
         locked = true;
-        await storage.put(storageKey, input.bytes);
+        await storage.put(storageKey, input.bytes!);
         const id = await repository.create(actorScope(actor), {
           ...parsed,
           evidence: {
             storageKey,
-            originalFilename: input.filename,
-            mimeType: input.mimeType,
-            sizeBytes: input.bytes.byteLength,
-            checksum: checksum(input.bytes),
+            originalFilename: input.filename!,
+            mimeType: input.mimeType!,
+            sizeBytes: input.bytes!.byteLength,
+            checksum: checksum(input.bytes!),
           },
         });
         if (!id) {
           await storage.delete(storageKey);
           return fail("ASSESSMENT_TARGET_NOT_FOUND", "员工、技能或被替换评定无效", 404);
         }
-        return { ok: true as const, data: { id, status: "draft" as const } };
+        return { ok: true as const, data: { id, status: "pending_hr" as const } };
       } catch {
         try {
           await storage.delete(storageKey);
@@ -149,7 +168,7 @@ export const createAssessmentService = (dependencies: {
       const parsed = parse(input);
       if (!parsed) return fail("INVALID_ASSESSMENT", "评定信息无效", 400);
       return (await repository.update(actorScope(actor), id, parsed))
-        ? { ok: true as const, data: { id, status: "draft" as const } }
+        ? { ok: true as const, data: { id, status: "pending_hr" as const } }
         : fail("ASSESSMENT_UPDATE_REJECTED", "仅评定人可修订草稿或已退回评定", 409);
     },
     async submit(actor: SessionView, id: string) {
@@ -197,7 +216,14 @@ export const createAssessmentService = (dependencies: {
     },
     async evidenceContent(actor: SessionView, id: string) {
       if (!canRead(actor)) return fail("FORBIDDEN", "无权查看评定证据", 403);
-      const evidence = await repository.evidence(actorScope(actor), id);
+      const evidence = await repository.evidence(
+        actorScope(
+          "factoryRead" in actor && actor.factoryRead
+            ? { ...actor, role: "executive_viewer" }
+            : actor,
+        ),
+        id,
+      );
       if (!evidence) return fail("EVIDENCE_NOT_FOUND", "评定证据不存在或超出权限范围", 404);
       try {
         const bytes = await storage.get(evidence.storageKey);

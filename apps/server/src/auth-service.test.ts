@@ -285,7 +285,7 @@ describe("authentication service", () => {
       ok: false,
       error: { code: "UNAUTHENTICATED" },
     });
-    expect(await service.authorize(changed.data.token, "training:self-submit")).toMatchObject({
+    expect(await service.authorize(changed.data.token, "self:read")).toMatchObject({
       ok: true,
     });
     expect(repository.accounts.get("E0001")?.passwordHash).toBe("hash:Changed-Password-456");
@@ -470,6 +470,16 @@ describe("authentication service", () => {
         access: "write",
       }),
     ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+  });
+
+  test("factory read grants cross-department profiles but not cross-department mutation", async () => {
+    const account = { ...employeeAccount(), role: "department_manager" as const, factoryRead: true, mustChangePassword: false };
+    const { service } = createFixture([account]);
+    const login = await service.login({employeeNumber:account.employeeNumber,password:"Initial-Password-123"});
+    if (!login.ok) throw new Error("login failed");
+    expect(login.data.session.factoryRead).toBeTrue();
+    expect(await service.getEmployeeProfile(login.data.token,"employee-other")).toMatchObject({ok:true});
+    expect(await service.authorizeEmployeeAccess(login.data.token,{employeeId:"employee-other",access:"write"})).toMatchObject({ok:false,error:{code:"FORBIDDEN"}});
   });
 
   test("allows only one password rotation for the same session version", async () => {

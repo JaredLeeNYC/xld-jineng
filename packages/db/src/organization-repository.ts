@@ -82,14 +82,15 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
 
   async updateDepartment(input: {
     id: string;
+    code?: string;
     name: string;
     actorAccountId: string;
   }): Promise<DepartmentView | undefined> {
     return withTransaction(pool, async (client) => {
       const result = await client.query<DepartmentView>(
-        `update departments set name = $2, updated_at = now()
+        `update departments set name = $2, code = coalesce($3, code), updated_at = now()
          where id = $1 returning id, code, name, active`,
-        [input.id, input.name],
+        [input.id, input.name, input.code ?? null],
       );
       const department = result.rows[0];
       if (!department) return undefined;
@@ -173,18 +174,21 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
 
   async updatePosition(input: {
     id: string;
+    code?: string;
     name: string;
     departmentId: string;
     actorAccountId: string;
   }): Promise<boolean> {
     return withTransaction(pool, async (client) => {
       const result = await client.query(
-        `update positions p set name = $2, department_id = $3, updated_at = now()
+        `update positions p set name = $2, department_id = $3, code = coalesce($4, code), updated_at = now()
          where p.id = $1 and exists (
            select 1 from departments d where d.id = $3 and d.active = true
-         ) and p.department_id = $3
+         ) and (p.department_id = $3 or not exists (
+           select 1 from position_assignments pa where pa.position_id=p.id and pa.ended_at is null
+         ))
          returning p.id`,
-        [input.id, input.name, input.departmentId],
+        [input.id, input.name, input.departmentId, input.code ?? null],
       );
       if (result.rowCount === 0) return false;
       await audit(client, {

@@ -21,11 +21,6 @@ export const createReportWorkbook = async (data: ReportData["data"]): Promise<Ar
       data.metrics.positionSkillCompliance,
       data.definitions.positionSkillCompliance,
     ],
-    [
-      "部门技能覆盖率",
-      data.metrics.departmentSkillCoverage,
-      data.definitions.departmentSkillCoverage,
-    ],
     ["培训任务完成率", data.metrics.trainingCompletion, data.definitions.trainingCompletion],
   ] as const;
   for (const [name, metric, definition] of ratioRows)
@@ -38,7 +33,6 @@ export const createReportWorkbook = async (data: ReportData["data"]): Promise<Ar
     });
   summary.getCell("D2").numFmt = "0.0%";
   summary.getCell("D3").numFmt = "0.0%";
-  summary.getCell("D4").numFmt = "0.0%";
   summary.addRow({
     name: "30 天内到期",
     value: data.metrics.expiringSoonCount,

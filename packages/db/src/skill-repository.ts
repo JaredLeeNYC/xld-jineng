@@ -56,14 +56,14 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
       `select s.id, s.code, s.name, s.category, s.reassessment_required as "reassessmentRequired",
          s.validity_months as "validityMonths", s.active,
          coalesce((select jsonb_agg(distinct jsonb_build_object('id',d.id,'name',d.name))
-           from position_skill_requirements r join positions p on p.id=r.position_id join departments d on d.id=p.department_id where r.skill_id=s.id), '[]'::jsonb) as departments,
+           from position_skill_requirements r join positions p on p.id=r.position_id join departments d on d.id=p.department_id where r.active=true and r.skill_id=s.id), '[]'::jsonb) as departments,
          coalesce((select jsonb_agg(distinct jsonb_build_object('id',p.id,'name',p.name))
-           from position_skill_requirements r join positions p on p.id=r.position_id where r.skill_id=s.id), '[]'::jsonb) as positions
+           from position_skill_requirements r join positions p on p.id=r.position_id where r.active=true and r.skill_id=s.id), '[]'::jsonb) as positions
        from skills s where s.archived_at is null and (s.active=true or $1=true)
          and ($2::text is null or s.code ilike '%' || $2 || '%' or s.name ilike '%' || $2 || '%')
          and (($3::uuid is null and $4::uuid is null) or exists (
            select 1 from position_skill_requirements r join positions p on p.id=r.position_id
-           where r.skill_id=s.id and ($3::uuid is null or p.department_id=$3) and ($4::uuid is null or p.id=$4)))
+           where r.active=true and r.skill_id=s.id and ($3::uuid is null or p.department_id=$3) and ($4::uuid is null or p.id=$4)))
        order by s.category,s.code`,
       [
         input.includeInactive ?? false,
@@ -189,11 +189,28 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
        join positions p on p.id = r.position_id
        join skills s on s.id = r.skill_id
        join departments d on d.id = p.department_id
-       where ($1::uuid is null or r.position_id = $1) and ($2::uuid is null or d.id = $2) and s.archived_at is null
+       where r.active=true and ($1::uuid is null or r.position_id = $1) and ($2::uuid is null or d.id = $2) and s.archived_at is null
        order by p.code, s.category, s.code`,
       [positionId ?? null, departmentId ?? null],
     );
     return result.rows;
+  },
+
+  async deactivateRequirement(input: { id: string; actorAccountId: string }): Promise<boolean> {
+    return transaction(pool, async (client) => {
+      const result = await client.query(
+        "update position_skill_requirements set active=false, updated_at=now() where id=$1 and active=true returning id",
+        [input.id],
+      );
+      if (!result.rowCount) return false;
+      await audit(client, {
+        actorAccountId: input.actorAccountId,
+        action: "position_skill_requirement.deactivated",
+        objectType: "position_skill_requirement",
+        objectId: input.id,
+      });
+      return true;
+    });
   },
 
   async upsertRequirement(input: {
@@ -209,7 +226,7 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
          select p.id, s.id, $3, $4 from positions p cross join skills s
          where p.id = $1 and s.id = $2 and p.active = true and s.active = true
          on conflict (position_id, skill_id) do update set
-           required_level = excluded.required_level, required = excluded.required, updated_at = now()
+           active = true, required_level = excluded.required_level, required = excluded.required, updated_at = now()
          returning id`,
         [input.positionId, input.skillId, input.requiredLevel, input.required],
       );
@@ -242,9 +259,9 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
       const result = await client.query(
         `insert into position_skill_requirements (position_id, skill_id, required_level, required)
          select $2, skill_id, greatest(0, least(4, required_level + $3)), required
-         from position_skill_requirements where position_id = $1
+         from position_skill_requirements where position_id = $1 and active=true
          on conflict (position_id, skill_id) do update set
-           required_level = excluded.required_level, required = excluded.required, updated_at = now()`,
+           active = true, required_level = excluded.required_level, required = excluded.required, updated_at = now()`,
         [input.sourcePositionId, input.targetPositionId, input.levelDelta],
       );
       await audit(client, {
@@ -417,7 +434,7 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
        join departments d on d.id = e.department_id
        join position_assignments pa on pa.employee_id = e.id and pa.ended_at is null
        join positions p on p.id = pa.position_id
-       join position_skill_requirements r on r.position_id = p.id
+       join position_skill_requirements r on r.position_id = p.id and r.active=true
        join skills s on s.id = r.skill_id and s.active = true
        left join employee_current_skills cs on cs.employee_id = e.id and cs.skill_id = s.id
        left join skill_assessments a on a.id = cs.assessment_id and a.status = 'archived' and a.passed = true and a.voided_at is null

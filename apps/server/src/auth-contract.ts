@@ -1,6 +1,7 @@
 import type { FixedRole } from "@jineng/skill-matrix-shared";
 
 export type SessionView = {
+  factoryRead?: boolean;
   accountId: string;
   employeeId: string;
   employeeNumber: string;

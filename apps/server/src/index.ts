@@ -8,6 +8,7 @@ import { createSkillService } from "./skill-service";
 import { createMaterialService } from "./material-service";
 import { createConfiguredMaterialStorage } from "./material-storage-factory";
 import { createTrainingService } from "./training-service";
+import { createTrainingExamService } from "./training-exam-service";
 import { createAssessmentService } from "./assessment-service";
 import { createNotificationService } from "./notification-service";
 import { createReportService } from "./report-service";
@@ -89,6 +90,10 @@ const app = createApp({
   materialService,
   trainingService,
   assessmentService,
+  trainingExamService: createTrainingExamService({
+    repository: database.trainingExamRepository,
+    now: () => new Date(),
+  }),
   notificationService,
   reportService,
   auditService,

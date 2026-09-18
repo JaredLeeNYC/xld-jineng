@@ -158,7 +158,7 @@ export const createOrganizationService = (dependencies: {
       if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role)) {
         return failure("FORBIDDEN", "无权查看组织数据", 403);
       }
-      if (actor.role === "department_manager" && !actor.departmentId) {
+      if (actor.role === "department_manager" && !actor.factoryRead && !actor.departmentId) {
         return failure("FORBIDDEN", "账号未关联有效部门", 403);
       }
       const departments = await repository.listDepartments(
@@ -167,7 +167,7 @@ export const createOrganizationService = (dependencies: {
       return {
         ok: true as const,
         data:
-          actor.role === "department_manager"
+          actor.role === "department_manager" && !actor.factoryRead
             ? departments.filter((item) => item.id === actor.departmentId)
             : departments,
       };
@@ -197,18 +197,28 @@ export const createOrganizationService = (dependencies: {
       }
     },
 
-    async updateDepartment(actor: SessionView, id: string, input: { name: string }) {
+    async updateDepartment(actor: SessionView, id: string, input: { name: string; code?: string }) {
       const denied = requireHr(actor);
       if (denied) return denied;
       if (!validateName(input.name)) return failure("INVALID_DEPARTMENT", "部门名称不能为空", 400);
-      const department = await repository.updateDepartment({
-        id,
-        name: input.name.trim(),
-        actorAccountId: actor.accountId,
-      });
-      return department
-        ? { ok: true as const, data: department }
-        : failure("DEPARTMENT_NOT_FOUND", "部门不存在", 404);
+      const code = input.code === undefined ? undefined : normalizeBusinessCode(input.code);
+      if (code !== undefined && (!code || code.length > 30))
+        return failure("INVALID_DEPARTMENT", "部门编码应为 1-30 个字符", 400);
+      try {
+        const department = await repository.updateDepartment({
+          id,
+          ...(code !== undefined ? { code } : {}),
+          name: input.name.trim(),
+          actorAccountId: actor.accountId,
+        });
+        return department
+          ? { ok: true as const, data: department }
+          : failure("DEPARTMENT_NOT_FOUND", "部门不存在", 404);
+      } catch (error) {
+        if (typeof error === "object" && error && "code" in error && error.code === "23505")
+          return failure("DUPLICATE_DEPARTMENT_CODE", "部门编码已存在", 409);
+        throw error;
+      }
     },
 
     async deactivateDepartment(actor: SessionView, id: string) {
@@ -223,13 +233,15 @@ export const createOrganizationService = (dependencies: {
       if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role)) {
         return failure("FORBIDDEN", "无权查看岗位", 403);
       }
-      if (actor.role === "department_manager" && !actor.departmentId) {
+      if (actor.role === "department_manager" && !actor.factoryRead && !actor.departmentId) {
         return failure("FORBIDDEN", "账号未关联有效部门", 403);
       }
       return {
         ok: true as const,
         data: await repository.listPositions({
-          ...(actor.role === "department_manager" ? { departmentId: actor.departmentId } : {}),
+          ...(actor.role === "department_manager" && !actor.factoryRead
+            ? { departmentId: actor.departmentId }
+            : {}),
           includeInactive: actor.role === "hr_admin" && includeInactive,
         }),
       };
@@ -266,19 +278,33 @@ export const createOrganizationService = (dependencies: {
     async updatePosition(
       actor: SessionView,
       id: string,
-      input: { name: string; departmentId: string },
+      input: { name: string; departmentId: string; code?: string },
     ) {
       const denied = requireHr(actor);
       if (denied) return denied;
       if (!validateName(input.name)) return failure("INVALID_POSITION", "岗位名称不能为空", 400);
-      return (await repository.updatePosition({
-        id,
-        name: input.name.trim(),
-        departmentId: input.departmentId,
-        actorAccountId: actor.accountId,
-      }))
-        ? { ok: true as const, data: { id } }
-        : failure("POSITION_NOT_FOUND", "岗位或部门不存在", 404);
+      const code = input.code === undefined ? undefined : normalizeBusinessCode(input.code);
+      if (code !== undefined && (!code || code.length > 30))
+        return failure("INVALID_POSITION", "岗位编码应为 1-30 个字符", 400);
+      try {
+        return (await repository.updatePosition({
+          id,
+          ...(code !== undefined ? { code } : {}),
+          name: input.name.trim(),
+          departmentId: input.departmentId,
+          actorAccountId: actor.accountId,
+        }))
+          ? { ok: true as const, data: { id } }
+          : failure(
+              "POSITION_UPDATE_REJECTED",
+              "岗位或部门无效；变更所属部门前请先调整在岗员工的任职关系",
+              409,
+            );
+      } catch (error) {
+        if (typeof error === "object" && error && "code" in error && error.code === "23505")
+          return failure("DUPLICATE_POSITION_CODE", "岗位编码已存在", 409);
+        throw error;
+      }
     },
 
     async deactivatePosition(actor: SessionView, id: string) {
@@ -294,14 +320,16 @@ export const createOrganizationService = (dependencies: {
       filters: { active?: boolean; query?: string } = {},
     ): Promise<OrganizationResult<Awaited<ReturnType<OrganizationRepository["listEmployees"]>>>> {
       if (actor.role === "system_admin") return failure("FORBIDDEN", "无权查看业务人员", 403);
-      if (actor.role === "department_manager" && !actor.departmentId) {
+      if (actor.role === "department_manager" && !actor.factoryRead && !actor.departmentId) {
         return failure("FORBIDDEN", "主管账号未关联有效部门", 403);
       }
       return {
         ok: true,
         data: await repository.listEmployees({
           ...filters,
-          ...(actor.role === "department_manager" ? { departmentId: actor.departmentId } : {}),
+          ...(actor.role === "department_manager" && !actor.factoryRead
+            ? { departmentId: actor.departmentId }
+            : {}),
           ...(actor.role === "employee" ? { employeeId: actor.employeeId } : {}),
         }),
       };

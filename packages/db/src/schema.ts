@@ -155,6 +155,7 @@ export const skills = pgTable(
 export const positionSkillRequirements = pgTable(
   "position_skill_requirements",
   {
+    active: boolean("active").notNull().default(true),
     id: uuid("id").primaryKey().defaultRandom(),
     positionId: uuid("position_id")
       .notNull()
@@ -182,6 +183,8 @@ export const skillAssessments = pgTable(
     skillId: uuid("skill_id")
       .notNull()
       .references(() => skills.id, { onDelete: "restrict" }),
+    trainingExamId: uuid("training_exam_id"),
+    score: numeric("score", { precision: 5, scale: 2 }),
     level: smallint("level").notNull(),
     status: varchar("status", { length: 20 }).notNull(),
     passed: boolean("passed").notNull(),
@@ -225,6 +228,12 @@ export const skillAssessments = pgTable(
     ...timestamps,
   },
   (table) => [
+    check("skill_assessments_score", sql`${table.score} between 0 and 100`),
+    foreignKey({
+      columns: [table.trainingExamId, table.employeeId, table.skillId],
+      foreignColumns: [trainingExams.id, trainingExams.employeeId, trainingExams.skillId],
+      name: "skill_assessments_exam_identity_fk",
+    }).onDelete("restrict"),
     check("skill_assessments_level", sql`${table.level} between 0 and 4`),
     check(
       "skill_assessments_status",
@@ -268,6 +277,9 @@ export const trainingMaterials = pgTable(
   "training_materials",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    trainingType: text("training_type").notNull().default("other"),
+    trainingName: text("training_name"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     title: varchar("title", { length: 150 }).notNull(),
     category: varchar("category", { length: 80 }).notNull(),
     description: varchar("description", { length: 500 }),
@@ -285,6 +297,10 @@ export const trainingMaterials = pgTable(
     ...timestamps,
   },
   (table) => [
+    check(
+      "training_materials_training_type",
+      sql`${table.trainingType} in ('professional','general','safety','other')`,
+    ),
     check("training_materials_kind", sql`${table.kind} in ('file', 'link')`),
     check(
       "training_materials_source",
@@ -341,6 +357,28 @@ export const trainingPlans = pgTable(
   "training_plans",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    materialIds: uuid("material_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    ownerEmployeeIds: uuid("owner_employee_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    scopeDepartmentIds: uuid("scope_department_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    scopePositionIds: uuid("scope_position_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    approvalComment: varchar("approval_comment", { length: 500 }),
+    approvedByAccountId: uuid("approved_by_account_id").references(() => userAccounts.id, {
+      onDelete: "restrict",
+    }),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     title: varchar("title", { length: 150 }).notNull(),
     trainingType: varchar("training_type", { length: 20 }).notNull().default("professional"),
     status: varchar("status", { length: 20 }).notNull().default("draft"),
@@ -371,9 +409,12 @@ export const trainingPlans = pgTable(
   (table) => [
     check(
       "training_plans_status",
-      sql`${table.status} in ('draft','published','in_progress','completed','cancelled')`,
+      sql`${table.status} in ('draft','pending_approval','published','in_progress','completed','cancelled')`,
     ),
-    check("training_plans_type", sql`${table.trainingType} in ('professional','general','other')`),
+    check(
+      "training_plans_type",
+      sql`${table.trainingType} in ('professional','general','safety','other')`,
+    ),
     check(
       "training_plans_scope",
       sql`(${table.scopeType} = 'department' and ${table.scopeDepartmentId} is not null and ${table.scopePositionId} is null) or (${table.scopeType} = 'position' and ${table.scopePositionId} is not null and ${table.scopeDepartmentId} is null) or (${table.scopeType} = 'employees' and ${table.scopeDepartmentId} is null and ${table.scopePositionId} is null)`,
@@ -412,6 +453,8 @@ export const trainingTasks = pgTable(
       .notNull()
       .references(() => employees.id, { onDelete: "restrict" }),
     status: varchar("status", { length: 20 }).notNull().default("assigned"),
+    actualStartAt: timestamp("actual_start_at", { withTimezone: true }),
+    actualCompletedAt: timestamp("actual_completed_at", { withTimezone: true }),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     returnedAt: timestamp("returned_at", { withTimezone: true }),
@@ -422,7 +465,7 @@ export const trainingTasks = pgTable(
   (table) => [
     check(
       "training_tasks_status",
-      sql`${table.status} in ('assigned','submitted','returned','confirmed','cancelled')`,
+      sql`${table.status} in ('assigned','in_progress','submitted','returned','confirmed','cancelled')`,
     ),
     uniqueIndex("training_tasks_plan_employee_unique").on(table.planId, table.employeeId),
     index("training_tasks_employee_status_idx").on(table.employeeId, table.status),
@@ -443,6 +486,49 @@ export const trainingRecords = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("training_records_task_unique").on(table.taskId)],
+);
+
+export const trainingExams = pgTable(
+  "training_exams",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => trainingPlans.id, { onDelete: "restrict" }),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "restrict" }),
+    method: varchar("method", { length: 20 }).notNull(),
+    score: numeric("score", { precision: 5, scale: 2 }).notNull(),
+    passed: boolean("passed").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+    remarks: varchar("remarks", { length: 500 }),
+    createdByAccountId: uuid("created_by_account_id")
+      .notNull()
+      .references(() => userAccounts.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "training_exams_method",
+      sql`${table.method} in ('written','practical','written_practical')`,
+    ),
+    check("training_exams_score", sql`${table.score} between 0 and 100`),
+    uniqueIndex("training_exams_identity_unique").on(table.id, table.employeeId, table.skillId),
+    index("training_exams_employee_skill_completed_idx").on(
+      table.employeeId,
+      table.skillId,
+      table.completedAt,
+    ),
+    foreignKey({
+      columns: [table.planId, table.employeeId],
+      foreignColumns: [trainingTasks.planId, trainingTasks.employeeId],
+      name: "training_exams_plan_employee_fk",
+    }).onDelete("restrict"),
+  ],
 );
 
 export const trainingEvidence = pgTable(
@@ -607,6 +693,7 @@ export const skillImportPreviews = pgTable("skill_import_previews", {
 export const userAccounts = pgTable(
   "user_accounts",
   {
+    factoryRead: boolean("factory_read").notNull().default(false),
     id: uuid("id").primaryKey().defaultRandom(),
     employeeId: uuid("employee_id")
       .notNull()

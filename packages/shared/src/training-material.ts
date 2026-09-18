@@ -5,6 +5,9 @@ export type TrainingMaterialView = {
   id: string;
   title: string;
   category: string;
+  trainingType?: TrainingType;
+  trainingName?: string;
+  canManage?: boolean;
   description?: string;
   kind: MaterialKind;
   externalUrl?: string;
@@ -27,6 +30,9 @@ export const allowedMaterialMimeTypes = [
   "image/jpeg",
   "image/png",
   "image/webp",
+  "video/mp4",
+  "video/webm",
 ] as const;
 
 export const maximumMaterialBytes = 25 * 1024 * 1024;
+import type { TrainingType } from "./training-plan";

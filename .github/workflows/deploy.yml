@@ -32,6 +32,7 @@ jobs:
             bash "$DEPLOY_SCRIPT" "$EXPECTED_SHA" </dev/null | tee "$DEPLOY_LOG"
             test "$(cat /opt/skill-matrix/current/.deployed-sha)" = "$EXPECTED_SHA"
             grep -Fx "==> reviewed accounts verified $EXPECTED_SHA" "$DEPLOY_LOG"
+            grep -Fx "==> factory read permission verified $EXPECTED_SHA" "$DEPLOY_LOG"
             for employee_number in 0341 10032 3761 4243; do
               grep -F "\"employeeNumber\": \"$employee_number\"" "$DEPLOY_LOG"
             done

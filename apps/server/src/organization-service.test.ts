@@ -207,6 +207,23 @@ describe("organization service", () => {
       { ok: false, error: { code: "FORBIDDEN" } },
     );
   });
+
+  test("factory read grant shows all departments without granting organization writes", async () => {
+    const { service } = createFixture();
+    const reader = { ...manager, factoryRead: true };
+    const result = await service.listDepartments(reader);
+    expect(result.ok && result.data.map((item) => item.id)).toEqual([
+      "department-1",
+      "department-2",
+    ]);
+    expect(
+      await service.updateDepartment(reader, "department-2", { name: "改名", code: "D003" }),
+    ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(await service.deactivatePosition(reader, "position-1")).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+  });
 });
 
 test("imports the full profile and a manager account while blocking privileged roles", async () => {

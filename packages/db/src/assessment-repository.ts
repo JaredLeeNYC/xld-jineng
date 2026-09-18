@@ -58,13 +58,16 @@ type AssessmentInput = {
   remediation?: string;
   assessedAt: Date;
   replacesAssessmentId?: string;
-  evidence: Evidence;
+  evidence?: Evidence;
+  trainingExamId?: string;
+  score?: number;
 };
 
 const selectAssessment = `select a.id,a.employee_id as "employeeId",e.employee_number as "employeeNumber",
  e.display_name as "employeeName",e.department_id as "departmentId",d.name as "departmentName",
  a.skill_id as "skillId",s.code as "skillCode",s.name as "skillName",
  assessor.employee_id as "assessorEmployeeId",assessor_employee.display_name as "assessorName",
+ a.training_exam_id as "trainingExamId",a.score,
  a.method,a.level,a.passed,a.reason,a.remediation,a.assessed_at as "assessedAt",a.valid_until as "validUntil",
  a.status,a.return_reason as "returnReason",a.void_reason as "voidReason",
  a.evidence_original_filename as "evidenceFilename",a.evidence_mime_type as "evidenceMimeType",
@@ -88,6 +91,8 @@ const normalize = (row: any): SkillAssessmentView => ({
   ...(row.assessorName ? { assessorName: row.assessorName } : {}),
   ...(row.method ? { method: row.method } : {}),
   level: row.level,
+  ...(row.trainingExamId ? { trainingExamId: row.trainingExamId } : {}),
+  ...(row.score !== null && row.score !== undefined ? { score: Number(row.score) } : {}),
   passed: row.passed,
   ...(row.reason ? { reason: row.reason } : {}),
   ...(row.remediation ? { remediation: row.remediation } : {}),
@@ -143,12 +148,17 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
         );
         if (!replaced.rowCount) return undefined;
       }
+      const exam = await client.query<{ id: string; score: string }>(
+        `select id,score from training_exams where employee_id=$1 and skill_id=$2 and completed_at<=$3 and ($4::uuid is null or id=$4) order by completed_at desc,created_at desc limit 1`,
+        [input.employeeId, input.skillId, input.assessedAt, input.trainingExamId ?? null],
+      );
+      if (input.trainingExamId && !exam.rows[0]) return undefined;
       const result = await client.query<{ id: string }>(
         `insert into skill_assessments
           (employee_id,skill_id,level,status,passed,method,assessor_account_id,reason,remediation,
            source_type,source_reference,assessed_at,evidence_storage_key,evidence_original_filename,
-           evidence_mime_type,evidence_size_bytes,evidence_checksum,replaces_assessment_id)
-         values ($1,$2,$3,'draft',$4,$5,$6,$7,$8,'manual_assessment','线下评定',$9,$10,$11,$12,$13,$14,$15)
+           evidence_mime_type,evidence_size_bytes,evidence_checksum,replaces_assessment_id,training_exam_id,score)
+         values ($1,$2,$3,'pending_hr',$4,$5,$6,$7,$8,'manual_assessment','线下评定',$9,$10,$11,$12,$13,$14,$15,$16,$17)
          returning id`,
         [
           input.employeeId,
@@ -160,24 +170,42 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
           input.reason ?? null,
           input.remediation ?? null,
           input.assessedAt,
-          input.evidence.storageKey,
-          input.evidence.originalFilename,
-          input.evidence.mimeType,
-          input.evidence.sizeBytes,
-          input.evidence.checksum,
+          input.evidence?.storageKey ?? null,
+          input.evidence?.originalFilename ?? null,
+          input.evidence?.mimeType ?? null,
+          input.evidence?.sizeBytes ?? null,
+          input.evidence?.checksum ?? null,
           input.replacesAssessmentId ?? null,
+          exam.rows[0]?.id ?? null,
+          input.score ?? (exam.rows[0] ? Number(exam.rows[0].score) : null),
         ],
       );
       await audit(client, actor.accountId, "skill_assessment.created", result.rows[0]!.id);
+      await enqueueManagementWebhook(client, {
+        eventKey: `assessment_pending_hr:${result.rows[0]!.id}:created`,
+        eventType: "assessment_pending_hr",
+        title: "技能评定待 HR 归档",
+        message: "新的技能评定已保存，请 HR 独立复核归档",
+      });
       return result.rows[0]!.id;
     });
   },
 
   async update(actor: AssessmentActor, id: string, input: Omit<AssessmentInput, "evidence">) {
     return transaction(pool, async (client) => {
+      const target = await client.query(
+        `select employee_id,skill_id from skill_assessments where id=$1 and employee_id=$2 and skill_id=$3`,
+        [id, input.employeeId, input.skillId],
+      );
+      if (!target.rowCount) return false;
+      const exam = await client.query<{ id: string; score: string }>(
+        `select id,score from training_exams where employee_id=$1 and skill_id=$2 and completed_at<=$3 and ($4::uuid is null or id=$4) order by completed_at desc,created_at desc limit 1`,
+        [input.employeeId, input.skillId, input.assessedAt, input.trainingExamId ?? null],
+      );
+      if (input.trainingExamId && !exam.rows[0]) return false;
       const result = await client.query(
         `update skill_assessments a set level=$3,passed=$4,method=$5,reason=$6,remediation=$7,
-           assessed_at=$8,status='draft',return_reason=null,returned_by_account_id=null,updated_at=now()
+           assessed_at=$8,training_exam_id=$11,score=$12,status='pending_hr',return_reason=null,returned_by_account_id=null,manager_confirmed_by_account_id=null,manager_confirmed_at=null,updated_at=now()
          from employees e where a.id=$1 and e.id=a.employee_id and a.assessor_account_id=$2
            and a.status in ('draft','returned')
            and ($9='hr_admin' or ($9='department_manager' and e.department_id=$10::uuid))
@@ -193,10 +221,22 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
           input.assessedAt,
           actor.role,
           actor.departmentId ?? null,
+          exam.rows[0]?.id ?? null,
+          input.score ?? (exam.rows[0] ? Number(exam.rows[0].score) : null),
         ],
       );
       if (!result.rowCount) return false;
       await audit(client, actor.accountId, "skill_assessment.updated", id);
+      const transition = await client.query<{ updatedAt: Date }>(
+        'select updated_at as "updatedAt" from skill_assessments where id=$1',
+        [id],
+      );
+      await enqueueManagementWebhook(client, {
+        eventKey: `assessment_pending_hr:${id}:${transition.rows[0]!.updatedAt.toISOString()}`,
+        eventType: "assessment_pending_hr",
+        title: "技能评定待 HR 归档",
+        message: "技能评定已修订，请 HR 独立复核归档",
+      });
       return true;
     });
   },
@@ -208,13 +248,13 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
         transitionedAt: Date;
       }>(
         `update skill_assessments a
-         set status=case when assessor.role='department_manager' then 'pending_hr' else 'pending_manager' end,
+         set status='pending_hr',
            updated_at=now()
          from user_accounts assessor
          where a.id=$1 and a.assessor_account_id=$2 and assessor.id=$2
            and assessor.role in ('department_manager','hr_admin')
            and a.status in ('draft','returned')
-           and a.method is not null and a.evidence_storage_key is not null
+           and a.method is not null
          returning a.status,a.updated_at as "transitionedAt"`,
         [id, actor.accountId],
       );

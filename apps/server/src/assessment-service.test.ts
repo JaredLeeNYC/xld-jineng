@@ -94,16 +94,11 @@ describe("assessment service", () => {
     const { service, calls } = setup();
     expect((await service.create(manager, input)).ok).toBe(true);
     expect(failure(await service.create(employee, input)).status).toBe(403);
-    expect(
-      failure(
-        await service.create(hr, {
-          ...input,
-          passed: false,
-          reason: "",
-        }),
-      ).code,
-    ).toBe("INVALID_ASSESSMENT");
-    expect(calls).toEqual(["create"]);
+    expect(await service.create(hr, { ...input, passed: false, reason: "" })).toMatchObject({
+      ok: true,
+      data: { status: "pending_hr" },
+    });
+    expect(calls).toEqual(["create", "create"]);
   });
 
   test("keeps manager confirmation and HR archive as separate transitions", async () => {
@@ -126,6 +121,20 @@ describe("assessment service", () => {
       data: { status: "pending_hr" },
     });
     expect(calls).toEqual(["submit:department_manager"]);
+  });
+
+  test("saves without evidence and rejects invalid scores", async () => {
+    const { service, calls } = setup();
+    const { filename: _filename, mimeType: _mimeType, bytes: _bytes, ...optional } = input;
+    expect(await service.create(manager, { ...optional, passed: false })).toMatchObject({
+      ok: true,
+      data: { status: "pending_hr" },
+    });
+    expect(await service.create(manager, { ...optional, score: 101 })).toMatchObject({
+      ok: false,
+      error: { status: 400 },
+    });
+    expect(calls).toEqual(["create"]);
   });
 
   test("requires return and void reasons", async () => {

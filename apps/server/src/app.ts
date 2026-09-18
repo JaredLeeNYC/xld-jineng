@@ -18,6 +18,7 @@ import { parseSkillBaselineWorkbook } from "./skill-excel";
 import type { SkillService } from "./skill-service";
 import type { MaterialService } from "./material-service";
 import type { TrainingService } from "./training-service";
+import type { TrainingExamService } from "./training-exam-service";
 import type { AssessmentService } from "./assessment-service";
 import type { NotificationService } from "./notification-service";
 import type { ReportService } from "./report-service";
@@ -51,6 +52,7 @@ const errorResponse = t.Object({
 });
 
 const sessionDataResponse = t.Object({
+  factoryRead: t.Optional(t.Boolean()),
   accountId: t.String(),
   employeeId: t.String(),
   employeeNumber: t.String(),
@@ -162,6 +164,7 @@ type AppDependencies = {
   materialService?: MaterialService;
   trainingService?: TrainingService;
   assessmentService?: AssessmentService;
+  trainingExamService?: TrainingExamService;
   notificationService?: NotificationService;
   reportService?: ReportService;
   auditService?: AuditService;
@@ -233,6 +236,7 @@ export const createApp = ({
   materialService,
   trainingService,
   assessmentService,
+  trainingExamService,
   notificationService,
   reportService,
   auditService,
@@ -598,7 +602,10 @@ export const createApp = ({
       },
       {
         params: t.Object({ id: t.String({ format: "uuid" }) }),
-        body: t.Object({ name: t.String({ minLength: 1, maxLength: 100 }) }),
+        body: t.Object({
+          name: t.String({ minLength: 1, maxLength: 100 }),
+          code: t.Optional(t.String({ minLength: 1, maxLength: 30 })),
+        }),
         response: {
           200: t.Object({ ok: t.Literal(true), data: departmentResponse }),
           ...organizationErrorResponses,
@@ -720,6 +727,7 @@ export const createApp = ({
         params: t.Object({ id: t.String({ format: "uuid" }) }),
         body: t.Object({
           name: t.String({ minLength: 1, maxLength: 100 }),
+          code: t.Optional(t.String({ minLength: 1, maxLength: 30 })),
           departmentId: t.String({ format: "uuid" }),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
@@ -1214,6 +1222,30 @@ export const createApp = ({
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )
+    .delete(
+      "/api/position-skill-requirements/:id",
+      async ({ params, request, set }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!skillService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "技能服务暂不可用");
+        }
+        const result = await skillService.deactivateRequirement(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
     .put(
       "/api/position-skill-requirements",
       async ({ body, request, set }) => {
@@ -1681,6 +1713,233 @@ export const createApp = ({
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )
+    .post(
+      "/api/training-plans/:id/submit",
+      async ({ request, set, params }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await trainingService.submitPlan(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-plans/:id/approve",
+      async ({ request, set, params }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await trainingService.approvePlan(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-plans/:id/reject",
+      async ({ request, set, params, body }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await trainingService.rejectPlan(auth.actor, params.id, body.reason);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ reason: t.String({ minLength: 1, maxLength: 500 }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .delete(
+      "/api/training-plans/:id",
+      async ({ request, set, params }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await trainingService.deletePlan(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-tasks/:id/start",
+      async ({ request, set, params }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await trainingService.startTask(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-tasks/:id/complete",
+      async ({ request, set, params }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await trainingService.completeTask(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/training-materials/:id/archive",
+      async ({ request, set, params }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!materialService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await materialService.archive(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/training-exams",
+      async ({ request, set }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingExamService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await trainingExamService.list(auth.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .post(
+      "/api/training-exams",
+      async ({ request, set, body }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingExamService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "服务暂不可用");
+        }
+        const result = await trainingExamService.create(auth.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          planId: t.String({ format: "uuid" }),
+          employeeId: t.String({ format: "uuid" }),
+          skillId: t.String({ format: "uuid" }),
+          method: t.Union([
+            t.Literal("written"),
+            t.Literal("practical"),
+            t.Literal("written_practical"),
+          ]),
+          score: t.Number({ minimum: 0, maximum: 100 }),
+          passed: t.Boolean(),
+          completedAt: t.String(),
+          remarks: t.Optional(t.String({ maxLength: 500 })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
     .get(
       "/api/assessments",
       async ({ request, set }) => {
@@ -1724,9 +1983,15 @@ export const createApp = ({
           ...(body.reason ? { reason: body.reason } : {}),
           ...(body.remediation ? { remediation: body.remediation } : {}),
           ...(body.replacesAssessmentId ? { replacesAssessmentId: body.replacesAssessmentId } : {}),
-          filename: body.file.name,
-          mimeType: body.file.type,
-          bytes: new Uint8Array(await body.file.arrayBuffer()),
+          ...(body.trainingExamId ? { trainingExamId: body.trainingExamId } : {}),
+          ...(body.score !== undefined ? { score: body.score } : {}),
+          ...(body.file
+            ? {
+                filename: body.file.name,
+                mimeType: body.file.type,
+                bytes: new Uint8Array(await body.file.arrayBuffer()),
+              }
+            : {}),
         });
         if (!result.ok) {
           set.status = result.error.status;
@@ -1749,8 +2014,10 @@ export const createApp = ({
           reason: t.Optional(t.String({ maxLength: 500 })),
           remediation: t.Optional(t.String({ maxLength: 500 })),
           assessedAt: t.String(),
+          trainingExamId: t.Optional(t.String({ format: "uuid" })),
+          score: t.Optional(t.Numeric({ minimum: 0, maximum: 100 })),
           replacesAssessmentId: t.Optional(t.String({ format: "uuid" })),
-          file: t.File({ maxSize: "25m" }),
+          file: t.Optional(t.File({ maxSize: "25m" })),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
@@ -1790,6 +2057,8 @@ export const createApp = ({
           reason: t.Optional(t.String({ maxLength: 500 })),
           remediation: t.Optional(t.String({ maxLength: 500 })),
           assessedAt: t.String(),
+          trainingExamId: t.Optional(t.String({ format: "uuid" })),
+          score: t.Optional(t.Numeric({ minimum: 0, maximum: 100 })),
           replacesAssessmentId: t.Optional(t.String({ format: "uuid" })),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
@@ -2002,9 +2271,18 @@ export const createApp = ({
         body: t.Object({
           title: t.String({ maxLength: 150 }),
           category: t.String({ maxLength: 80 }),
+          trainingType: t.Optional(
+            t.Union([
+              t.Literal("professional"),
+              t.Literal("general"),
+              t.Literal("safety"),
+              t.Literal("other"),
+            ]),
+          ),
+          trainingName: t.Optional(t.String({ maxLength: 150 })),
           description: t.Optional(t.String({ maxLength: 500 })),
           externalUrl: t.String({ maxLength: 2000 }),
-          skillIds: t.Array(t.String({ format: "uuid" }), { minItems: 1 }),
+          skillIds: t.Array(t.String({ format: "uuid" })),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
@@ -2030,9 +2308,22 @@ export const createApp = ({
           set.status = 400;
           return failure("INVALID_SKILLS", "关联技能格式无效");
         }
+        if (
+          !Array.isArray(skillIds) ||
+          skillIds.some(
+            (id) =>
+              typeof id !== "string" ||
+              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
+          )
+        ) {
+          set.status = 400;
+          return failure("INVALID_SKILLS", "关联技能格式无效");
+        }
         const result = await materialService.upload(authenticated.actor, {
           title: body.title,
           category: body.category,
+          ...(body.trainingType ? { trainingType: body.trainingType } : {}),
+          ...(body.trainingName ? { trainingName: body.trainingName } : {}),
           ...(body.description ? { description: body.description } : {}),
           skillIds,
           filename: body.file.name,
@@ -2049,8 +2340,17 @@ export const createApp = ({
         body: t.Object({
           title: t.String({ maxLength: 150 }),
           category: t.String({ maxLength: 80 }),
+          trainingType: t.Optional(
+            t.Union([
+              t.Literal("professional"),
+              t.Literal("general"),
+              t.Literal("safety"),
+              t.Literal("other"),
+            ]),
+          ),
+          trainingName: t.Optional(t.String({ maxLength: 150 })),
           description: t.Optional(t.String({ maxLength: 500 })),
-          skillIds: t.Union([t.String(), t.Array(t.String({ format: "uuid" }), { minItems: 1 })]),
+          skillIds: t.Union([t.String(), t.Array(t.String({ format: "uuid" }))]),
           file: t.File({ maxSize: "25m" }),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
@@ -2080,8 +2380,17 @@ export const createApp = ({
         body: t.Object({
           title: t.String({ maxLength: 150 }),
           category: t.String({ maxLength: 80 }),
+          trainingType: t.Optional(
+            t.Union([
+              t.Literal("professional"),
+              t.Literal("general"),
+              t.Literal("safety"),
+              t.Literal("other"),
+            ]),
+          ),
+          trainingName: t.Optional(t.String({ maxLength: 150 })),
           description: t.Optional(t.String({ maxLength: 500 })),
-          skillIds: t.Array(t.String({ format: "uuid" }), { minItems: 1 }),
+          skillIds: t.Array(t.String({ format: "uuid" })),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
@@ -2183,10 +2492,19 @@ export const createApp = ({
         body: t.Object({
           title: t.String({ maxLength: 150 }),
           trainingType: t.Optional(
-            t.Union([t.Literal("professional"), t.Literal("general"), t.Literal("other")]),
+            t.Union([
+              t.Literal("professional"),
+              t.Literal("general"),
+              t.Literal("safety"),
+              t.Literal("other"),
+            ]),
           ),
-          materialId: t.String({ format: "uuid" }),
-          ownerEmployeeId: t.String({ format: "uuid" }),
+          materialId: t.Optional(t.String({ format: "uuid" })),
+          ownerEmployeeId: t.Optional(t.String({ format: "uuid" })),
+          materialIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 100 })),
+          ownerEmployeeIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 100 })),
+          scopeDepartmentIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 100 })),
+          scopePositionIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 1000 })),
           startAt: t.String(),
           dueAt: t.String(),
           location: t.String({ maxLength: 150 }),
@@ -2226,10 +2544,19 @@ export const createApp = ({
         body: t.Object({
           title: t.String({ maxLength: 150 }),
           trainingType: t.Optional(
-            t.Union([t.Literal("professional"), t.Literal("general"), t.Literal("other")]),
+            t.Union([
+              t.Literal("professional"),
+              t.Literal("general"),
+              t.Literal("safety"),
+              t.Literal("other"),
+            ]),
           ),
-          materialId: t.String({ format: "uuid" }),
-          ownerEmployeeId: t.String({ format: "uuid" }),
+          materialId: t.Optional(t.String({ format: "uuid" })),
+          ownerEmployeeId: t.Optional(t.String({ format: "uuid" })),
+          materialIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 100 })),
+          ownerEmployeeIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 100 })),
+          scopeDepartmentIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 100 })),
+          scopePositionIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 1000 })),
           startAt: t.String(),
           dueAt: t.String(),
           location: t.String({ maxLength: 150 }),

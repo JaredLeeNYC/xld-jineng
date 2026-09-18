@@ -1,5 +1,10 @@
 import type { MaterialRepository } from "@jineng/skill-matrix-db";
-import { allowedMaterialMimeTypes, maximumMaterialBytes } from "@jineng/skill-matrix-shared";
+import {
+  allowedMaterialMimeTypes,
+  maximumMaterialBytes,
+  trainingTypes,
+  type TrainingType,
+} from "@jineng/skill-matrix-shared";
 import { createHash } from "node:crypto";
 import type { SessionView } from "./auth-contract";
 import type { MaterialStorage } from "./material-storage";
@@ -9,7 +14,9 @@ const fail = (code: string, message: string, status: 400 | 403 | 404 | 409 | 500
   error: { code, message, status },
 });
 const hrOnly = (actor: SessionView) =>
-  actor.role === "hr_admin" ? undefined : fail("FORBIDDEN", "仅 HR/培训管理员可维护培训资料", 403);
+  actor.role === "hr_admin" || actor.role === "department_manager"
+    ? undefined
+    : fail("FORBIDDEN", "仅 HR 或部门主管可维护培训资料", 403);
 const readers = ["employee", "department_manager", "hr_admin", "executive_viewer"];
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const validText = (value: string, maximum: number) =>
@@ -31,6 +38,9 @@ const hasExpectedSignature = (mimeType: string, bytes: Uint8Array) => {
   if (mimeType.includes("openxmlformats")) return starts(0x50, 0x4b);
   if (mimeType === "application/msword" || mimeType === "application/vnd.ms-powerpoint")
     return starts(0xd0, 0xcf, 0x11, 0xe0);
+  if (mimeType === "video/mp4")
+    return bytes.length >= 12 && bytes.slice(4, 8).toString() === "102,116,121,112";
+  if (mimeType === "video/webm") return starts(0x1a, 0x45, 0xdf, 0xa3);
   return false;
 };
 
@@ -41,17 +51,44 @@ export const createMaterialService = (dependencies: {
   storageWarning?: (error: unknown) => void;
 }) => {
   const { repository, storage, idSource, storageWarning = console.error } = dependencies;
+  const canMaintain = async (actor: SessionView, id: string) => {
+    const denied = hrOnly(actor);
+    if (denied) return denied;
+    const material = await repository.get(id);
+    if (!material || material.archivedAt)
+      return fail("MATERIAL_NOT_FOUND", "资料不存在或已移除", 404);
+    if (actor.role !== "hr_admin" && material.createdByAccountId !== actor.accountId)
+      return fail("FORBIDDEN", "仅可维护本人创建的培训资料", 403);
+    return undefined;
+  };
   return {
     async list(actor: SessionView, input: { includeInactive?: boolean; query?: string } = {}) {
       if (!readers.includes(actor.role)) return fail("FORBIDDEN", "无权查看培训资料", 403);
       const materials = await repository.list({
-        ...(actor.role === "hr_admin" && input.includeInactive ? { includeInactive: true } : {}),
+        ...((actor.role === "hr_admin" || actor.role === "department_manager") &&
+        input.includeInactive
+          ? { includeInactive: true }
+          : {}),
         ...(input.query?.trim() ? { query: input.query.trim() } : {}),
         role: actor.role as "employee" | "department_manager" | "hr_admin" | "executive_viewer",
         employeeId: actor.employeeId,
+        accountId: actor.accountId,
+        factoryRead: "factoryRead" in actor && actor.factoryRead === true,
         ...(actor.departmentId ? { departmentId: actor.departmentId } : {}),
       });
-      const publicMaterials = materials.map(({ storageKey: _storageKey, ...material }) => material);
+      const publicMaterials = materials.map(
+        ({
+          storageKey: _storageKey,
+          createdByAccountId,
+          archivedAt: _archivedAt,
+          ...material
+        }) => ({
+          ...material,
+          canManage:
+            actor.role === "hr_admin" ||
+            (actor.role === "department_manager" && createdByAccountId === actor.accountId),
+        }),
+      );
       return {
         ok: true as const,
         data:
@@ -65,6 +102,8 @@ export const createMaterialService = (dependencies: {
       input: {
         title: string;
         category: string;
+        trainingType?: TrainingType;
+        trainingName?: string;
         description?: string;
         externalUrl: string;
         skillIds: string[];
@@ -83,14 +122,18 @@ export const createMaterialService = (dependencies: {
       if (
         !validText(input.title, 150) ||
         !validText(input.category, 80) ||
-        input.skillIds.length === 0
+        (input.trainingType !== undefined && !trainingTypes.includes(input.trainingType)) ||
+        (input.trainingName?.length ?? 0) > 150 ||
+        !Array.isArray(input.skillIds)
       )
-        return fail("INVALID_MATERIAL", "标题、分类和至少一个关联技能必填", 400);
+        return fail("INVALID_MATERIAL", "请填写资料标题和有效的培训类型，培训名称不超过150字", 400);
       const id = idSource();
       const created = await repository.create({
         id,
         title: input.title.trim(),
         category: input.category.trim(),
+        ...(input.trainingType ? { trainingType: input.trainingType } : {}),
+        ...(input.trainingName?.trim() ? { trainingName: input.trainingName.trim() } : {}),
         ...(input.description?.trim() ? { description: input.description.trim() } : {}),
         kind: "link",
         externalUrl: url.toString(),
@@ -106,6 +149,8 @@ export const createMaterialService = (dependencies: {
       input: {
         title: string;
         category: string;
+        trainingType?: TrainingType;
+        trainingName?: string;
         description?: string;
         skillIds: string[];
         filename: string;
@@ -118,16 +163,22 @@ export const createMaterialService = (dependencies: {
       if (
         !validText(input.title, 150) ||
         !validText(input.category, 80) ||
-        input.skillIds.length === 0
+        (input.trainingType !== undefined && !trainingTypes.includes(input.trainingType)) ||
+        (input.trainingName?.length ?? 0) > 150 ||
+        !Array.isArray(input.skillIds)
       )
-        return fail("INVALID_MATERIAL", "标题、分类和至少一个关联技能必填", 400);
+        return fail("INVALID_MATERIAL", "请填写资料标题和有效的培训类型，培训名称不超过150字", 400);
       if (!safeFilename(input.filename)) return fail("UNSAFE_FILENAME", "文件名不安全", 400);
       if (
         !allowedMaterialMimeTypes.includes(
           input.mimeType as (typeof allowedMaterialMimeTypes)[number],
         )
       )
-        return fail("UNSUPPORTED_FILE_TYPE", "仅支持 PDF、Word、PPT 和常用图片", 400);
+        return fail(
+          "UNSUPPORTED_FILE_TYPE",
+          "仅支持 PDF、Word、PPT、常用图片、MP4 和 WebM 视频",
+          400,
+        );
       if (input.bytes.byteLength === 0 || input.bytes.byteLength > maximumMaterialBytes)
         return fail("INVALID_FILE_SIZE", "文件不能为空且不得超过 25MB", 400);
       if (!hasExpectedSignature(input.mimeType, input.bytes))
@@ -143,6 +194,8 @@ export const createMaterialService = (dependencies: {
           id,
           title: input.title.trim(),
           category: input.category.trim(),
+          ...(input.trainingType ? { trainingType: input.trainingType } : {}),
+          ...(input.trainingName?.trim() ? { trainingName: input.trainingName.trim() } : {}),
           ...(input.description?.trim() ? { description: input.description.trim() } : {}),
           kind: "file",
           storageKey,
@@ -178,16 +231,25 @@ export const createMaterialService = (dependencies: {
     async update(
       actor: SessionView,
       id: string,
-      input: { title: string; category: string; description?: string; skillIds: string[] },
+      input: {
+        title: string;
+        category: string;
+        trainingType?: TrainingType;
+        trainingName?: string;
+        description?: string;
+        skillIds: string[];
+      },
     ) {
-      const denied = hrOnly(actor);
+      const denied = await canMaintain(actor, id);
       if (denied) return denied;
       if (
         !validText(input.title, 150) ||
         !validText(input.category, 80) ||
-        input.skillIds.length === 0
+        (input.trainingType !== undefined && !trainingTypes.includes(input.trainingType)) ||
+        (input.trainingName?.length ?? 0) > 150 ||
+        !Array.isArray(input.skillIds)
       )
-        return fail("INVALID_MATERIAL", "标题、分类和至少一个关联技能必填", 400);
+        return fail("INVALID_MATERIAL", "请填写资料标题和有效的培训类型，培训名称不超过150字", 400);
       return (await repository.update({
         ...input,
         id,
@@ -198,11 +260,18 @@ export const createMaterialService = (dependencies: {
         : fail("MATERIAL_NOT_FOUND", "资料不存在或关联技能无效", 404);
     },
     async deactivate(actor: SessionView, id: string) {
-      const denied = hrOnly(actor);
+      const denied = await canMaintain(actor, id);
       if (denied) return denied;
       return (await repository.deactivate(id, actor.accountId))
         ? { ok: true as const, data: { id, active: false as const } }
         : fail("MATERIAL_NOT_FOUND", "资料不存在或已停用", 404);
+    },
+    async archive(actor: SessionView, id: string) {
+      const denied = await canMaintain(actor, id);
+      if (denied) return denied;
+      return (await repository.archive(id, actor.accountId))
+        ? { ok: true as const, data: { id, active: false as const } }
+        : fail("MATERIAL_NOT_FOUND", "资料不存在或已移除", 404);
     },
     async content(actor: SessionView, id: string) {
       if (!readers.includes(actor.role)) return fail("FORBIDDEN", "无权访问培训资料", 403);
@@ -212,6 +281,8 @@ export const createMaterialService = (dependencies: {
         materialId: id,
         role: actor.role as "employee" | "department_manager" | "hr_admin" | "executive_viewer",
         employeeId: actor.employeeId,
+        accountId: actor.accountId,
+        factoryRead: "factoryRead" in actor && actor.factoryRead === true,
         ...(actor.departmentId ? { departmentId: actor.departmentId } : {}),
       });
       const historicalAuthorized =

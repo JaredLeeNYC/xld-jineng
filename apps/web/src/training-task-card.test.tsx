@@ -37,7 +37,7 @@ describe("mobile training task card", () => {
     for (const value of [
       "装配部",
       "装配工",
-      "普通培训",
+      "内部培训",
       "张主管",
       "E001",
       "李华",

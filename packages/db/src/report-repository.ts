@@ -54,7 +54,7 @@ export const createPostgresReportRepository = (pool: Pool, skills: SkillReposito
            and ($2::uuid is null or pa.position_id=$2)
            and ($3::uuid is null or e.id=$3)
            and ($4::uuid is null or exists (
-             select 1 from training_material_skills ms where ms.material_id=pl.material_id and ms.skill_id=$4
+             select 1 from training_material_skills ms where ms.material_id=any(pl.material_ids) and ms.skill_id=$4 and ms.active=true
            ))`,
         params,
       );

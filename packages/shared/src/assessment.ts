@@ -48,6 +48,8 @@ export type SkillAssessmentView = {
   assessorName?: string;
   method?: AssessmentMethod;
   level: SkillLevel;
+  trainingExamId?: string;
+  score?: number;
   passed: boolean;
   reason?: string;
   remediation?: string;

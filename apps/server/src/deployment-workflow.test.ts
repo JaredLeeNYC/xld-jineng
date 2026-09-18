@@ -37,6 +37,7 @@ describe("SSH deployment completion", () => {
     "success",
     "wrong-sha",
     "missing-account-marker",
+    "missing-factory-read-marker",
     "child-failure",
     "missing-account-log",
   ]) {
@@ -52,7 +53,7 @@ describe("SSH deployment completion", () => {
           .join("\n");
         await Bun.write(
           fixture,
-          `set -euo pipefail\necho backup\ncat >/dev/null\necho migration\necho current\necho health\n${scenario === "child-failure" ? "exit 9\n" : ""}${accountLines}\n${scenario === "missing-account-marker" ? "" : `echo '==> reviewed accounts verified ${sha}'`}\nprintf '%s' '${scenario === "wrong-sha" ? "b".repeat(40) : sha}' > ${quote(root + "/current/.deployed-sha")}\n`,
+          `set -euo pipefail\necho backup\ncat >/dev/null\necho migration\necho current\necho health\n${scenario === "child-failure" ? "exit 9\n" : ""}${accountLines}\n${scenario === "missing-factory-read-marker" ? "" : `echo '==> factory read permission verified ${sha}'`}\n${scenario === "missing-account-marker" ? "" : `echo '==> reviewed accounts verified ${sha}'`}\nprintf '%s' '${scenario === "wrong-sha" ? "b".repeat(40) : sha}' > ${quote(root + "/current/.deployed-sha")}\n`,
         );
         const workflow = await readFile(".github/workflows/deploy.yml", "utf8");
         let script = workflow.split("          script: |\n")[1]?.replace(/^            /gm, "");

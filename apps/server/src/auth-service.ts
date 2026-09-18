@@ -15,6 +15,7 @@ import type {
 } from "./auth-contract";
 
 export type AuthAccount = {
+  factoryRead?: boolean;
   id: string;
   employeeId: string;
   employeeNumber: string;
@@ -120,6 +121,7 @@ const authFailure = (
 const unauthenticated = () => authFailure("UNAUTHENTICATED", "请先登录", 401);
 
 const sessionView = (account: AuthAccount): SessionView => ({
+  factoryRead: account.factoryRead ?? false,
   accountId: account.id,
   employeeId: account.employeeId,
   employeeNumber: account.employeeNumber,
@@ -301,6 +303,7 @@ export const createAuthService = ({
         return authFailure("FORBIDDEN", "无权访问该员工数据", 403);
       }
       const allowed =
+        (account.factoryRead === true && target.access === "read") ||
         (account.role === "employee" && target.employeeId === account.employeeId) ||
         (account.role === "department_manager" &&
           Boolean(account.departmentId) &&
@@ -355,7 +358,10 @@ export const createAuthService = ({
       if (!currentMatches) {
         return authFailure("INVALID_CURRENT_PASSWORD", "当前密码不正确", 401);
       }
-      if (!passwordLengthIsValid(input.newPassword) || input.newPassword === input.currentPassword) {
+      if (
+        !passwordLengthIsValid(input.newPassword) ||
+        input.newPassword === input.currentPassword
+      ) {
         return authFailure(
           "WEAK_PASSWORD",
           `新密码长度需为 ${minimumPasswordLength}–${maximumPasswordLength} 位，且不能与当前密码相同`,
