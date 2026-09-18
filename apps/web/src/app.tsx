@@ -3873,7 +3873,7 @@ export function AssessmentPanel({ session }: { session: Session }) {
               <table>
                 <thead>
                   <tr>
-                    <th>员工 / 技能</th>
+                    <th>序号</th><th>员工 / 技能</th>
                     <th>部门</th>
                     <th>评定方式</th>
                     <th>考核成绩</th>
@@ -3885,8 +3885,9 @@ export function AssessmentPanel({ session }: { session: Session }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {assessments.map((item) => (
+                  {assessments.map((item, index) => (
                     <tr key={item.id}>
+                      <td>{index + 1}</td>
                       <td>
                         <strong>{item.employeeName}</strong>
                         <small>
@@ -3912,11 +3913,11 @@ export function AssessmentPanel({ session }: { session: Session }) {
               </table>
             </div>
             <div className="material-cards">
-              {assessments.map((item) => (
+              {assessments.map((item, index) => (
                 <article key={item.id}>
                   <header>
                     <strong>
-                      {item.employeeName} · {item.skillName}
+                      {index + 1}. {item.employeeName} · {item.skillName}
                     </strong>
                     <span>{assessmentStatusLabels[item.status]}</span>
                   </header>

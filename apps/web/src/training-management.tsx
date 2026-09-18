@@ -309,22 +309,28 @@ export function TrainingManagement({ session }: { session: Session }) {
           </button>
         </>
       )}
-      {plan.status === "pending_approval" && plan.createdByAccountId !== session.accountId && (
-        <>
-          <button disabled={busy} onClick={() => mutate(`/api/training-plans/${plan.id}/approve`)}>
-            审批通过
-          </button>
-          <button
-            disabled={busy}
-            onClick={() => {
-              const reason = window.prompt("请填写退回原因");
-              if (reason) void mutate(`/api/training-plans/${plan.id}/reject`, "POST", { reason });
-            }}
-          >
-            退回修改
-          </button>
-        </>
-      )}
+      {plan.status === "pending_approval" &&
+        plan.createdByAccountId !== session.accountId &&
+        plan.submittedByAccountId !== session.accountId && (
+          <>
+            <button
+              disabled={busy}
+              onClick={() => mutate(`/api/training-plans/${plan.id}/approve`)}
+            >
+              审批通过
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                const reason = window.prompt("请填写退回原因");
+                if (reason)
+                  void mutate(`/api/training-plans/${plan.id}/reject`, "POST", { reason });
+              }}
+            >
+              退回修改
+            </button>
+          </>
+        )}
       {["pending_approval", "published", "in_progress"].includes(plan.status) && (
         <button disabled={busy} onClick={() => mutate(`/api/training-plans/${plan.id}/withdraw`)}>
           撤回修改
@@ -345,6 +351,17 @@ export function TrainingManagement({ session }: { session: Session }) {
   const taskActions = (task: TrainingTaskView) => (
     <>
       {materialLinks(task)}
+      {task.evidence.map((evidence) => (
+        <div key={evidence.id}>
+          <MaterialPreviewButton
+            url={`/api/training-evidence/${evidence.id}/content`}
+            label={`预览签到证据：${evidence.filename}`}
+          />{" "}
+          <a href={`/api/training-evidence/${evidence.id}/content`}>
+            下载签到证据：{evidence.filename}
+          </a>
+        </div>
+      ))}
       {canManage && task.status === "submitted" && task.employeeId !== session.employeeId && (
         <div className="action-row">
           <button disabled={busy} onClick={() => mutate(`/api/training-tasks/${task.id}/confirm`)}>
@@ -623,6 +640,7 @@ export function TrainingManagement({ session }: { session: Session }) {
                   <table>
                     <thead>
                       <tr>
+                        <th>序号</th>
                         <th>计划 / 类型</th>
                         <th>资料 / 负责人</th>
                         <th>时间 / 地点</th>
@@ -631,8 +649,9 @@ export function TrainingManagement({ session }: { session: Session }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {plans.map((p) => (
+                      {plans.map((p, index) => (
                         <tr key={p.id}>
+                          <td>{index + 1}</td>
                           <td>
                             {p.title}
                             <br />
@@ -670,9 +689,11 @@ export function TrainingManagement({ session }: { session: Session }) {
                   </table>
                 </div>
                 <div className="training-mobile">
-                  {plans.map((p) => (
+                  {plans.map((p, index) => (
                     <article key={p.id}>
-                      <h3>{p.title}</h3>
+                      <h3>
+                        {index + 1}. {p.title}
+                      </h3>
                       <p>
                         {trainingTypeLabels[p.trainingType]} · {planLabels[p.status]}
                       </p>
@@ -721,6 +742,7 @@ export function TrainingManagement({ session }: { session: Session }) {
               <table>
                 <thead>
                   <tr>
+                    <th>序号</th>
                     <th>计划 / 对象</th>
                     <th>负责人</th>
                     <th>计划时间</th>
@@ -729,12 +751,16 @@ export function TrainingManagement({ session }: { session: Session }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {tasks.map((t) => (
+                  {tasks.map((t, index) => (
                     <tr key={t.id}>
+                      <td>{index + 1}</td>
                       <td>
                         {t.planTitle}
                         <br />
-                        {trainingTypeLabels[t.trainingType]} · {t.employeeName}
+                        {trainingTypeLabels[t.trainingType]} · {t.employeeName}（{t.employeeNumber}
+                        ）
+                        <br />
+                        {t.departmentName} · {t.positionName ?? "未分配岗位"}
                       </td>
                       <td>{t.ownerNames?.join("、") ?? t.ownerName}</td>
                       <td>
@@ -749,6 +775,8 @@ export function TrainingManagement({ session }: { session: Session }) {
                       </td>
                       <td>
                         {taskLabels[t.status]}
+                        {t.overdue && <p>已逾期</p>}
+                        {t.returnReason && <p>退回原因：{t.returnReason}</p>}
                         <br />
                         {taskActions(t)}
                       </td>
@@ -758,9 +786,11 @@ export function TrainingManagement({ session }: { session: Session }) {
               </table>
             </div>
             <div className="training-mobile">
-              {tasks.map((t) => (
+              {tasks.map((t, index) => (
                 <article key={t.id}>
-                  <h3>{t.planTitle}</h3>
+                  <h3>
+                    {index + 1}. {t.planTitle}
+                  </h3>
                   <p>
                     {t.employeeName}（{t.employeeNumber}） · {taskLabels[t.status]}
                   </p>
@@ -772,6 +802,8 @@ export function TrainingManagement({ session }: { session: Session }) {
                     {t.ownerNames?.join("、") ?? t.ownerName}
                   </p>
                   <p>地点：{t.location}</p>
+                  {t.overdue && <p>已逾期</p>}
+                  {t.returnReason && <p>退回原因：{t.returnReason}</p>}
                   <p>
                     计划：{date(t.startAt)} — {date(t.dueAt)}
                   </p>

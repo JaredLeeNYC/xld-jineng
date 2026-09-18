@@ -165,6 +165,11 @@ export const createAssessmentService = (dependencies: {
     },
     async update(actor: SessionView, id: string, input: AssessmentInput) {
       if (!canAssess(actor)) return fail("FORBIDDEN", "无权修订技能评定", 403);
+      if (input.level === 0) {
+        const previous = (await repository.list(actorScope(actor))).find((item) => item.id === id);
+        if (previous?.level !== 0)
+          return fail("INVALID_ASSESSMENT", "新评定等级应为 L1—L4，不能修改为 L0", 400);
+      }
       const parsed = parse(input);
       if (!parsed) return fail("INVALID_ASSESSMENT", "评定信息无效", 400);
       return (await repository.update(actorScope(actor), id, parsed))

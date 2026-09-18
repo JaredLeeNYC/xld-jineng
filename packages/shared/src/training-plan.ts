@@ -79,6 +79,7 @@ export type TrainingPlanView = {
   scopeType: TrainingScopeType;
 
   createdByAccountId?: string;
+  submittedByAccountId?: string;
   approvalComment?: string;
   scopeDepartmentIds?: string[];
   scopePositionIds?: string[];

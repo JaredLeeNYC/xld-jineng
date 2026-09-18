@@ -1321,8 +1321,31 @@ try {
       }),
     }),
   );
-  if (unrelatedMaterialResponse.status !== 200 || managerCrossScopePlan.status !== 200)
-    throw new Error("通用培训资料不应要求关联本部门岗位技能才能创建计划");
+  if (unrelatedMaterialResponse.status !== 200 || managerCrossScopePlan.status !== 409)
+    throw new Error("主管不应引用超出资料读取/使用范围的材料UUID");
+  const ownUnlinkedMaterialResponse = await app.handle(
+    new Request("http://localhost/api/training-materials/link", {
+      method: "POST",
+      headers: { cookie: successfulConcurrentCookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "主管创建无关联技能资料",
+        trainingType: "safety",
+        category: "安全",
+        externalUrl: "https://example.com/own-safety",
+        skillIds: [],
+      }),
+    }),
+  );
+  const ownUnlinkedMaterial = await ownUnlinkedMaterialResponse.json();
+  const ownUnlinkedPlan = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      method: "POST",
+      headers: { cookie: successfulConcurrentCookie, "content-type": "application/json" },
+      body: JSON.stringify({ ...planPayload, materialId: ownUnlinkedMaterial.data.id }),
+    }),
+  );
+  if (ownUnlinkedMaterialResponse.status !== 200 || ownUnlinkedPlan.status !== 200)
+    throw new Error("主管创建的无关联技能资料应可用于培训计划");
   const employeeCreatePlan = await app.handle(
     new Request("http://localhost/api/training-plans", {
       method: "POST",
@@ -2824,6 +2847,117 @@ try {
   );
   if (positionsStored.rows[0]?.scope_position_ids.length !== 2)
     throw new Error("岗位多选未完整持久化");
+
+  const proxyPlanResponse = await qaRequest(
+    "/api/training-plans",
+    "POST",
+    planPayload,
+    successfulConcurrentCookie,
+  );
+  const proxyPlanBody = await proxyPlanResponse.json();
+  if (proxyPlanResponse.status !== 200) throw new Error("主管创建代理提交验收计划失败");
+  const proxySubmitted = await qaRequest(
+    `/api/training-plans/${proxyPlanBody.data.id}/submit`,
+    "POST",
+  );
+  const submitterApproveDenied = await qaRequest(
+    `/api/training-plans/${proxyPlanBody.data.id}/approve`,
+    "POST",
+  );
+  const submitterRejectDenied = await qaRequest(
+    `/api/training-plans/${proxyPlanBody.data.id}/reject`,
+    "POST",
+    { reason: "提交人不得自行处理审批" },
+  );
+  const creatorApproveDenied = await qaRequest(
+    `/api/training-plans/${proxyPlanBody.data.id}/approve`,
+    "POST",
+    undefined,
+    successfulConcurrentCookie,
+  );
+  const independentProxyApproved = await qaRequest(
+    `/api/training-plans/${proxyPlanBody.data.id}/approve`,
+    "POST",
+    undefined,
+    independentHrCookie,
+  );
+  const actualSubmitter = await contractPool.query(
+    "select submitted_by_account_id,created_by_account_id from training_plans where id=$1",
+    [proxyPlanBody.data.id],
+  );
+  if (
+    proxySubmitted.status !== 200 ||
+    submitterApproveDenied.status !== 409 ||
+    submitterRejectDenied.status !== 409 ||
+    creatorApproveDenied.status !== 409 ||
+    independentProxyApproved.status !== 200 ||
+    actualSubmitter.rows[0]?.submitted_by_account_id !== accountIds.get("hr_admin") ||
+    actualSubmitter.rows[0]?.created_by_account_id !== accountIds.get("department_manager")
+  )
+    throw new Error("HR代提交审批隔离失败：创建人与实际提交人均不得审批/退回，另一HR应成功审批");
+
+  const crossOwnerTask = await contractPool.query<{ id: string }>(
+    "select id from training_tasks where plan_id=$1 and employee_id=$2",
+    [multiBody.data.id, otherEmployee.rows[0]!.id],
+  );
+  await contractPool.query("update user_accounts set factory_read=false where id=$1", [
+    accountIds.get("department_manager")!,
+  ]);
+  const scopedOwnerTasks = await (
+    await qaRequest("/api/training-tasks", "GET", undefined, successfulConcurrentCookie)
+  ).json();
+  const crossOwnerStart = await executeTraining(
+    crossOwnerTask.rows[0]!.id,
+    "start",
+    successfulConcurrentCookie,
+  );
+  const hrOwnerStart = await executeTraining(
+    crossOwnerTask.rows[0]!.id,
+    "start",
+    independentHrCookie,
+  );
+  const crossOwnerComplete = await executeTraining(
+    crossOwnerTask.rows[0]!.id,
+    "complete",
+    successfulConcurrentCookie,
+  );
+  const hrOwnerComplete = await executeTraining(
+    crossOwnerTask.rows[0]!.id,
+    "complete",
+    independentHrCookie,
+  );
+  if (
+    scopedOwnerTasks.data.some(
+      (t: { departmentId: string }) => t.departmentId !== department.rows[0]!.id,
+    ) ||
+    crossOwnerStart.status !== 409 ||
+    crossOwnerComplete.status !== 409 ||
+    hrOwnerStart.status !== 200 ||
+    hrOwnerComplete.status !== 200
+  )
+    throw new Error("多负责人身份扩大主管部门读写范围，或HR负责人不能合法跨部门执行");
+  await contractPool.query("update user_accounts set role='employee' where id=$1", [
+    accountIds.get("department_manager")!,
+  ]);
+  const downgradedOwnerTasks = await (
+    await qaRequest("/api/training-tasks", "GET", undefined, successfulConcurrentCookie)
+  ).json();
+  const downgradedOwnerWrite = await executeTraining(
+    crossOwnerTask.rows[0]!.id,
+    "start",
+    successfulConcurrentCookie,
+  );
+  if (
+    downgradedOwnerTasks.data.some(
+      (t: { employeeId: string }) => t.employeeId !== employeeIds.get("department_manager"),
+    ) ||
+    downgradedOwnerWrite.status !== 403
+  )
+    throw new Error("负责人降级为员工后仍能查看或操作他人任务");
+  await contractPool.query(
+    "update user_accounts set role='department_manager',factory_read=true where id=$1",
+    [accountIds.get("department_manager")!],
+  );
 
   let missingFactoryGrantRejected = false;
   try {

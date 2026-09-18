@@ -1,0 +1,19 @@
+{
+  "method": "renderToStaticMarkup; seeded component data; useEffect suppressed; no browser claims",
+  "results": [
+    {
+      "role": "employee",
+      "desktopAndMobileEvidenceDownloads": 2,
+      "desktopAndMobileEvidencePreviews": 2,
+      "serialHeaders": 1,
+      "result": "PASS"
+    },
+    {
+      "role": "hr_admin",
+      "desktopAndMobileEvidenceDownloads": 2,
+      "desktopAndMobileEvidencePreviews": 2,
+      "serialHeaders": 2,
+      "result": "PASS"
+    }
+  ]
+}

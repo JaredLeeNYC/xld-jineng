@@ -171,10 +171,16 @@ try {
     assessedAt: "2026-09-11T08:00:00Z",
   };
   const assessmentForm = new FormData();
-  for (const [key,value] of Object.entries(base)) assessmentForm.set(key,String(value));
-  const assessmentResponse = await app.handle(new Request("http://localhost/api/assessments", {method:"POST",headers:{cookie:"skill_matrix_session=mgr"},body:assessmentForm}));
+  for (const [key, value] of Object.entries(base)) assessmentForm.set(key, String(value));
+  const assessmentResponse = await app.handle(
+    new Request("http://localhost/api/assessments", {
+      method: "POST",
+      headers: { cookie: "skill_matrix_session=mgr" },
+      body: assessmentForm,
+    }),
+  );
   const a = await assessmentResponse.json();
-  check("HTTP无证据multipart评定创建", assessmentResponse.status===200 && a.ok);
+  check("HTTP无证据multipart评定创建", assessmentResponse.status === 200 && a.ok);
   check("无证据保存直接待HR归档", a.ok && a.data.status === "pending_hr");
   if (!a.ok) throw new Error("create failed");
   let persisted = (
@@ -202,6 +208,34 @@ try {
       .rowCount === 1,
   );
   check("新L0评定拒绝", !(await assessmentService.create(actors.mgr!, { ...base, level: 0 })).ok);
+  const returnedNew = await assessmentService.create(actors.mgr!, base);
+  if (!returnedNew.ok) throw new Error("return regression setup failed");
+  await assessmentService.returnAssessment(actors.hr!, returnedNew.data.id, "等级待修订");
+  check(
+    "新评定退回后不能改为L0",
+    !(await assessmentService.update(actors.mgr!, returnedNew.data.id, { ...base, level: 0 })).ok,
+  );
+  check(
+    "拒绝L0后保留原等级",
+    (await pool.query("select level from skill_assessments where id=$1", [returnedNew.data.id]))
+      .rows[0].level === 2,
+  );
+  const legacyZero = randomUUID();
+  await pool.query(
+    "insert into skill_assessments(id,employee_id,skill_id,level,status,passed,method,assessor_account_id,source_type,source_reference,assessed_at) values($1,$2,$3,0,'draft',false,'written',$4,'manual_assessment','历史L0回归','2026-09-12')",
+    [legacyZero, actors.emp!.employeeId, skill, actors.mgr!.accountId],
+  );
+  check(
+    "历史L0保持原值可修订",
+    (
+      await assessmentService.update(actors.mgr!, legacyZero, {
+        ...base,
+        level: 0,
+        passed: false,
+        reason: "历史记录补充",
+      })
+    ).ok,
+  );
   const manual = await assessmentService.create(actors.hr!, {
     ...base,
     score: 91,
@@ -220,7 +254,12 @@ try {
   check(
     "员工不能读取他人评定",
     (await assessmentService.list(actors.otherEmp!)).ok &&
-      (await createPostgresAssessmentRepository(pool).list({ ...actors.otherEmp!, role: "employee" })).length === 0,
+      (
+        await createPostgresAssessmentRepository(pool).list({
+          ...actors.otherEmp!,
+          role: "employee",
+        })
+      ).length === 0,
   );
   check("主管跨部门评定拒绝", !(await assessmentService.create(actors.otherMgr!, base)).ok);
   check(
@@ -277,8 +316,13 @@ try {
       ])
     ).rowCount === 0,
   );
-  await pool.query("update training_material_skills set active=false where material_id=$1", [material]);
-  check("未绑定技能的课程允许考核选择有效技能", (await http("mgr", "/api/training-exams", {...examInput,skillId:otherSkill})).ok);
+  await pool.query("update training_material_skills set active=false where material_id=$1", [
+    material,
+  ]);
+  check(
+    "未绑定技能的课程允许考核选择有效技能",
+    (await http("mgr", "/api/training-exams", { ...examInput, skillId: otherSkill })).ok,
+  );
   console.log(JSON.stringify({ database, checks: evidence }, null, 2));
 } finally {
   if (pool) await pool.end();

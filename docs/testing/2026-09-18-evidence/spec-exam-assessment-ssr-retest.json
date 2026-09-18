@@ -1,0 +1,19 @@
+{
+  "method": "SSR rendering, seeded data; not browser",
+  "results": [
+    {
+      "component": "TrainingExamsPage",
+      "desktopSerialHeader": true,
+      "firstRowSerial": 1,
+      "mobileTitleSerial": 1,
+      "result": "PASS"
+    },
+    {
+      "component": "AssessmentPanel",
+      "desktopSerialHeader": true,
+      "firstRowSerial": 1,
+      "mobileTitleSerial": 1,
+      "result": "PASS"
+    }
+  ]
+}

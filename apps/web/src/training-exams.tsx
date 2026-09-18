@@ -257,6 +257,7 @@ export function TrainingExamsPage({ session }: { session: Session }) {
               <thead>
                 <tr>
                   {[
+                    "序号",
                     "员工",
                     "部门",
                     "关联课程 / 技能",
@@ -272,8 +273,9 @@ export function TrainingExamsPage({ session }: { session: Session }) {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((x) => (
+                {visible.map((x, index) => (
                   <tr key={x.id}>
+                    <td>{index + 1}</td>
                     <td>{x.employeeName}</td>
                     <td>{x.departmentName}</td>
                     <td>{x.skillName}</td>
@@ -289,10 +291,10 @@ export function TrainingExamsPage({ session }: { session: Session }) {
             </table>
           </div>
           <div className="material-cards">
-            {visible.map((x) => (
+            {visible.map((x, index) => (
               <article className="master-card" key={x.id}>
                 <h3>
-                  {x.employeeName} · {x.skillName}
+                  {index + 1}. {x.employeeName} · {x.skillName}
                 </h3>
                 <p>
                   {x.departmentName} · {x.planTitle}

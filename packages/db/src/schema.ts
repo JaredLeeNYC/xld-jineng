@@ -378,6 +378,7 @@ export const trainingPlans = pgTable(
       onDelete: "restrict",
     }),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    submittedByAccountId: uuid("submitted_by_account_id").references(() => userAccounts.id, { onDelete: "restrict" }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     title: varchar("title", { length: 150 }).notNull(),
     trainingType: varchar("training_type", { length: 20 }).notNull().default("professional"),

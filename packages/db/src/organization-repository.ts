@@ -180,6 +180,9 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
     actorAccountId: string;
   }): Promise<boolean> {
     return withTransaction(pool, async (client) => {
+      // Serialize department moves with assignment/import reference validation.
+      // Recheck occupants in a fresh statement after acquiring this lock.
+      await client.query("select id from positions where id=$1 for update", [input.id]);
       const result = await client.query(
         `update positions p set name = $2, department_id = $3, code = coalesce($4, code), updated_at = now()
          where p.id = $1 and exists (
@@ -377,7 +380,7 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       if (currentStartedAt && input.effectiveAt <= currentStartedAt) return false;
       const target = await client.query(
         `select p.id from positions p join departments d on d.id = p.department_id
-         where p.id = $1 and p.department_id = $2 and p.active = true and d.active = true`,
+         where p.id = $1 and p.department_id = $2 and p.active = true and d.active = true for share of p,d`,
         [input.positionId, input.departmentId],
       );
       if (target.rowCount === 0) return false;
@@ -512,7 +515,7 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
         const reference = await client.query<{ departmentId: string; positionId: string }>(
           `select d.id as "departmentId", p.id as "positionId"
            from departments d join positions p on p.department_id = d.id
-           where d.code = $1 and p.code = $2 and d.active = true and p.active = true`,
+           where d.code = $1 and p.code = $2 and d.active = true and p.active = true for share of p,d`,
           [row.departmentCode, row.positionCode],
         );
         const target = reference.rows[0];

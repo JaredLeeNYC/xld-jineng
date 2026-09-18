@@ -62,9 +62,29 @@ type ActorScope = {
   departmentId?: string;
 };
 
+// Referencing a material is a write capability: factory-wide read access does not grant it.
+const selectableMaterials = `select m.id from training_materials m where m.id=any($1::uuid[]) and m.active=true and m.archived_at is null
+  and ($2='hr_admin' or m.created_by_account_id=$3 or exists (
+    select 1 from training_material_skills ms
+    join position_skill_requirements psr on psr.skill_id=ms.skill_id and psr.active=true
+    join position_assignments pa on pa.position_id=psr.position_id and pa.ended_at is null
+    where ms.material_id=m.id and ms.active=true and pa.department_id=$4::uuid
+  ) or exists (
+    select 1 from training_plans granted_plan
+    where m.id=any(granted_plan.material_ids) and granted_plan.status in ('published','in_progress','completed') and granted_plan.deleted_at is null
+      and (select employee_id from user_accounts where id=$3)=any(granted_plan.owner_employee_ids)
+  ) or exists (
+    select 1 from training_material_access_grants g
+    where g.material_id=m.id and g.employee_id=(select employee_id from user_accounts where id=$3)
+      and (g.source_type<>'training_task' or exists (
+        select 1 from training_tasks t join training_plans p on p.id=t.plan_id
+        where t.id::text=g.source_reference and t.status<>'cancelled' and p.status in ('published','in_progress','completed') and m.id=any(p.material_ids)
+      ))
+  ))`;
+
 const planSelect = `select p.id,p.title,p.training_type as "trainingType",p.status,p.material_ids as "materialIds",p.owner_employee_ids as "ownerEmployeeIds",
  p.scope_department_ids as "scopeDepartmentIds",p.scope_position_ids as "scopePositionIds",
- p.created_by_account_id as "createdByAccountId",p.approval_comment as "approvalComment",
+ p.created_by_account_id as "createdByAccountId",p.submitted_by_account_id as "submittedByAccountId",p.approval_comment as "approvalComment",
  (select jsonb_agg(jsonb_build_object('id',mm.id,'title',mm.title,'skillIds',(select coalesce(array_agg(ms.skill_id),'{}') from training_material_skills ms where ms.material_id=mm.id and ms.active=true))) from training_materials mm where mm.id=any(p.material_ids)) as materials,
  (select array_agg(oo.display_name) from employees oo where oo.id=any(p.owner_employee_ids)) as "ownerNames",p.material_id as "materialId",m.title as "materialTitle",
   p.owner_employee_id as "ownerEmployeeId",owner.display_name as "ownerName",
@@ -161,10 +181,12 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     if (actor.role === "department_manager" && !actor.departmentId) return false;
     const materialIds = input.materialIds ?? [input.materialId];
     const ownerIds = input.ownerEmployeeIds ?? [input.ownerEmployeeId];
-    const materials = await pool.query(
-      "select id from training_materials where id=any($1::uuid[]) and active=true",
-      [materialIds],
-    );
+    const materials = await pool.query(selectableMaterials, [
+      materialIds,
+      actor.role,
+      actor.accountId,
+      actor.departmentId ?? null,
+    ]);
     if (materials.rowCount !== new Set(materialIds).size || !materials.rowCount) return false;
     const owners = await pool.query(
       "select e.id from employees e where e.id=any($1::uuid[]) and e.active=true and ($2::uuid is null or e.department_id=$2) and exists (select 1 from user_accounts ua where ua.employee_id=e.id and ua.active=true and ua.role in ('hr_admin','department_manager'))",
@@ -290,7 +312,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
   async submitPlan(id: string, actor: ActorScope, now: Date) {
     return transaction(pool, async (client) => {
       const result = await client.query(
-        "update training_plans set status='pending_approval',submitted_at=$4,approval_comment=null,updated_at=$4 where id=$1 and deleted_at is null and status='draft' and ($2='hr_admin' or created_by_account_id=$3) returning id",
+        "update training_plans set status='pending_approval',submitted_at=$4,submitted_by_account_id=$3,approval_comment=null,updated_at=$4 where id=$1 and deleted_at is null and status='draft' and ($2='hr_admin' or created_by_account_id=$3) returning id",
         [id, actor.role, actor.accountId, now],
       );
       if (!result.rowCount) return false;
@@ -302,7 +324,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     return transaction(pool, async (client) => {
       const result = await client.query(
         `update training_plans p set status='draft',approval_comment=$4,updated_at=$5
-       where p.id=$1 and p.deleted_at is null and p.status='pending_approval' and p.created_by_account_id<>$3
+       where p.id=$1 and p.deleted_at is null and p.status='pending_approval' and p.created_by_account_id<>$3 and coalesce(p.submitted_by_account_id,p.created_by_account_id)<>$3
        and ($2='hr_admin' or ($2='department_manager' and $6::uuid is not null
          and not exists (select 1 from employees e where e.id=any(p.owner_employee_ids) and e.department_id<>$6)
          and (p.scope_type<>'department' or p.scope_department_ids <@ array[$6::uuid])
@@ -338,8 +360,8 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     return transaction(pool, async (client) => {
       const plan = await client.query<{ id: string }>(
         `select p.id from training_plans p join training_tasks t on t.plan_id=p.id
-        where t.id=$1 and p.deleted_at is null and $2::uuid=any(p.owner_employee_ids) and p.status in ('published','in_progress') and exists (select 1 from user_accounts ua where ua.employee_id=$2 and ua.active=true and ua.role in ('hr_admin','department_manager')) for update of p`,
-        [id, employeeId],
+        where t.id=$1 and p.deleted_at is null and $2::uuid=any(p.owner_employee_ids) and p.status in ('published','in_progress') and exists (select 1 from user_accounts ua join employees actor_employee on actor_employee.id=ua.employee_id join employees target_employee on target_employee.id=t.employee_id where ua.id=$3 and ua.employee_id=$2 and ua.active=true and actor_employee.active=true and (ua.role='hr_admin' or (ua.role='department_manager' and actor_employee.department_id=target_employee.department_id))) for update of p`,
+        [id, employeeId, accountId],
       );
       if (!plan.rowCount) return false;
       const result = await client.query(
@@ -379,17 +401,19 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
   async publish(id: string, actor: ActorScope, now: Date) {
     return transaction(pool, async (client) => {
       const plan = await client.query<any>(
-        `select * from training_plans where id=$1 and deleted_at is null and status='pending_approval' and created_by_account_id<>$3 and $2 in ('hr_admin','department_manager') for update`,
+        `select * from training_plans where id=$1 and deleted_at is null and status='pending_approval' and created_by_account_id<>$3 and coalesce(submitted_by_account_id,created_by_account_id)<>$3 and $2 in ('hr_admin','department_manager') for update`,
         [id, actor.role, actor.accountId],
       );
       const row = plan.rows[0];
       if (!row) return { ok: false as const, reason: "state" as const };
       if (actor.role === "department_manager" && !actor.departmentId)
         return { ok: false as const, reason: "scope" as const };
-      const material = await client.query(
-        "select id from training_materials where id=any($1::uuid[]) and active=true",
-        [row.material_ids],
-      );
+      const material = await client.query(selectableMaterials, [
+        row.material_ids,
+        actor.role,
+        actor.accountId,
+        actor.departmentId ?? null,
+      ]);
       if (material.rowCount !== row.material_ids.length || !material.rowCount)
         return { ok: false as const, reason: "material" as const };
       const owners = await client.query(
@@ -486,8 +510,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
   }) {
     const result = await pool.query(
       `${taskSelect}
-       where (t.employee_id=$3 or $3::uuid=any(p.owner_employee_ids) or $2='hr_admin'
-         or ($2='department_manager' and (e.department_id=$4::uuid or p.owner_employee_id=$3)))
+       where ($2='hr_admin' or ($2='employee' and t.employee_id=$3) or ($2='department_manager' and e.department_id=$4::uuid))
        group by t.id,p.id,m.title,e.id,d.name,pa.position_id,pos.name,owner.display_name
        order by p.start_at desc,t.created_at desc`,
       [input.now, input.actorRole, input.employeeId, input.departmentId ?? null],
@@ -525,8 +548,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     const result = await pool.query(
       `select t.status,t.employee_id as "employeeId",p.owner_employee_id as "ownerEmployeeId",e.department_id as "departmentId"
        from training_tasks t join training_plans p on p.id=t.plan_id join employees e on e.id=t.employee_id
-       where t.id=$1 and ($2='hr_admin' or p.owner_employee_id=(select employee_id from user_accounts where id=$3)
-         or e.department_id=$4::uuid)`,
+       where t.id=$1 and ($2='hr_admin' or ($2='department_manager' and e.department_id=$4::uuid)) and exists (select 1 from user_accounts actor_account where actor_account.id=$3 and actor_account.active=true)`,
       [taskId, actor.role, actor.accountId, actor.departmentId ?? null],
     );
     return result.rows[0] as { status: string; employeeId: string } | undefined;
@@ -736,7 +758,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
        join training_tasks t on t.id=et.task_id join training_plans p on p.id=t.plan_id
        join employees e on e.id=t.employee_id
        where ev.id=$1 and ($2='hr_admin' or ($2='employee' and t.employee_id=$3)
-         or ($2='department_manager' and (e.department_id=$4::uuid or p.owner_employee_id=$3)))
+         or ($2='department_manager' and e.department_id=$4::uuid))
        limit 1`,
       [input.evidenceId, input.actorRole, input.employeeId, input.departmentId ?? null],
     );

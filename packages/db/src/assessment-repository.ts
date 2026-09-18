@@ -207,7 +207,7 @@ export const createPostgresAssessmentRepository = (pool: Pool) => ({
         `update skill_assessments a set level=$3,passed=$4,method=$5,reason=$6,remediation=$7,
            assessed_at=$8,training_exam_id=$11,score=$12,status='pending_hr',return_reason=null,returned_by_account_id=null,manager_confirmed_by_account_id=null,manager_confirmed_at=null,updated_at=now()
          from employees e where a.id=$1 and e.id=a.employee_id and a.assessor_account_id=$2
-           and a.status in ('draft','returned')
+           and a.status in ('draft','returned') and ($3<>0 or a.level=0)
            and ($9='hr_admin' or ($9='department_manager' and e.department_id=$10::uuid))
          returning a.id`,
         [
