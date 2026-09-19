@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# auto-deploy.sh — push main 后由 GitHub Actions SSH 触发，自动拉取、构建、迁移、重启。
+# auto-deploy.sh — push main 后由 GitHub Actions SSH 触发，接收固定提交后构建、迁移、重启。
 # 前提：deploy/setup-server.sh 已执行过一次，服务器环境已初始化。
 set -euo pipefail
 
@@ -13,12 +13,12 @@ BUN="/usr/local/bin/bun"
 EXPECTED_SHA="${1:?usage: auto-deploy.sh <exact-git-sha>}"
 [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid release SHA"; exit 1; }
 
-# ── 1. 拉取最新代码 ──
+# ── 1. 校验并检出已接收的固定提交 ──
 cd "$REPO_DIR"
-git fetch origin main
 git checkout --detach "$EXPECTED_SHA" --quiet
 SHA=$(git rev-parse --short=12 HEAD)
 FULL_SHA=$(git rev-parse HEAD)
+test "$FULL_SHA" = "$EXPECTED_SHA" || { echo "release SHA does not match HEAD"; exit 1; }
 
 echo "==> deploying $SHA"
 

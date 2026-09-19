@@ -11,8 +11,37 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
+      - name: Check out exact release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create complete release bundle
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git update-ref refs/deploy/release "$EXPECTED_SHA"
+          git bundle create release.bundle refs/deploy/release
+          git bundle verify release.bundle
+
+      - name: Transfer release bundle
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: release.bundle
+          target: /tmp/skill-matrix-transfer-${{ github.run_id }}-${{ github.run_attempt }}
+          command_timeout: 10m
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -22,8 +51,12 @@ jobs:
           command_timeout: 30m
           script: |
             set -euo pipefail
-            git -C /opt/skill-matrix/repo fetch origin ${{ github.sha }}
             EXPECTED_SHA='${{ github.sha }}'
+            [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+            BUNDLE_PATH='/tmp/skill-matrix-transfer-${{ github.run_id }}-${{ github.run_attempt }}/release.bundle'
+            git -C /opt/skill-matrix/repo bundle verify "$BUNDLE_PATH"
+            git -C /opt/skill-matrix/repo fetch "$BUNDLE_PATH" refs/deploy/release
+            test "$(git -C /opt/skill-matrix/repo rev-parse FETCH_HEAD)" = "$EXPECTED_SHA"
             DEPLOY_SCRIPT=$(mktemp /tmp/skill-matrix-deploy.XXXXXX)
             DEPLOY_LOG=''
             trap 'rm -f -- "$DEPLOY_SCRIPT" "$DEPLOY_LOG"' EXIT
@@ -37,3 +70,20 @@ jobs:
               grep -F "\"employeeNumber\": \"$employee_number\"" "$DEPLOY_LOG"
             done
             echo "==> deployment readback verified $EXPECTED_SHA"
+
+      - name: Clean up transferred bundle
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            TRANSFER_DIR='/tmp/skill-matrix-transfer-${{ github.run_id }}-${{ github.run_attempt }}'
+            [[ "$TRANSFER_DIR" =~ ^/tmp/skill-matrix-transfer-[0-9]+-[0-9]+$ ]]
+            rm -f -- "$TRANSFER_DIR/release.bundle"
+            if [ -d "$TRANSFER_DIR" ]; then
+              rmdir -- "$TRANSFER_DIR"
+            fi

@@ -56,11 +56,16 @@ describe("SSH deployment completion", () => {
           `set -euo pipefail\necho backup\ncat >/dev/null\necho migration\necho current\necho health\n${scenario === "child-failure" ? "exit 9\n" : ""}${accountLines}\n${scenario === "missing-factory-read-marker" ? "" : `echo '==> factory read permission verified ${sha}'`}\n${scenario === "missing-account-marker" ? "" : `echo '==> reviewed accounts verified ${sha}'`}\nprintf '%s' '${scenario === "wrong-sha" ? "b".repeat(40) : sha}' > ${quote(root + "/current/.deployed-sha")}\n`,
         );
         const workflow = await readFile(".github/workflows/deploy.yml", "utf8");
-        let script = workflow.split("          script: |\n")[1]?.replace(/^            /gm, "");
+        let script = workflow
+          .split("          script: |\n")[1]
+          ?.split(/^      - name:/m)[0]
+          ?.replace(/^            /gm, "");
         if (!script) throw new Error("Workflow SSH script not found");
         script = script
           .replaceAll("${{ github.sha }}", sha)
-          .replace(/^git .* fetch origin .*$/m, "true")
+          // Bundle integrity and exact-SHA gates have separate real-Git tests.
+          // This suite exercises the child process, completion readback and cleanup.
+          .replace(/^BUNDLE_PATH=.*\n.*bundle verify.*\n.*fetch.*\n.*FETCH_HEAD.*\n/m, "")
           .replace(
             /^git .* show .* > "\$DEPLOY_SCRIPT"$/m,
             `cat ${quote(posix(fixture))} > "$DEPLOY_SCRIPT"`,

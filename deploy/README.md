@@ -6,9 +6,11 @@
 
 `lzb-ops/work/2026-07-skill-matrix-deploy/map.md` 记录的技能矩阵目标为 tc-stage（`https://skills.xinglianda.cn`）。本仓库 `.github/workflows/deploy.yml` 在 main push 后自动发布；下文显式 `release.sh` 是通用发布模板，不是该测试环境的触发条件。
 
-工作流从触发提交读取 `auto-deploy.sh`，传入完整 SHA，并通过 `git archive` 创建全新版本目录。已存在的版本目录不覆盖。发布前安装本机 LibreOffice，用于授权后将 Word、Excel、PowerPoint 转换为 PDF；转换文件不上传第三方。OpenCloudOS 使用 dnf 安装 writer、calc、impress、headless 包，依赖安装失败时停止发布。
+工作流在 GitHub Actions 中检出触发的完整提交 SHA，获取完整历史且不把 checkout 凭据写入 Git 配置。Actions 为该提交创建只包含 `refs/deploy/release` 发布引用的完整 Git bundle，通过 SCP 上传到 `/tmp/skill-matrix-transfer-<run_id>-<run_attempt>/release.bundle`。服务器先验证 bundle，再从本地 bundle 获取引用并核对 `FETCH_HEAD` 与预期完整 SHA 相等；代码接收和发布脚本均不再向 GitHub 发起 fetch，因此服务器到 GitHub 的 SSL 超时不会阻断此阶段。依赖安装仍需访问其软件源。
 
-数据库备份成功后才能迁移。health 和 ready 均通过后记录运行版本，再执行 `packages/db/scripts/promote-reviewed-managers.ts`，幂等处理本次修改清单指定的四个工号。缺失、停用或角色异常会导致工作流失败并输出逐项状态；此时应用可能已上线，必须区分运行版本与业务变更完成状态。没有通过全部验收前不要 push main。
+随后工作流从已校验的触发提交读取 `auto-deploy.sh`，传入完整 SHA。脚本只检出已接收的提交，再次核对 HEAD 与预期 SHA，才通过 `git archive` 创建全新版本目录。发布完成或失败后，工作流尝试删除本次 run/attempt 的精确 bundle 文件并用 `rmdir` 清理其空目录，不递归清理其他运行目录；如果 SSH 本身不可用，清理步骤也会失败，需按日志中的本次精确路径处理残留。已存在的版本目录不覆盖。发布前安装本机 LibreOffice，用于授权后将 Word、Excel、PowerPoint 转换为 PDF；转换文件不上传第三方。OpenCloudOS 使用 dnf 安装 writer、calc、impress、headless 包，依赖安装失败时停止发布。
+
+数据库备份成功后才能迁移。health 和 ready 均通过后执行 `packages/db/scripts/promote-reviewed-managers.ts`，幂等处理本次修改清单指定的四个工号。缺失、停用或角色异常会导致工作流失败并输出逐项状态；此时应用可能已上线，必须区分运行版本与业务变更完成状态；只有账号及全厂只读权限读回均通过后才写入 `.deployed-sha`。没有通过全部验收前不要 push main。
 
 2026-09-18 需求另增加 `packages/db/scripts/grant-reviewed-factory-read.ts`：仅在“邓华明”有效管理账号唯一时授予全厂只读权限，保持原角色，不创建账号或扩大写入范围。重复执行不重复授权；缺失或重名会明确失败。授权变更使旧会话失效，需重新登录。工作流同时检查该权限完成标识，不能把应用已启动等同于本次业务授权已完成。
 

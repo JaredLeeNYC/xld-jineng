@@ -185,10 +185,25 @@ const bash =
   process.platform === "win32" && (await Bun.file("C:/Program Files/Git/bin/bash.exe").exists())
     ? "C:/Program Files/Git/bin/bash.exe"
     : "bash";
+const automaticDeployment = await Bun.file("deploy/auto-deploy.sh").text();
+const deploymentWorkflow = await Bun.file(".github/workflows/deploy.yml").text();
+for (const part of [
+  "persist-credentials: false",
+  "git bundle create release.bundle",
+  "bundle verify",
+  "rev-parse FETCH_HEAD",
+  "factory read permission verified",
+]) {
+  if (!deploymentWorkflow.includes(part)) fail(`自动部署缺少固定提交传输约束：${part}`);
+}
+if (/git\s+fetch\s+origin/.test(automaticDeployment) || /fetch origin/.test(deploymentWorkflow)) {
+  fail("自动发布应使用已验证的提交包，不得再从服务器拉取浮动分支");
+}
 const syntaxCheck = Bun.spawnSync({
   cmd: [
     bash,
     "-n",
+    "deploy/auto-deploy.sh",
     "deploy/validate-release.sh",
     "deploy/backup-materials.sh",
     "deploy/restore-materials.sh",
