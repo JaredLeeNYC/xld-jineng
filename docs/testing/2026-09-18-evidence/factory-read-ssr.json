@@ -1,0 +1,18 @@
+{
+  "method": "Actual App SSR using synthetic initialSession props and in-memory hook state. No browser interaction, no accounts, DB or permissions modified; fetch prohibited.",
+  "requests": 0,
+  "results": [
+    {
+      "name": "普通主管导航无新增技能标准入口",
+      "passed": true
+    },
+    {
+      "name": "factoryRead主管实际App导航含技能标准，读入口两部门桌面表与手机卡片均显示且无写按钮",
+      "passed": true
+    },
+    {
+      "name": "只读入口筛选其他部门后桌面表和手机卡片显示其岗位要求且无写按钮",
+      "passed": true
+    }
+  ]
+}

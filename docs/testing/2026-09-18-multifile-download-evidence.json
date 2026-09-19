@@ -1,0 +1,30 @@
+{
+  "title": "QA多文件最终验收",
+  "checkedAt": "2026-09-19T01:52:49.362Z",
+  "results": [
+    {
+      "filename": "employee-mobile-training.jpg",
+      "id": "5593cf90-c7c3-4133-a19b-a453909f8355",
+      "httpStatus": 200,
+      "sourceBytes": 35681,
+      "downloadBytes": 35681,
+      "sha256": "4949ec4bfdbf2bd629401fca1920a3ce5d050279c242c9872504619ea5be0f29",
+      "databaseChecksum": "4949ec4bfdbf2bd629401fca1920a3ce5d050279c242c9872504619ea5be0f29",
+      "trainingType": "safety",
+      "skillCount": 0,
+      "passed": true
+    },
+    {
+      "filename": "employee-mobile-exams.jpg",
+      "id": "28f2bff7-7a0a-457a-b647-8171c666bb9b",
+      "httpStatus": 200,
+      "sourceBytes": 20410,
+      "downloadBytes": 20410,
+      "sha256": "d925a064eba3a954a20df71df9ce58c878e3d2ea4a27c164b9c57ccf5da1ac03",
+      "databaseChecksum": "d925a064eba3a954a20df71df9ce58c878e3d2ea4a27c164b9c57ccf5da1ac03",
+      "trainingType": "safety",
+      "skillCount": 0,
+      "passed": true
+    }
+  ]
+}
