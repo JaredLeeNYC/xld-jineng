@@ -45,6 +45,7 @@ const evidenceSignature = (mime: string, bytes: Uint8Array) => {
 };
 
 type PlanInput = {
+  historicalCompleted?: boolean;
   trainingType?: TrainingType;
   title: string;
   materialId?: string;
@@ -96,6 +97,7 @@ export const createTrainingService = (dependencies: {
       !startAt ||
       !dueAt ||
       dueAt <= startAt ||
+      (input.historicalCompleted === true && dueAt > now()) ||
       !trainingScopeTypes.includes(input.scopeType) ||
       !trainingTypes.includes(input.trainingType ?? "professional")
     )
@@ -107,6 +109,7 @@ export const createTrainingService = (dependencies: {
     )
       return undefined;
     return {
+      historicalCompleted: input.historicalCompleted === true,
       title: input.title.trim(),
       trainingType: input.trainingType ?? "professional",
       materialId: materialIds[0]!,

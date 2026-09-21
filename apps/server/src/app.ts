@@ -2507,6 +2507,7 @@ export const createApp = ({
           scopePositionIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 1000 })),
           startAt: t.String(),
           dueAt: t.String(),
+          historicalCompleted: t.Optional(t.Boolean()),
           location: t.String({ maxLength: 150 }),
           scopeType: t.Union([
             t.Literal("department"),
@@ -2559,6 +2560,7 @@ export const createApp = ({
           scopePositionIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 1000 })),
           startAt: t.String(),
           dueAt: t.String(),
+          historicalCompleted: t.Optional(t.Boolean()),
           location: t.String({ maxLength: 150 }),
           scopeType: t.Union([
             t.Literal("department"),

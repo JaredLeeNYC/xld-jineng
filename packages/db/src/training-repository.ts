@@ -39,6 +39,7 @@ const audit = async (
 };
 
 type PlanInput = {
+  historicalCompleted?: boolean;
   trainingType?: TrainingType;
   title: string;
   materialIds?: string[];
@@ -83,6 +84,7 @@ const selectableMaterials = `select m.id from training_materials m where m.id=an
   ))`;
 
 const planSelect = `select p.id,p.title,p.training_type as "trainingType",p.status,p.material_ids as "materialIds",p.owner_employee_ids as "ownerEmployeeIds",
+ p.historical_completed as "historicalCompleted",
  p.scope_department_ids as "scopeDepartmentIds",p.scope_position_ids as "scopePositionIds",
  p.created_by_account_id as "createdByAccountId",p.submitted_by_account_id as "submittedByAccountId",p.approval_comment as "approvalComment",
  (select jsonb_agg(jsonb_build_object('id',mm.id,'title',mm.title,'skillIds',(select coalesce(array_agg(ms.skill_id),'{}') from training_material_skills ms where ms.material_id=mm.id and ms.active=true))) from training_materials mm where mm.id=any(p.material_ids)) as materials,
@@ -218,8 +220,8 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     return transaction(pool, async (client) => {
       await client.query(
         `insert into training_plans (id,title,material_id,owner_employee_id,start_at,due_at,location,
-          scope_type,scope_department_id,scope_position_id,created_by_account_id,training_type)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          scope_type,scope_department_id,scope_position_id,created_by_account_id,training_type,historical_completed)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           input.id,
           input.title,
@@ -233,6 +235,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
           input.scopePositionId ?? null,
           input.actor.accountId,
           input.trainingType ?? "professional",
+          input.historicalCompleted ?? false,
         ],
       );
       await client.query(
@@ -265,7 +268,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     return transaction(pool, async (client) => {
       const result = await client.query(
         `update training_plans set title=$2,material_id=$3,owner_employee_id=$4,start_at=$5,due_at=$6,
-          location=$7,scope_type=$8,scope_department_id=$9,scope_position_id=$10,training_type=$13,updated_at=now()
+          location=$7,scope_type=$8,scope_department_id=$9,scope_position_id=$10,training_type=$13,historical_completed=$14,updated_at=now()
          where id=$1 and deleted_at is null and status='draft' and ($11='hr_admin' or created_by_account_id=$12) returning id`,
         [
           id,
@@ -281,6 +284,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
           input.actor.role,
           input.actor.accountId,
           input.trainingType ?? "professional",
+          input.historicalCompleted ?? false,
         ],
       );
       if (!result.rowCount) return false;
@@ -406,6 +410,9 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
       );
       const row = plan.rows[0];
       if (!row) return { ok: false as const, reason: "state" as const };
+      const historicalCompleted = row.historical_completed === true;
+      if (historicalCompleted && new Date(row.due_at) > now)
+        return { ok: false as const, reason: "state" as const };
       if (actor.role === "department_manager" && !actor.departmentId)
         return { ok: false as const, reason: "scope" as const };
       const material = await client.query(selectableMaterials, [
@@ -467,6 +474,28 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
           "insert into training_tasks (plan_id,employee_id) values ($1,$2) on conflict (plan_id,employee_id) do update set status='assigned',cancelled_at=null,updated_at=now() where training_tasks.status='cancelled' returning id",
           [id, employee.id],
         );
+        if (historicalCompleted) {
+          await client.query(
+            `update training_tasks set status='confirmed',actual_start_at=$2,actual_completed_at=$3,
+             confirmed_at=$4,updated_at=$4 where id=$1`,
+            [task.rows[0]!.id, row.start_at, row.due_at, now],
+          );
+          await client.query(
+            "insert into training_records (task_id,confirmed_by_account_id,confirmed_at) values ($1,$2,$3)",
+            [task.rows[0]!.id, actor.accountId, now],
+          );
+          await audit(
+            client,
+            actor.accountId,
+            "training_task.historical_completed",
+            "training_task",
+            task.rows[0]!.id,
+            {
+              actualStartAt: row.start_at,
+              actualCompletedAt: row.due_at,
+            },
+          );
+        }
         for (const materialId of row.material_ids)
           await client.query(
             `insert into training_material_access_grants
@@ -477,25 +506,30 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
           employeeId: employee.id,
           eventKey: `training_published:${task.rows[0]!.id}`,
           type: "training_published",
-          title: "新的培训任务",
-          message: `你有新的培训“${row.title}”待完成`,
+          title: historicalCompleted ? "历史培训已补录" : "新的培训任务",
+          message: historicalCompleted
+            ? `“${row.title}”已补录为已完成培训`
+            : `你有新的培训“${row.title}”待完成`,
           entityType: "training_task",
           entityId: task.rows[0]!.id,
         });
       }
-      const status: TrainingPlanStatus = "published";
+      const status: TrainingPlanStatus = historicalCompleted ? "completed" : "published";
       await client.query(
-        "update training_plans set status=$2,published_at=$3,updated_at=$3,approved_by_account_id=$4 where id=$1",
-        [id, status, now, actor.accountId],
+        "update training_plans set status=$2,published_at=$3,updated_at=$3,approved_by_account_id=$4,completed_at=$5 where id=$1",
+        [id, status, now, actor.accountId, historicalCompleted ? row.due_at : null],
       );
       await audit(client, actor.accountId, "training_plan.published", "training_plan", id, {
         taskCount: employees.rowCount,
+        historicalCompleted,
       });
       await enqueueManagementWebhook(client, {
         eventKey: `training_published:${id}`,
         eventType: "training_published",
-        title: "新培训已发布",
-        message: `“${row.title}”已发布，共 ${employees.rowCount} 人`,
+        title: historicalCompleted ? "历史培训已补录" : "新培训已发布",
+        message: historicalCompleted
+          ? `“${row.title}”已补录完成，共 ${employees.rowCount} 人`
+          : `“${row.title}”已发布，共 ${employees.rowCount} 人`,
       });
       return { ok: true as const, taskCount: employees.rowCount, status };
     });

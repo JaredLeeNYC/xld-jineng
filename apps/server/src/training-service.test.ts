@@ -61,11 +61,92 @@ const setup = () => {
 };
 
 describe("training service", () => {
+  test("accepts past plan dates for creating and editing historical training", async () => {
+    const { service, events } = setup();
+    const historicalPlan = {
+      ...plan,
+      startAt: "2025-06-10T09:00:00+08:00",
+      dueAt: "2025-06-10T17:00:00+08:00",
+    };
+    expect(await service.createPlan(actor("hr_admin"), historicalPlan)).toMatchObject({
+      ok: true,
+      data: { status: "draft" },
+    });
+    expect(await service.updatePlan(actor("hr_admin"), "plan", historicalPlan)).toMatchObject({
+      ok: true,
+    });
+    expect(events).toEqual(["created"]);
+    expect(
+      await service.createPlan(actor("hr_admin"), {
+        ...historicalPlan,
+        dueAt: "2025-06-10T08:00:00+08:00",
+      }),
+    ).toMatchObject({ error: { code: "INVALID_TRAINING_PLAN" } });
+  });
+
   test("creates a valid draft and rejects employee management", async () => {
     const { service, events } = setup();
     expect(await service.createPlan(actor("hr_admin"), plan)).toMatchObject({ ok: true });
     expect(events).toEqual(["created"]);
     expect(await service.createPlan(actor("employee"), plan)).toMatchObject({
+      error: { code: "FORBIDDEN" },
+    });
+  });
+
+  test("historical completion requires past dates and preserves the selected mode", async () => {
+    const drafts: Array<{ historicalCompleted?: boolean; startAt: Date; dueAt: Date }> = [];
+    const service = createTrainingService({
+      repository: {
+        validateDraft: async () => true,
+        createDraft: async (input: Parameters<TrainingRepository["createDraft"]>[0]) => {
+          drafts.push(input);
+          return input.id;
+        },
+        updateDraft: async (
+          _id: string,
+          input: Parameters<TrainingRepository["updateDraft"]>[1],
+        ) => {
+          drafts.push(input);
+          return true;
+        },
+      } as unknown as TrainingRepository,
+      storage: createMemoryMaterialStorage(),
+      idSource: () => "plan",
+      now: () => new Date("2026-07-28T00:00:00Z"),
+    });
+    const historical = {
+      ...plan,
+      startAt: "2025-06-10T09:00:00+08:00",
+      dueAt: "2025-06-10T17:00:00+08:00",
+      historicalCompleted: true,
+    };
+    expect(await service.createPlan(actor("hr_admin"), historical)).toMatchObject({ ok: true });
+    expect(drafts[0]).toMatchObject({
+      historicalCompleted: true,
+      startAt: new Date("2025-06-10T01:00:00Z"),
+      dueAt: new Date("2025-06-10T09:00:00Z"),
+    });
+    expect(
+      await service.updatePlan(actor("hr_admin"), "plan", {
+        ...historical,
+        historicalCompleted: false,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(drafts[1]?.historicalCompleted).toBe(false);
+    for (const input of [
+      { ...plan, historicalCompleted: true },
+      { ...historical, dueAt: "invalid" },
+      { ...historical, dueAt: historical.startAt },
+    ]) {
+      expect(await service.createPlan(actor("hr_admin"), input)).toMatchObject({
+        error: { code: "INVALID_TRAINING_PLAN" },
+      });
+      expect(await service.updatePlan(actor("hr_admin"), "plan", input)).toMatchObject({
+        error: { code: "INVALID_TRAINING_PLAN" },
+      });
+    }
+    expect(drafts).toHaveLength(2);
+    expect(await service.createPlan(actor("employee"), historical)).toMatchObject({
       error: { code: "FORBIDDEN" },
     });
   });

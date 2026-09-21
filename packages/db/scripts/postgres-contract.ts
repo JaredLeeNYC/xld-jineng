@@ -1281,8 +1281,9 @@ try {
     title: "点检培训计划",
     materialId: materialUploadBody.data.id,
     ownerEmployeeId: employeeIds.get("department_manager")!,
-    startAt: new Date(Date.now() - 60_000).toISOString(),
-    dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+    // Historical plans must support the same approval and completion workflow.
+    startAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    dueAt: new Date(Date.now() - 86_400_000).toISOString(),
     location: "一号会议室",
     scopeType: "employees",
     scopeEmployeeIds: [importedEmployee.rows[0]!.id],
@@ -1510,6 +1511,130 @@ try {
     cancelConfirmed.status !== 409
   )
     throw new Error("员工只读、负责人开始完成、实际时间或并发履历保护失败");
+  const historicalPayload = {
+    ...planPayload,
+    title: "历史已完成培训补录",
+    historicalCompleted: true,
+    startAt: "2025-06-10T09:00:00+08:00",
+    dueAt: "2025-06-10T17:00:00+08:00",
+    scopeEmployeeIds: [importedEmployee.rows[0]!.id, employeeIds.get("department_manager")!],
+  };
+  const createHistorical = (body: unknown) =>
+    app.handle(
+      new Request("http://localhost/api/training-plans", {
+        method: "POST",
+        headers: {
+          cookie: roleLogins.get("hr_admin")!.cookie!,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+    );
+  const invalidHistorical = await createHistorical({
+    ...historicalPayload,
+    dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+  if (invalidHistorical.status !== 400) throw new Error("未来培训被错误标为历史已完成");
+  const historicalResponse = await createHistorical(historicalPayload);
+  const historicalBody = (await historicalResponse.json()) as { data?: { id: string } };
+  if (historicalResponse.status !== 200 || !historicalBody.data?.id)
+    throw new Error("历史培训草稿保存失败");
+  const historicalId = historicalBody.data.id;
+  for (const historicalCompleted of [false, true]) {
+    const editedHistory = await app.handle(
+      new Request(`http://localhost/api/training-plans/${historicalId}`, {
+        method: "PATCH",
+        headers: {
+          cookie: roleLogins.get("hr_admin")!.cookie!,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ ...historicalPayload, historicalCompleted }),
+      }),
+    );
+    const savedMode = await contractPool.query(
+      "select historical_completed from training_plans where id=$1",
+      [historicalId],
+    );
+    if (
+      editedHistory.status !== 200 ||
+      savedMode.rows[0]?.historical_completed !== historicalCompleted
+    )
+      throw new Error("编辑草稿未保存历史补录完成方式");
+  }
+  const beforeApproval = await contractPool.query("select 1 from training_tasks where plan_id=$1", [
+    historicalId,
+  ]);
+  if (beforeApproval.rowCount !== 0) throw new Error("历史补录在审批前生成了正式任务");
+  const historicalPlans = await app.handle(
+    new Request("http://localhost/api/training-plans", {
+      headers: { cookie: roleLogins.get("hr_admin")!.cookie! },
+    }),
+  );
+  const historicalPlanList = (await historicalPlans.json()) as {
+    data: Array<{ id: string; historicalCompleted: boolean }>;
+  };
+  if (!historicalPlanList.data.find((p) => p.id === historicalId)?.historicalCompleted)
+    throw new Error("历史补录标记未往返");
+  const historicalApproval = await approveTraining(historicalId);
+  if (historicalApproval.status !== 200)
+    throw new Error(`历史培训审批失败：${await historicalApproval.text()}`);
+  const completedHistory = await contractPool.query(
+    `select p.status as plan_status,p.completed_at,t.id,t.status,t.actual_start_at,t.actual_completed_at,
+     t.confirmed_at,r.id as record_id,r.confirmed_at as record_confirmed_at
+     from training_plans p join training_tasks t on t.plan_id=p.id
+     left join training_records r on r.task_id=t.id where p.id=$1`,
+    [historicalId],
+  );
+  if (
+    completedHistory.rowCount !== 2 ||
+    completedHistory.rows.some(
+      (r) =>
+        r.plan_status !== "completed" ||
+        r.status !== "confirmed" ||
+        !r.record_id ||
+        r.actual_start_at.toISOString() !== "2025-06-10T01:00:00.000Z" ||
+        r.actual_completed_at.toISOString() !== "2025-06-10T09:00:00.000Z" ||
+        r.completed_at.toISOString() !== "2025-06-10T09:00:00.000Z" ||
+        r.confirmed_at <= r.actual_completed_at ||
+        r.record_confirmed_at.getTime() !== r.confirmed_at.getTime(),
+    )
+  )
+    throw new Error("历史补录未自动完成全体任务，或实际时间、审批时间、正式履历不正确");
+  const repeatedHistoricalApproval = await app.handle(
+    new Request(`http://localhost/api/training-plans/${historicalId}/approve`, {
+      method: "POST",
+      headers: { cookie: independentHrCookie },
+    }),
+  );
+  const manualHistoricalComplete = await executeTraining(
+    completedHistory.rows[0]!.id,
+    "complete",
+    successfulConcurrentCookie,
+  );
+  if (repeatedHistoricalApproval.status !== 409 || manualHistoricalComplete.status !== 409)
+    throw new Error("已完成的历史培训允许重复审批或完成");
+  const historicalTaskList = await app.handle(
+    new Request("http://localhost/api/training-tasks", {
+      headers: { cookie: importedCookie! },
+    }),
+  );
+  const historicalTaskData = (await historicalTaskList.json()) as {
+    data: Array<{
+      planId: string;
+      status: string;
+      actualStartAt: string;
+      actualCompletedAt: string;
+      overdue: boolean;
+    }>;
+  };
+  const historicalTaskView = historicalTaskData.data.find((t) => t.planId === historicalId);
+  if (
+    historicalTaskView?.status !== "confirmed" ||
+    historicalTaskView.overdue ||
+    historicalTaskView.actualStartAt !== "2025-06-10T01:00:00.000Z" ||
+    historicalTaskView.actualCompletedAt !== "2025-06-10T09:00:00.000Z"
+  )
+    throw new Error("员工端历史培训实际时间、完成状态或逾期标记不正确");
   let confirmedTaskMutationRejected = false;
   try {
     await contractPool.query("update training_tasks set status='returned' where id=$1", [

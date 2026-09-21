@@ -58,6 +58,7 @@ const emptyForm = () => ({
   ownerEmployeeIds: [] as string[],
   startAt: "",
   dueAt: "",
+  historicalCompleted: false,
   location: "",
   scopeType: "department" as TrainingScopeType,
   scopeDepartmentIds: [] as string[],
@@ -276,6 +277,7 @@ export function TrainingManagement({ session }: { session: Session }) {
       ownerEmployeeIds: plan.ownerEmployeeIds ?? [plan.ownerEmployeeId],
       startAt: local(plan.startAt),
       dueAt: local(plan.dueAt),
+      historicalCompleted: plan.historicalCompleted ?? false,
       location: plan.location,
       scopeType: plan.scopeType,
       scopeDepartmentIds:
@@ -486,9 +488,17 @@ export function TrainingManagement({ session }: { session: Session }) {
         <>
           <section className="panel">
             <h2>{editing ? "编辑培训计划" : "新建培训计划"}</h2>
+            <p>
+              计划时间使用中国时区，可选择过去日期补录历史计划，结束时间须晚于开始时间。
+              已完成的历史培训审批通过后自动完成；其他培训由负责人手动开始、完成。
+            </p>
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (new Date(`${form.dueAt}:00+08:00`) <= new Date(`${form.startAt}:00+08:00`)) {
+                  setNotice("结束时间须晚于开始时间");
+                  return;
+                }
                 if (
                   await mutate(
                     editing ? `/api/training-plans/${editing}` : "/api/training-plans",
@@ -544,9 +554,34 @@ export function TrainingManagement({ session }: { session: Session }) {
                   required
                   type="datetime-local"
                   value={form.dueAt}
-                  onChange={(e) => setForm({ ...form, dueAt: e.target.value })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      dueAt: e.target.value,
+                      historicalCompleted:
+                        new Date(`${e.target.value}:00+08:00`).getTime() <= Date.now(),
+                    })
+                  }
                 />
               </label>
+              <fieldset>
+                <legend>完成方式</legend>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.historicalCompleted}
+                    disabled={!(new Date(`${form.dueAt}:00+08:00`).getTime() <= Date.now())}
+                    onChange={(e) => setForm({ ...form, historicalCompleted: e.target.checked })}
+                  />
+                  补录已完成培训
+                </label>
+                <p>
+                  {form.historicalCompleted
+                    ? "审批通过后，所有参训员工自动标为已完成，以上开始、结束时间将保存为实际培训时间。"
+                    : "由负责人手动点击开始、完成培训，实际时间记录为操作时间。"}
+                  过去日期默认勾选；逾期但未完成的培训请取消勾选。
+                </p>
+              </fieldset>
               <label>
                 培训地点
                 <input
@@ -680,6 +715,7 @@ export function TrainingManagement({ session }: { session: Session }) {
                           </td>
                           <td>
                             {planLabels[p.status]}
+                            {p.historicalCompleted && <p>历史补录 · 审批后自动完成</p>}
                             {p.approvalComment && <p>退回原因：{p.approvalComment}</p>}
                             {planActions(p)}
                           </td>
@@ -697,6 +733,7 @@ export function TrainingManagement({ session }: { session: Session }) {
                       <p>
                         {trainingTypeLabels[p.trainingType]} · {planLabels[p.status]}
                       </p>
+                      {p.historicalCompleted && <p>历史补录 · 审批后自动完成</p>}
                       <p>
                         {date(p.startAt)} — {date(p.dueAt)} · {p.location}
                       </p>
