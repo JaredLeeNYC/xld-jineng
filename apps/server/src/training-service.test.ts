@@ -60,6 +60,33 @@ const setup = () => {
   };
 };
 
+test.each([
+  ["self", "不能审批本人创建或提交的计划"],
+  ["material", "计划资料已停用、已归档或不存在"],
+  ["scope", "负责人或培训对象无效、超出管理范围"],
+  ["state", "计划不存在或已不在待审批状态"],
+] as const)(
+  "approval explains the %s rejection without changing its API code",
+  async (reason, message) => {
+    const service = createTrainingService({
+      repository: {
+        publish: async () => ({ ok: false as const, reason }),
+      } as unknown as TrainingRepository,
+      storage: createMemoryMaterialStorage(),
+      idSource: () => "unused",
+      now: () => new Date(),
+    });
+    expect(await service.approvePlan(actor("department_manager"), "plan")).toMatchObject({
+      ok: false,
+      error: {
+        code: "PLAN_APPROVAL_REJECTED",
+        status: 409,
+        message: expect.stringContaining(message),
+      },
+    });
+  },
+);
+
 describe("training service", () => {
   test("accepts past plan dates for creating and editing historical training", async () => {
     const { service, events } = setup();

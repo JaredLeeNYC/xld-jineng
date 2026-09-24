@@ -177,7 +177,12 @@ export const createTrainingService = (dependencies: {
         ? { ok: true as const, data: { id, ...result } }
         : fail(
             "PLAN_APPROVAL_REJECTED",
-            "审批失败：禁止自审批，且资料、负责人和培训对象必须有效并在管理范围内",
+            {
+              state: "计划不存在或已不在待审批状态，或历史补录结束时间晚于当前时间",
+              self: "不能审批本人创建或提交的计划，请由其他有权限的主管或 HR 审批",
+              material: "计划资料已停用、已归档或不存在，请修正资料后重新提交",
+              scope: "负责人或培训对象无效、超出管理范围，或没有有效参训员工",
+            }[result.reason],
             409,
           );
     },

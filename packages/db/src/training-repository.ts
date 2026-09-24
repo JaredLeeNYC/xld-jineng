@@ -405,22 +405,27 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
   async publish(id: string, actor: ActorScope, now: Date) {
     return transaction(pool, async (client) => {
       const plan = await client.query<any>(
-        `select * from training_plans where id=$1 and deleted_at is null and status='pending_approval' and created_by_account_id<>$3 and coalesce(submitted_by_account_id,created_by_account_id)<>$3 and $2 in ('hr_admin','department_manager') for update`,
-        [id, actor.role, actor.accountId],
+        `select * from training_plans where id=$1 and deleted_at is null and status='pending_approval' and $2 in ('hr_admin','department_manager') for update`,
+        [id, actor.role],
       );
       const row = plan.rows[0];
       if (!row) return { ok: false as const, reason: "state" as const };
+      if (
+        row.created_by_account_id === actor.accountId ||
+        (row.submitted_by_account_id ?? row.created_by_account_id) === actor.accountId
+      )
+        return { ok: false as const, reason: "self" as const };
       const historicalCompleted = row.historical_completed === true;
       if (historicalCompleted && new Date(row.due_at) > now)
         return { ok: false as const, reason: "state" as const };
       if (actor.role === "department_manager" && !actor.departmentId)
         return { ok: false as const, reason: "scope" as const };
-      const material = await client.query(selectableMaterials, [
-        row.material_ids,
-        actor.role,
-        actor.accountId,
-        actor.departmentId ?? null,
-      ]);
+      // Approval reviews the plan's existing attachments, not permission to reuse
+      // them in a new draft. Owner and participant scope checks below still apply.
+      const material = await client.query(
+        "select id from training_materials where id=any($1::uuid[]) and active=true and archived_at is null",
+        [row.material_ids],
+      );
       if (material.rowCount !== row.material_ids.length || !material.rowCount)
         return { ok: false as const, reason: "material" as const };
       const owners = await client.query(

@@ -8,11 +8,12 @@ export async function grantReviewedFactoryRead(pool: Pool) {
     const found = await client.query<{ id: string; employeeNumber: string; factoryRead: boolean }>(
       `select a.id,e.employee_number as "employeeNumber",a.factory_read as "factoryRead"
        from user_accounts a join employees e on e.id=a.employee_id
-       where e.display_name=$1 and a.active=true and e.active=true
+       where e.display_name=$1 and e.employee_number=$2 and a.active=true and e.active=true
        and a.role in ('department_manager','hr_admin','executive_viewer') for update of a,e`,
-      ["邓华明"],
+      ["邓华明", "10032"],
     );
-    if (found.rowCount !== 1) throw new Error("邓华明有效管理账号必须唯一；未更改任何权限");
+    if (found.rowCount !== 1)
+      throw new Error("邓华明（10032）有效管理账号必须唯一；未更改任何权限");
     const account = found.rows[0]!;
     if (!account.factoryRead) {
       await client.query(

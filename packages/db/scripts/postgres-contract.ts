@@ -1,4 +1,5 @@
 import { grantReviewedFactoryRead } from "../src/reviewed-factory-access";
+import { verifyTrainingApproval } from "./training-approval-contract";
 import { createApp } from "../../../apps/server/src/app";
 import { createAuthService } from "../../../apps/server/src/auth-service";
 import { createOrganizationService } from "../../../apps/server/src/organization-service";
@@ -3102,6 +3103,13 @@ try {
   await contractPool.query("update employees set display_name='独立审批HR' where id=$1", [
     independentHrEmployee.rows[0]!.id,
   ]);
+  const originalManagerNumber = await contractPool.query(
+    "select employee_number from employees where id=$1",
+    [employeeIds.get("department_manager")!],
+  );
+  await contractPool.query("update employees set employee_number='10032' where id=$1", [
+    employeeIds.get("department_manager")!,
+  ]);
   await contractPool.query("update user_accounts set factory_read=false where id=$1", [
     accountIds.get("department_manager")!,
   ]);
@@ -3128,6 +3136,10 @@ try {
   await contractPool.query("update employees set display_name='部门主管' where id=$1", [
     employeeIds.get("department_manager")!,
   ]);
+  await contractPool.query("update employees set employee_number=$2 where id=$1", [
+    employeeIds.get("department_manager")!,
+    originalManagerNumber.rows[0]!.employee_number,
+  ]);
 
   await contractPool.query(
     "update drizzle.__drizzle_migrations set hash = 'tampered' where id = (select max(id) from drizzle.__drizzle_migrations)",
@@ -3137,6 +3149,13 @@ try {
     throw new Error("就绪探针未识别迁移 hash 不一致");
   }
 
+  await verifyTrainingApproval(contractPool, {
+    hrAccountId: accountIds.get("hr_admin")!,
+    managerAccountId: accountIds.get("department_manager")!,
+    managerEmployeeId: employeeIds.get("department_manager")!,
+    departmentId: department.rows[0]!.id,
+    otherEmployeeId: otherEmployee.rows[0]!.id,
+  });
   console.log(
     "PostgreSQL 空库、认证事务、五角色越权、50 人组织导入、技能基线与矩阵及迁移 hash 合同测试通过",
   );
