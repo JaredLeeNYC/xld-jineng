@@ -1,0 +1,94 @@
+[
+  {
+    "section": "技能标准",
+    "pass": true,
+    "viewport": 390,
+    "document": 390,
+    "buttons": [
+      {
+        "text": "保存技能",
+        "fontSize": "13px"
+      },
+      {
+        "text": "保存要求",
+        "fontSize": "13px"
+      },
+      {
+        "text": "复制并调整",
+        "fontSize": "13px"
+      },
+      {
+        "text": "预检基线",
+        "fontSize": "13px"
+      }
+    ]
+  },
+  {
+    "section": "组织人员",
+    "pass": true,
+    "viewport": 390,
+    "document": 390,
+    "buttons": [
+      {
+        "text": "导出当前数据",
+        "fontSize": "13px"
+      },
+      {
+        "text": "保存部门",
+        "fontSize": "13px"
+      },
+      {
+        "text": "保存岗位",
+        "fontSize": "13px"
+      },
+      {
+        "text": "创建并生成账号",
+        "fontSize": "13px"
+      },
+      {
+        "text": "预检文件",
+        "fontSize": "13px"
+      }
+    ]
+  },
+  {
+    "section": "培训管理",
+    "pass": false,
+    "viewport": 390,
+    "document": 394,
+    "buttons": [
+      {
+        "text": "保存资料",
+        "fontSize": "13px"
+      }
+    ]
+  },
+  {
+    "section": "全厂概况",
+    "pass": true,
+    "viewport": 390,
+    "document": 390,
+    "buttons": [
+      {
+        "text": "导出当前 Excel",
+        "fontSize": "13px"
+      },
+      {
+        "text": "应用筛选",
+        "fontSize": "13px"
+      }
+    ]
+  },
+  {
+    "section": "技能矩阵",
+    "pass": true,
+    "viewport": 390,
+    "document": 390,
+    "buttons": [
+      {
+        "text": "应用筛选",
+        "fontSize": "13px"
+      }
+    ]
+  }
+]

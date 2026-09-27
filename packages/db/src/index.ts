@@ -13,6 +13,7 @@ import { createPostgresAssessmentRepository } from "./assessment-repository";
 import { createPostgresNotificationRepository } from "./notification-repository";
 import { createPostgresReportRepository } from "./report-repository";
 import { createPostgresAuditRepository } from "./audit-repository";
+import { createPostgresTrainingAnalyticsRepository } from "./training-analytics-repository";
 
 export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
   const pool = new Pool({ connectionString: config.databaseUrl });
@@ -40,6 +41,7 @@ export const createDatabase = (config: Pick<ServerConfig, "databaseUrl">) => {
     trainingExamRepository: createPostgresTrainingExamRepository(pool),
     notificationRepository,
     reportRepository,
+    trainingAnalyticsRepository: createPostgresTrainingAnalyticsRepository(pool),
     auditRepository,
     db,
     pool,
@@ -60,3 +62,4 @@ export * from "./training-exam-repository";
 export * from "./notification-repository";
 export * from "./report-repository";
 export * from "./audit-repository";
+export * from "./training-analytics-repository";

@@ -51,6 +51,20 @@ export const departments = pgTable(
   ],
 );
 
+export const areas = pgTable(
+  "areas",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: varchar("name", { length: 100 }).notNull(),
+    departmentId: uuid("department_id")
+      .notNull()
+      .references(() => departments.id, { onDelete: "restrict" }),
+    active: boolean("active").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("areas_department_name_unique").on(table.departmentId, table.name)],
+);
+
 export const positions = pgTable(
   "positions",
   {
@@ -79,6 +93,7 @@ export const employees = pgTable(
     departmentId: uuid("department_id").references(() => departments.id, {
       onDelete: "restrict",
     }),
+    areaId: uuid("area_id").references(() => areas.id, { onDelete: "restrict" }),
     hireDate: date("hire_date"),
     phone: varchar("phone", { length: 30 }),
     gender: varchar("gender", { length: 10 }),
@@ -356,6 +371,7 @@ export const trainingMaterialAccessGrants = pgTable(
 export const trainingPlans = pgTable(
   "training_plans",
   {
+    plannedHours: numeric("planned_hours", { precision: 8, scale: 2 }),
     id: uuid("id").primaryKey().defaultRandom(),
     materialIds: uuid("material_ids")
       .array()
@@ -379,7 +395,9 @@ export const trainingPlans = pgTable(
     }),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     historicalCompleted: boolean("historical_completed").notNull().default(false),
-    submittedByAccountId: uuid("submitted_by_account_id").references(() => userAccounts.id, { onDelete: "restrict" }),
+    submittedByAccountId: uuid("submitted_by_account_id").references(() => userAccounts.id, {
+      onDelete: "restrict",
+    }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     title: varchar("title", { length: 150 }).notNull(),
     trainingType: varchar("training_type", { length: 20 }).notNull().default("professional"),
@@ -421,6 +439,7 @@ export const trainingPlans = pgTable(
       "training_plans_scope",
       sql`(${table.scopeType} = 'department' and ${table.scopeDepartmentId} is not null and ${table.scopePositionId} is null) or (${table.scopeType} = 'position' and ${table.scopePositionId} is not null and ${table.scopeDepartmentId} is null) or (${table.scopeType} = 'employees' and ${table.scopeDepartmentId} is null and ${table.scopePositionId} is null)`,
     ),
+    check("training_plans_hours", sql`${table.plannedHours} >= 0`),
     check("training_plans_time_range", sql`${table.dueAt} > ${table.startAt}`),
     index("training_plans_status_idx").on(table.status),
   ],
@@ -447,6 +466,7 @@ export const trainingPlanScopeEmployees = pgTable(
 export const trainingTasks = pgTable(
   "training_tasks",
   {
+    actualHours: numeric("actual_hours", { precision: 8, scale: 2 }),
     id: uuid("id").primaryKey().defaultRandom(),
     planId: uuid("plan_id")
       .notNull()
@@ -469,6 +489,7 @@ export const trainingTasks = pgTable(
       "training_tasks_status",
       sql`${table.status} in ('assigned','in_progress','submitted','returned','confirmed','cancelled')`,
     ),
+    check("training_tasks_hours", sql`${table.actualHours} >= 0`),
     uniqueIndex("training_tasks_plan_employee_unique").on(table.planId, table.employeeId),
     index("training_tasks_employee_status_idx").on(table.employeeId, table.status),
   ],

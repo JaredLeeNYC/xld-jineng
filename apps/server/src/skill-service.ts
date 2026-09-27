@@ -364,6 +364,7 @@ export const createSkillService = (dependencies: {
     async matrix(
       actor: SessionView,
       filters: {
+        areaId?: string;
         departmentId?: string;
         employeeId?: string;
         positionId?: string;

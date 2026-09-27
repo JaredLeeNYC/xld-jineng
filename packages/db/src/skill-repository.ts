@@ -401,6 +401,7 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
 
   async listMatrix(
     input: {
+      areaId?: string;
       departmentId?: string;
       employeeId?: string;
       positionId?: string;
@@ -413,6 +414,8 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
       employeeId: string;
       employeeNumber: string;
       employeeName: string;
+      areaId: string | null;
+      areaName: string | null;
       departmentId: string;
       departmentName: string;
       positionId: string;
@@ -427,10 +430,11 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
       assessmentId: string | null;
     }>(
       `select e.id as "employeeId", e.employee_number as "employeeNumber", e.display_name as "employeeName",
-              d.id as "departmentId", d.name as "departmentName", p.id as "positionId", p.name as "positionName",
+              ar.id as "areaId", ar.name as "areaName", d.id as "departmentId", d.name as "departmentName", p.id as "positionId", p.name as "positionName",
               s.id as "skillId", s.code as "skillCode", s.name as "skillName", r.required_level as "requiredLevel", r.required,
               a.level as "currentLevel", a.valid_until as "validUntil", a.id as "assessmentId"
        from employees e
+       left join areas ar on ar.id=e.area_id
        join departments d on d.id = e.department_id
        join position_assignments pa on pa.employee_id = e.id and pa.ended_at is null
        join positions p on p.id = pa.position_id
@@ -443,12 +447,14 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
          and ($2::uuid is null or e.id = $2)
          and ($3::uuid is null or p.id = $3)
          and ($4::uuid is null or s.id = $4)
+         and ($5::uuid is null or e.area_id = $5)
        order by e.employee_number, s.code`,
       [
         input.departmentId ?? null,
         input.employeeId ?? null,
         input.positionId ?? null,
         input.skillId ?? null,
+        input.areaId ?? null,
       ],
     );
     return result.rows.map((row) => {
@@ -458,6 +464,8 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
         employeeId: row.employeeId,
         employeeNumber: row.employeeNumber,
         employeeName: row.employeeName,
+        ...(row.areaId ? { areaId: row.areaId } : {}),
+        ...(row.areaName ? { areaName: row.areaName } : {}),
         departmentId: row.departmentId,
         departmentName: row.departmentName,
         positionId: row.positionId,

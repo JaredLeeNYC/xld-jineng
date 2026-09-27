@@ -1,0 +1,25 @@
+{
+  "method": "isolated Playwright real localhost",
+  "evidence": [
+    {
+      "name": "HR全厂年度培训计划统计加载",
+      "pass": true
+    },
+    {
+      "name": "培训统计部门切换",
+      "pass": true
+    },
+    {
+      "name": "手机统计卡片而非桌面表格",
+      "pass": true
+    },
+    {
+      "name": "HR真实浏览器新增区域",
+      "pass": true
+    },
+    {
+      "name": "区域编辑与逻辑停用保留",
+      "pass": true
+    }
+  ]
+}

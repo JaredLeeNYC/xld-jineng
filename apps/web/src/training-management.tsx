@@ -52,6 +52,7 @@ const taskLabels: Record<string, string> = {
 const date = (value?: string) =>
   value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "—";
 const emptyForm = () => ({
+  plannedHours: "",
   title: "",
   trainingType: "professional" as TrainingType,
   materialIds: [] as string[],
@@ -272,6 +273,7 @@ export function TrainingManagement({ session }: { session: Session }) {
     setEditing(plan.id);
     setForm({
       title: plan.title,
+      plannedHours: plan.plannedHours == null ? "" : String(plan.plannedHours),
       trainingType: plan.trainingType,
       materialIds: plan.materialIds ?? [plan.materialId],
       ownerEmployeeIds: plan.ownerEmployeeIds ?? [plan.ownerEmployeeId],
@@ -353,6 +355,27 @@ export function TrainingManagement({ session }: { session: Session }) {
   const taskActions = (task: TrainingTaskView) => (
     <>
       {materialLinks(task)}
+      {task.status === "confirmed" && <p>实际培训时数：{task.actualHours ?? "未登记"} 小时</p>}
+      {canManage &&
+        task.status === "confirmed" &&
+        (session.role === "hr_admin" ||
+          (task.ownerEmployeeIds ?? [task.ownerEmployeeId]).includes(session.employeeId)) && (
+          <button
+            disabled={busy}
+            onClick={() => {
+              const value = window.prompt(
+                "登记该员工实际培训小时（不含休息，最多两位小数）",
+                task.actualHours == null ? "" : String(task.actualHours),
+              );
+              if (value !== null && value.trim())
+                void mutate(`/api/training-tasks/${task.id}/hours`, "PUT", {
+                  actualHours: Number(value),
+                });
+            }}
+          >
+            登记实际时数
+          </button>
+        )}
       {task.evidence.map((evidence) => (
         <div key={evidence.id}>
           <MaterialPreviewButton
@@ -505,6 +528,7 @@ export function TrainingManagement({ session }: { session: Session }) {
                     editing ? "PATCH" : "POST",
                     {
                       ...form,
+                      plannedHours: form.plannedHours === "" ? null : Number(form.plannedHours),
                       startAt: new Date(`${form.startAt}:00+08:00`).toISOString(),
                       dueAt: new Date(`${form.dueAt}:00+08:00`).toISOString(),
                     },
@@ -537,6 +561,17 @@ export function TrainingManagement({ session }: { session: Session }) {
                   maxLength={150}
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
+                />
+              </label>
+              <label>
+                计划培训时数（小时，不含休息；可留空待登记）
+                <input
+                  type="number"
+                  min="0.01"
+                  max="999999.99"
+                  step="0.01"
+                  value={form.plannedHours}
+                  onChange={(e) => setForm({ ...form, plannedHours: e.target.value })}
                 />
               </label>
               <label>

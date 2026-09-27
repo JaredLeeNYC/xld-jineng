@@ -24,6 +24,7 @@ import type { NotificationService } from "./notification-service";
 import type { ReportService } from "./report-service";
 import { createReportWorkbook } from "./report-excel";
 import type { AuditService } from "./audit-service";
+import type { TrainingAnalyticsService } from "./training-analytics-service";
 
 const healthResponse = t.Object({
   ok: t.Literal(true),
@@ -127,6 +128,8 @@ const positionResponse = t.Object({
 });
 
 const employeeResponse = t.Object({
+  areaId: t.Optional(t.String()),
+  areaName: t.Optional(t.String()),
   id: t.String(),
   employeeNumber: t.String(),
   displayName: t.String(),
@@ -167,6 +170,7 @@ type AppDependencies = {
   trainingExamService?: TrainingExamService;
   notificationService?: NotificationService;
   reportService?: ReportService;
+  trainingAnalyticsService?: TrainingAnalyticsService;
   auditService?: AuditService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
@@ -239,6 +243,7 @@ export const createApp = ({
   trainingExamService,
   notificationService,
   reportService,
+  trainingAnalyticsService,
   auditService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
@@ -515,6 +520,138 @@ export const createApp = ({
           500: errorResponse,
           503: errorResponse,
         },
+      },
+    )
+    .get(
+      "/api/organization/areas",
+      async ({ query, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.listAreas(
+          authenticated.actor,
+          query.includeInactive === "true",
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({ includeInactive: t.Optional(t.String()) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/organization/areas",
+      async ({ body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.createArea(authenticated.actor, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        body: t.Object({
+          name: t.String({ minLength: 1, maxLength: 100 }),
+          departmentId: t.String({ format: "uuid" }),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .patch(
+      "/api/organization/areas/:id",
+      async ({ params, body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.updateArea(authenticated.actor, params.id, body);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ name: t.String({ minLength: 1, maxLength: 100 }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .post(
+      "/api/organization/areas/:id/deactivate",
+      async ({ params, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.deactivateArea(authenticated.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .patch(
+      "/api/organization/employees/:id/area",
+      async ({ params, body, request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.setEmployeeArea(
+          authenticated.actor,
+          params.id,
+          body,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ areaId: t.Union([t.String({ format: "uuid" }), t.Null()]) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )
     .get(
@@ -839,6 +976,7 @@ export const createApp = ({
       },
       {
         body: t.Object({
+          areaId: t.Optional(t.String({ format: "uuid" })),
           role: t.Optional(t.Union([t.Literal("employee"), t.Literal("department_manager")])),
           employeeNumber: t.String({ minLength: 1, maxLength: 50 }),
           displayName: t.String({ minLength: 1, maxLength: 100 }),
@@ -1379,11 +1517,68 @@ export const createApp = ({
       },
       {
         query: t.Object({
+          areaId: t.Optional(t.String({ format: "uuid" })),
           departmentId: t.Optional(t.String({ format: "uuid" })),
           employeeId: t.Optional(t.String({ format: "uuid" })),
           positionId: t.Optional(t.String({ format: "uuid" })),
           skillId: t.Optional(t.String({ format: "uuid" })),
         }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/reports/training-analytics",
+      async ({ request, set, query }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingAnalyticsService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "培训统计服务暂不可用");
+        }
+        const result = await trainingAnalyticsService.dashboard(auth.actor, query);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        query: t.Object({
+          year: t.Numeric({ minimum: 2000, maximum: 2100 }),
+          departmentId: t.Optional(t.String({ format: "uuid" })),
+        }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .put(
+      "/api/training-tasks/:id/hours",
+      async ({ request, set, params, body }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingAnalyticsService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "培训统计服务暂不可用");
+        }
+        const result = await trainingAnalyticsService.registerHours(
+          auth.actor,
+          params.id,
+          body.actualHours,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ actualHours: t.Number({ minimum: 0.01, maximum: 999999.99 }) }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )
@@ -2508,6 +2703,9 @@ export const createApp = ({
           startAt: t.String(),
           dueAt: t.String(),
           historicalCompleted: t.Optional(t.Boolean()),
+          plannedHours: t.Optional(
+            t.Union([t.Number({ minimum: 0.01, maximum: 999999.99 }), t.Null()]),
+          ),
           location: t.String({ maxLength: 150 }),
           scopeType: t.Union([
             t.Literal("department"),
@@ -2561,6 +2759,9 @@ export const createApp = ({
           startAt: t.String(),
           dueAt: t.String(),
           historicalCompleted: t.Optional(t.Boolean()),
+          plannedHours: t.Optional(
+            t.Union([t.Number({ minimum: 0.01, maximum: 999999.99 }), t.Null()]),
+          ),
           location: t.String({ maxLength: 150 }),
           scopeType: t.Union([
             t.Literal("department"),

@@ -70,6 +70,8 @@ export type SkillImportError = {
 };
 
 export type SkillMatrixCell = {
+  areaId?: string;
+  areaName?: string;
   employeeId: string;
   employeeNumber: string;
   employeeName: string;

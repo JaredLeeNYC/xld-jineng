@@ -60,6 +60,18 @@ const setup = () => {
   };
 };
 
+test("plan hours reject invalid precision and accept explicit hours independent of calendar span", async () => {
+  const { service, events } = setup();
+  for (const plannedHours of [-1, 0, 0.001, Number.POSITIVE_INFINITY, 1000000]) {
+    expect((await service.createPlan(actor("hr_admin"), { ...plan, plannedHours })).ok).toBe(false);
+  }
+  expect(events).toEqual([]);
+  expect((await service.createPlan(actor("hr_admin"), { ...plan, plannedHours: 2.5 })).ok).toBe(
+    true,
+  );
+  expect(events).toEqual(["created"]);
+});
+
 test.each([
   ["self", "不能审批本人创建或提交的计划"],
   ["material", "计划资料已停用、已归档或不存在"],

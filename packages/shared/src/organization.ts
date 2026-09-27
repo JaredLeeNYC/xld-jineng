@@ -1,3 +1,11 @@
+export type AreaView = {
+  id: string;
+  name: string;
+  departmentId: string;
+  departmentName: string;
+  active: boolean;
+};
+
 import type { FixedRole } from "./index";
 
 export type DepartmentView = {
@@ -28,6 +36,8 @@ export type PositionAssignmentView = {
 };
 
 export type EmployeeView = {
+  areaId?: string;
+  areaName?: string;
   id: string;
   employeeNumber: string;
   displayName: string;
@@ -47,6 +57,7 @@ export type EmployeeView = {
 };
 
 export type EmployeeImportRow = {
+  areaId?: string;
   role?: "employee" | "department_manager";
   rowNumber: number;
   employeeNumber: string;

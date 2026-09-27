@@ -1024,12 +1024,24 @@ main {
 
 .material-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 20px;
 }
 .training-workspace,
 .training-plan-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 20px;
+}
+.training-workspace > *,
+.material-form > * {
+  min-width: 0;
+}
+.material-form input {
+  min-width: 0;
+  max-width: 100%;
 }
 .training-plan-form {
   display: grid;
@@ -1308,7 +1320,8 @@ main {
   border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent);
   background: rgb(255 255 255 / 68%);
 }
-.heat-met .matrix-level-blocks .filled {
+.heat-met .matrix-level-blocks .filled,
+.matrix-level-legend .matrix-level-blocks .filled {
   background: #83c94d;
   border-color: #5da42d;
 }
@@ -1358,7 +1371,7 @@ main {
 }
 .matrix-level-legend article {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto;
   gap: 8px;
   align-items: center;
   border: 1px solid var(--line);
@@ -1605,12 +1618,10 @@ main {
   }
   .primary-button {
     padding: 10px;
+    font-size: 13px;
   }
   .primary-button svg {
     margin: 0;
-  }
-  .primary-button {
-    font-size: 0;
   }
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1630,7 +1641,7 @@ main {
     padding: 17px;
   }
   .panel-heading button {
-    font-size: 0;
+    font-size: 13px;
   }
 }
 .list-filters {

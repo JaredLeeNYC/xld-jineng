@@ -1,0 +1,10 @@
+{
+  "buttons": [
+    {
+      "text": "保存资料",
+      "fontSize": "0px",
+      "hasIcon": false
+    }
+  ],
+  "pass": false
+}

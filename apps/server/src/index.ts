@@ -13,6 +13,7 @@ import { createAssessmentService } from "./assessment-service";
 import { createNotificationService } from "./notification-service";
 import { createReportService } from "./report-service";
 import { createAuditService } from "./audit-service";
+import { createTrainingAnalyticsService } from "./training-analytics-service";
 
 const config = parseServerConfig(process.env);
 const database = createDatabase(config);
@@ -96,6 +97,7 @@ const app = createApp({
   }),
   notificationService,
   reportService,
+  trainingAnalyticsService: createTrainingAnalyticsService(database.trainingAnalyticsRepository),
   auditService,
   readinessProbe: database.readinessProbe,
   secureCookie: config.appUrl.startsWith("https://"),

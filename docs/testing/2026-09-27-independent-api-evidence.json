@@ -1,0 +1,34 @@
+{
+  "database": "jineng_acceptance_20260927",
+  "method": "real HTTP API + PostgreSQL synthetic fixtures",
+  "evidence": [
+    {
+      "name": "区域：同部门归属成功，跨部门拒绝",
+      "result": "PASS"
+    },
+    {
+      "name": "全厂只读主管不可维护区域",
+      "result": "PASS"
+    },
+    {
+      "name": "HR矩阵可读、区域筛选精确、清除恢复、主管越权不扩张",
+      "result": "PASS"
+    },
+    {
+      "name": "区域停用保留历史且拒绝新归属，可显式清空",
+      "result": "PASS"
+    },
+    {
+      "name": "培训计划小时API持久化，草稿对象与发布任务人数，上海跨年，跨计划人数去重",
+      "result": "PASS"
+    },
+    {
+      "name": "部门培训统计范围及全厂只读读取",
+      "result": "PASS"
+    },
+    {
+      "name": "实际小时权限与审计前后值",
+      "result": "PASS"
+    }
+  ]
+}

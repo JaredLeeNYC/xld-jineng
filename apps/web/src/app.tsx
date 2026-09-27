@@ -1,7 +1,9 @@
+import { AreaManagement, EmployeeAreaPicker, AreaSelect } from "./area-management";
 import { TrainingManagement } from "./training-management";
 import { MaterialLibrary } from "./material-library";
 import { TrainingExamsPage } from "./training-exams";
 import { RequirementsView } from "./requirements-view";
+import { TrainingAnalyticsPanel } from "./training-analytics";
 import {
   navigationForRole,
   maximumPasswordLength,
@@ -77,6 +79,8 @@ type Position = {
   active: boolean;
 };
 type Employee = {
+  areaId?: string;
+  areaName?: string;
   id: string;
   employeeNumber: string;
   displayName: string;
@@ -516,6 +520,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
   const [departmentForm, setDepartmentForm] = useState({ code: "", name: "" });
   const [positionForm, setPositionForm] = useState({ code: "", name: "", departmentId: "" });
   const [employeeForm, setEmployeeForm] = useState({
+    areaId: "",
     phone: "",
     hireDate: "",
     gender: "",
@@ -692,6 +697,15 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
   );
   const employeeActions = (employee: Employee) => (
     <>
+      {canManage && employee.active && (
+        <EmployeeAreaPicker
+          employeeId={employee.id}
+          {...(employee.departmentId ? { departmentId: employee.departmentId } : {})}
+          {...(employee.areaId ? { areaId: employee.areaId } : {})}
+          {...(employee.areaName ? { areaName: employee.areaName } : {})}
+          onChanged={() => void load()}
+        />
+      )}
       <button type="button" onClick={() => void showHistory(employee)}>
         履历
       </button>
@@ -789,6 +803,9 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
         </a>
       </section>
 
+      {canManage && state.status === "ready" && (
+        <AreaManagement departments={state.departments} onChanged={() => void load()} />
+      )}
       {notice && <p className="organization-notice">{notice}</p>}
       {credentials.length > 0 && (
         <section className="panel credential-panel">
@@ -895,6 +912,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                   method: "POST",
                   body: JSON.stringify({
                     ...employeeForm,
+                    areaId: employeeForm.areaId || undefined,
                     hireDate: employeeForm.hireDate || undefined,
                     age: employeeForm.age ? Number(employeeForm.age) : undefined,
                     tenureYears: employeeForm.tenureYears
@@ -909,6 +927,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                 setCredentials(result.data.credentials);
                 setNotice("员工已创建；初始凭证仅在本页显示一次。");
                 setEmployeeForm({
+                  areaId: "",
                   phone: "",
                   hireDate: "",
                   gender: "",
@@ -992,8 +1011,17 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
               required
               value={employeeForm.departmentCode}
               onChange={(event) =>
-                setEmployeeForm({ ...employeeForm, departmentCode: event.target.value })
+                setEmployeeForm({ ...employeeForm, departmentCode: event.target.value, areaId: "" })
               }
+            />
+            <AreaSelect
+              departmentId={
+                state.departments.find(
+                  (d) => d.code === employeeForm.departmentCode.trim().toUpperCase(),
+                )?.id ?? ""
+              }
+              value={employeeForm.areaId}
+              onChange={(areaId) => setEmployeeForm({ ...employeeForm, areaId })}
             />
             <input
               placeholder="岗位编码"
@@ -1520,7 +1548,10 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                         <strong>{employee.employeeNumber}</strong>
                         <small>{employee.displayName}</small>
                       </td>
-                      <td>{employee.departmentName ?? "未分配"}</td>
+                      <td>
+                        {employee.departmentName ?? "未分配"}
+                        <small>{employee.areaName ?? "未分配区域"}</small>
+                      </td>
                       <td>{employee.positionName ?? "未分配"}</td>
                       <td>{employee.active ? "在职" : "已停用"}</td>
                       <td>{employeeActions(employee)}</td>
@@ -1539,7 +1570,9 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                   <dl>
                     <div>
                       <dt>部门</dt>
-                      <dd>{employee.departmentName ?? "未分配"}</dd>
+                      <dd>
+                        {employee.departmentName ?? "未分配"} · {employee.areaName ?? "未分配区域"}
+                      </dd>
                     </div>
                     <div>
                       <dt>岗位</dt>
@@ -1575,6 +1608,7 @@ export function SkillAdminPanel() {
   const [query, setQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [positionFilter, setPositionFilter] = useState("");
+  const [requirementDepartment, setRequirementDepartment] = useState("");
   const [notice, setNotice] = useState("");
   const [skillForm, setSkillForm] = useState<{
     code: string;
@@ -1680,9 +1714,7 @@ export function SkillAdminPanel() {
         .includes(query.toLowerCase()),
   );
   const filteredRequirements = state.requirements.filter(
-    (item) =>
-      (!departmentFilter || item.departmentId === departmentFilter) &&
-      (!positionFilter || item.positionId === positionFilter),
+    (item) => !requirementDepartment || item.departmentId === requirementDepartment,
   );
   const departmentOptions = Array.from(
     new Map(state.positions.map((p) => [p.departmentId, p.departmentName])).entries(),
@@ -2103,9 +2135,24 @@ export function SkillAdminPanel() {
             <h2>当前岗位要求</h2>
             <p>{filteredRequirements.length} 条唯一要求</p>
           </div>
+          <label>
+            部门筛选
+            <select
+              aria-label="岗位要求部门筛选"
+              value={requirementDepartment}
+              onChange={(event) => setRequirementDepartment(event.target.value)}
+            >
+              <option value="">全部部门</option>
+              {departmentOptions.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {filteredRequirements.length === 0 ? (
-          <p className="list-state">尚未配置岗位要求</p>
+          <p className="list-state">当前筛选暂无岗位要求</p>
         ) : (
           <>
             <div className="requirement-table-wrap">
@@ -2601,8 +2648,9 @@ export function SkillMatrixPanel({
     | { status: "ready"; rows: SkillMatrixCell[] }
   >(initialRows ? { status: "ready", rows: initialRows } : { status: "loading" });
   const [query, setQuery] = useState("");
-  const [filterOptions, setFilterOptions] = useState<SkillMatrixCell[]>([]);
+  const [filterOptions, setFilterOptions] = useState<SkillMatrixCell[]>(initialRows ?? []);
   const [filters, setFilters] = useState({
+    areaId: "",
     departmentId: "",
     employeeId: "",
     positionId: "",
@@ -2630,7 +2678,8 @@ export function SkillMatrixPanel({
     }
   };
   useEffect(() => {
-    if (!initialRows) void load({ departmentId: "", employeeId: "", positionId: "", skillId: "" });
+    if (!initialRows)
+      void load({ areaId: "", departmentId: "", employeeId: "", positionId: "", skillId: "" });
   }, [initialRows]);
   if (state.status === "loading")
     return <section className="panel list-state-panel">正在加载技能矩阵…</section>;
@@ -2644,7 +2693,7 @@ export function SkillMatrixPanel({
       </section>
     );
   const rows = state.rows.filter((item) =>
-    `${item.employeeNumber} ${item.employeeName} ${item.departmentName} ${item.positionName} ${item.skillName}`
+    `${item.employeeNumber} ${item.employeeName} ${item.departmentName} ${item.areaName ?? ""} ${item.positionName} ${item.skillName}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
@@ -2688,12 +2737,36 @@ export function SkillMatrixPanel({
           <>
             <select
               value={filters.departmentId}
-              onChange={(event) => setFilters({ ...filters, departmentId: event.target.value })}
+              onChange={(event) =>
+                setFilters({ ...filters, departmentId: event.target.value, areaId: "" })
+              }
             >
               <option value="">全部部门</option>
               {departmentOptions.map((item) => (
                 <option key={item.departmentId} value={item.departmentId}>
                   {item.departmentName}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="区域筛选"
+              value={filters.areaId}
+              onChange={(event) => setFilters({ ...filters, areaId: event.target.value })}
+            >
+              <option value="">全部区域</option>
+              {[
+                ...new Map(
+                  filterOptions
+                    .filter(
+                      (item) =>
+                        item.areaId &&
+                        (!filters.departmentId || item.departmentId === filters.departmentId),
+                    )
+                    .map((item) => [item.areaId, item]),
+                ).values(),
+              ].map((item) => (
+                <option key={item.areaId} value={item.areaId}>
+                  {item.departmentName} · {item.areaName}
                 </option>
               ))}
             </select>
@@ -2876,6 +2949,11 @@ export function SkillMatrixPanel({
                 <article key={level}>
                   <span className="legend-level">L{level}</span>
                   <span>{skillLevelMeanings[level]}</span>
+                  <div className="matrix-level-blocks" aria-hidden="true">
+                    {[1, 2, 3, 4].map((block) => (
+                      <span className={block <= level ? "filled" : ""} key={block} />
+                    ))}
+                  </div>
                 </article>
               ))}
             </div>
@@ -3873,7 +3951,8 @@ export function AssessmentPanel({ session }: { session: Session }) {
               <table>
                 <thead>
                   <tr>
-                    <th>序号</th><th>员工 / 技能</th>
+                    <th>序号</th>
+                    <th>员工 / 技能</th>
                     <th>部门</th>
                     <th>评定方式</th>
                     <th>考核成绩</th>
@@ -5166,7 +5245,17 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
           ) : activeNavigation === "settings" ? (
             <WebhookSettingsPanel />
           ) : activeNavigation === "dashboard" && isManagement ? (
-            <ReportDashboardPanel />
+            <>
+              <ReportDashboardPanel />
+              <TrainingAnalyticsPanel
+                canReadFactory={
+                  session.role === "hr_admin" ||
+                  session.role === "executive_viewer" ||
+                  Boolean(session.factoryRead)
+                }
+                {...(session.departmentId ? { departmentId: session.departmentId } : {})}
+              />
+            </>
           ) : (
             <>
               <section className="welcome">

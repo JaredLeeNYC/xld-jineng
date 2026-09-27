@@ -1,0 +1,88 @@
+{
+  "method": "isolated Playwright Chromium context, real localhost UI",
+  "evidence": [
+    {
+      "name": "HR技能矩阵导航与真实加载",
+      "pass": true
+    },
+    {
+      "name": "L0至L4四格绿色图例",
+      "pass": true,
+      "legend": [
+        {
+          "total": 4,
+          "filled": 0,
+          "colors": []
+        },
+        {
+          "total": 4,
+          "filled": 1,
+          "colors": [
+            "rgb(131, 201, 77)"
+          ]
+        },
+        {
+          "total": 4,
+          "filled": 2,
+          "colors": [
+            "rgb(131, 201, 77)",
+            "rgb(131, 201, 77)"
+          ]
+        },
+        {
+          "total": 4,
+          "filled": 3,
+          "colors": [
+            "rgb(131, 201, 77)",
+            "rgb(131, 201, 77)",
+            "rgb(131, 201, 77)"
+          ]
+        },
+        {
+          "total": 4,
+          "filled": 4,
+          "colors": [
+            "rgb(131, 201, 77)",
+            "rgb(131, 201, 77)",
+            "rgb(131, 201, 77)",
+            "rgb(131, 201, 77)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "岗位要求独立部门筛选",
+      "pass": true
+    },
+    {
+      "name": "岗位要求清除筛选恢复",
+      "pass": true
+    },
+    {
+      "name": "手机岗位要求筛选",
+      "pass": true
+    }
+  ],
+  "levels": [
+    {
+      "title": null,
+      "text": "现 — · 目 2",
+      "html": "<div class=\"matrix-level-blocks\" aria-hidden=\"true\"><span class=\"\"></span><span class=\"\"></span><span class=\"\"></span><span class=\"\"></span></div><strong>现 — · 目 2</strong>"
+    },
+    {
+      "title": null,
+      "text": "现 — · 目 2",
+      "html": "<div class=\"matrix-level-blocks\" aria-hidden=\"true\"><span class=\"\"></span><span class=\"\"></span><span class=\"\"></span><span class=\"\"></span></div><strong>现 — · 目 2</strong>"
+    },
+    {
+      "title": null,
+      "text": "现 — · 目 2",
+      "html": "<div class=\"matrix-level-blocks\" aria-hidden=\"true\"><span class=\"\"></span><span class=\"\"></span><span class=\"\"></span><span class=\"\"></span></div><strong>现 — · 目 2</strong>"
+    },
+    {
+      "title": null,
+      "text": "现 — · 目 2",
+      "html": "<div class=\"matrix-level-blocks\" aria-hidden=\"true\"><span class=\"\"></span><span class=\"\"></span><span class=\"\"></span><span class=\"\"></span></div><strong>现 — · 目 2</strong>"
+    }
+  ]
+}

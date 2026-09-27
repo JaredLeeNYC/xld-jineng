@@ -53,10 +53,12 @@ export function RequirementsView() {
         </div>
       ) : (
         <>
+          <p>{filtered.length} 条唯一要求</p>
           <div className="filter-bar">
             <label>
               部门
               <select
+                aria-label="岗位要求部门筛选"
                 value={departmentId}
                 onChange={(event) => {
                   setDepartmentId(event.target.value);

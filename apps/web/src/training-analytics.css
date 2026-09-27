@@ -1,0 +1,34 @@
+.training-analytics {
+  margin-top: 24px;
+}
+.training-analytics .analytics-desktop {
+  overflow-x: auto;
+}
+.training-analytics .analytics-mobile {
+  display: none;
+}
+.training-analytics table {
+  width: 100%;
+}
+.training-analytics th,
+.training-analytics td {
+  padding: 10px;
+  text-align: left;
+}
+.training-analytics input {
+  max-width: 110px;
+}
+@media (max-width: 720px) {
+  .training-analytics .analytics-desktop {
+    display: none;
+  }
+  .training-analytics .analytics-mobile {
+    display: grid;
+    gap: 12px;
+  }
+  .training-analytics article {
+    border: 1px solid #dbe5e1;
+    padding: 12px;
+    border-radius: 10px;
+  }
+}

@@ -85,6 +85,7 @@ const roleNavigation: Record<FixedRole, readonly NavigationItem[]> = {
     { id: "dashboard", label: "全厂概况", access: "read" },
     { id: "organization", label: "组织人员", access: "write" },
     { id: "skills", label: "技能标准", access: "write" },
+    { id: "matrix", label: "技能矩阵", access: "read" },
     { id: "training", label: "培训管理", access: "write" },
     { id: "assessments", label: "评定归档", access: "write" },
     { id: "reports", label: "报表导出", access: "read" },
@@ -121,6 +122,7 @@ export * from "./organization";
 export * from "./skill";
 export * from "./training-material";
 export * from "./training-plan";
+export * from "./training-analytics";
 export * from "./assessment";
 export * from "./training-exam";
 export * from "./report";

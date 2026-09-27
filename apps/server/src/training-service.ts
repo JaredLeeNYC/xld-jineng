@@ -1,3 +1,4 @@
+import { validTrainingHours } from "../../../packages/shared/src/training-analytics";
 import type { TrainingRepository } from "@jineng/skill-matrix-db";
 import {
   allowedMaterialMimeTypes,
@@ -45,6 +46,7 @@ const evidenceSignature = (mime: string, bytes: Uint8Array) => {
 };
 
 type PlanInput = {
+  plannedHours?: number | null;
   historicalCompleted?: boolean;
   trainingType?: TrainingType;
   title: string;
@@ -90,6 +92,7 @@ export const createTrainingService = (dependencies: {
     const startAt = validDate(input.startAt);
     const dueAt = validDate(input.dueAt);
     if (
+      (input.plannedHours != null && !validTrainingHours(input.plannedHours)) ||
       !input.title.trim() ||
       input.title.trim().length > 150 ||
       !input.location.trim() ||
@@ -109,6 +112,7 @@ export const createTrainingService = (dependencies: {
     )
       return undefined;
     return {
+      plannedHours: input.plannedHours ?? null,
       historicalCompleted: input.historicalCompleted === true,
       title: input.title.trim(),
       trainingType: input.trainingType ?? "professional",

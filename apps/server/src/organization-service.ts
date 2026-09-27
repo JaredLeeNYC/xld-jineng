@@ -68,6 +68,7 @@ const validateImportRows = async (
   inputRows: EmployeeImportRow[],
 ): Promise<{ rows: EmployeeImportRow[]; errors: ImportRowError[] }> => {
   const references = await repository.findImportReferences();
+  const areas = inputRows.some((row) => row.areaId) ? await repository.listAreas() : [];
   const departments = new Map(references.departments.map((item) => [item.code, item.id]));
   const positions = new Map(references.positions.map((item) => [item.code, item]));
   const existingNumbers = new Set(references.employeeNumbers);
@@ -124,6 +125,19 @@ const validateImportRows = async (
         message: "部门编码不存在或已停用",
       });
     }
+    if (
+      row.areaId &&
+      !areas.some(
+        (area) => area.id === row.areaId && area.departmentId === departmentId && area.active,
+      )
+    ) {
+      errors.push({
+        rowNumber: row.rowNumber,
+        field: "areaId",
+        code: "INVALID_VALUE",
+        message: "区域不存在、已停用或不属于所选部门",
+      });
+    }
     const position = positions.get(row.positionCode);
     if (row.positionCode && (!position || position.departmentId !== departmentId)) {
       errors.push({
@@ -154,6 +168,82 @@ export const createOrganizationService = (dependencies: {
 }) => {
   const { repository, passwordHash, temporaryPassword, idSource, now } = dependencies;
   return {
+    async listAreas(actor: SessionView, includeInactive = false) {
+      if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role))
+        return failure("FORBIDDEN", "无权查看区域", 403);
+      if (actor.role === "department_manager" && !actor.factoryRead && !actor.departmentId)
+        return failure("FORBIDDEN", "账号未关联有效部门", 403);
+      const rows = await repository.listAreas(actor.role === "hr_admin" && includeInactive);
+      return {
+        ok: true as const,
+        data:
+          actor.role === "department_manager" && !actor.factoryRead
+            ? rows.filter((row) => row.departmentId === actor.departmentId)
+            : rows,
+      };
+    },
+    async createArea(actor: SessionView, input: { name: string; departmentId: string }) {
+      const denied = requireHr(actor);
+      if (denied) return denied;
+      if (!validateName(input.name))
+        return failure("INVALID_AREA", "区域名称应为 1-100 个字符", 400);
+      try {
+        const row = await repository.createArea({
+          ...input,
+          name: input.name.trim(),
+          actorAccountId: actor.accountId,
+        });
+        return row
+          ? { ok: true as const, data: row }
+          : failure("INVALID_DEPARTMENT", "部门不存在或已停用", 409);
+      } catch (error) {
+        if (typeof error === "object" && error && "code" in error && error.code === "23505")
+          return failure("DUPLICATE_AREA", "该部门下区域名称已存在", 409);
+        throw error;
+      }
+    },
+    async updateArea(actor: SessionView, id: string, input: { name: string }) {
+      const denied = requireHr(actor);
+      if (denied) return denied;
+      if (!validateName(input.name))
+        return failure("INVALID_AREA", "区域名称应为 1-100 个字符", 400);
+      try {
+        return (await repository.updateArea({
+          id,
+          name: input.name.trim(),
+          actorAccountId: actor.accountId,
+        }))
+          ? { ok: true as const, data: { id } }
+          : failure("AREA_NOT_FOUND", "区域不存在", 404);
+      } catch (error) {
+        if (typeof error === "object" && error && "code" in error && error.code === "23505")
+          return failure("DUPLICATE_AREA", "该部门下区域名称已存在", 409);
+        throw error;
+      }
+    },
+    async deactivateArea(actor: SessionView, id: string) {
+      const denied = requireHr(actor);
+      if (denied) return denied;
+      return (await repository.deactivateArea({ id, actorAccountId: actor.accountId }))
+        ? { ok: true as const, data: { id, active: false } }
+        : failure("AREA_NOT_FOUND", "区域不存在或已停用", 404);
+    },
+    async setEmployeeArea(
+      actor: SessionView,
+      employeeId: string,
+      input: { areaId: string | null },
+    ) {
+      const denied = requireHr(actor);
+      if (denied) return denied;
+      return (await repository.setEmployeeArea({
+        employeeId,
+        areaId: input.areaId,
+        actorAccountId: actor.accountId,
+      }))
+        ? { ok: true as const, data: { id: employeeId } }
+        : failure("INVALID_AREA", "员工或区域无效，区域须为员工所在部门的启用区域", 409);
+    },
+
     async listDepartments(actor: SessionView, includeInactive = false) {
       if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role)) {
         return failure("FORBIDDEN", "无权查看组织数据", 403);

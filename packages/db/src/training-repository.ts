@@ -39,6 +39,7 @@ const audit = async (
 };
 
 type PlanInput = {
+  plannedHours?: number | null;
   historicalCompleted?: boolean;
   trainingType?: TrainingType;
   title: string;
@@ -84,7 +85,7 @@ const selectableMaterials = `select m.id from training_materials m where m.id=an
   ))`;
 
 const planSelect = `select p.id,p.title,p.training_type as "trainingType",p.status,p.material_ids as "materialIds",p.owner_employee_ids as "ownerEmployeeIds",
- p.historical_completed as "historicalCompleted",
+ p.planned_hours::float8 as "plannedHours",p.historical_completed as "historicalCompleted",
  p.scope_department_ids as "scopeDepartmentIds",p.scope_position_ids as "scopePositionIds",
  p.created_by_account_id as "createdByAccountId",p.submitted_by_account_id as "submittedByAccountId",p.approval_comment as "approvalComment",
  (select jsonb_agg(jsonb_build_object('id',mm.id,'title',mm.title,'skillIds',(select coalesce(array_agg(ms.skill_id),'{}') from training_material_skills ms where ms.material_id=mm.id and ms.active=true))) from training_materials mm where mm.id=any(p.material_ids)) as materials,
@@ -112,7 +113,7 @@ const taskSelect = `select t.id,t.plan_id as "planId",p.title as "planTitle",t.e
   p.material_ids as "materialIds",p.owner_employee_ids as "ownerEmployeeIds",
  (select jsonb_agg(jsonb_build_object('id',mm.id,'title',mm.title,'skillIds',(select coalesce(array_agg(ms.skill_id),'{}') from training_material_skills ms where ms.material_id=mm.id and ms.active=true))) from training_materials mm where mm.id=any(p.material_ids)) as materials,
  (select array_agg(oo.display_name) from employees oo where oo.id=any(p.owner_employee_ids)) as "ownerNames",
- t.actual_start_at as "actualStartAt",t.actual_completed_at as "actualCompletedAt",
+ t.actual_hours::float8 as "actualHours",t.actual_start_at as "actualStartAt",t.actual_completed_at as "actualCompletedAt",
  p.training_type as "trainingType",e.department_id as "departmentId",d.name as "departmentName",
   pa.position_id as "positionId",pos.name as "positionName",e.display_name as "employeeName",e.employee_number as "employeeNumber",p.material_id as "materialId",
   m.title as "materialTitle",p.owner_employee_id as "ownerEmployeeId",owner.display_name as "ownerName",
@@ -220,8 +221,8 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     return transaction(pool, async (client) => {
       await client.query(
         `insert into training_plans (id,title,material_id,owner_employee_id,start_at,due_at,location,
-          scope_type,scope_department_id,scope_position_id,created_by_account_id,training_type,historical_completed)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          scope_type,scope_department_id,scope_position_id,created_by_account_id,training_type,historical_completed,planned_hours)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           input.id,
           input.title,
@@ -236,6 +237,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
           input.actor.accountId,
           input.trainingType ?? "professional",
           input.historicalCompleted ?? false,
+          input.plannedHours ?? null,
         ],
       );
       await client.query(
@@ -268,7 +270,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     return transaction(pool, async (client) => {
       const result = await client.query(
         `update training_plans set title=$2,material_id=$3,owner_employee_id=$4,start_at=$5,due_at=$6,
-          location=$7,scope_type=$8,scope_department_id=$9,scope_position_id=$10,training_type=$13,historical_completed=$14,updated_at=now()
+          location=$7,scope_type=$8,scope_department_id=$9,scope_position_id=$10,training_type=$13,historical_completed=$14,planned_hours=$15,updated_at=now()
          where id=$1 and deleted_at is null and status='draft' and ($11='hr_admin' or created_by_account_id=$12) returning id`,
         [
           id,
@@ -285,6 +287,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
           input.actor.accountId,
           input.trainingType ?? "professional",
           input.historicalCompleted ?? false,
+          input.plannedHours ?? null,
         ],
       );
       if (!result.rowCount) return false;

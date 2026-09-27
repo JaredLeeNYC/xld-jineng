@@ -1,4 +1,5 @@
 import type {
+  AreaView,
   DepartmentView,
   EmployeeImportRow,
   EmployeeView,
@@ -45,6 +46,106 @@ const withTransaction = async <T>(pool: Pool, operation: (client: PoolClient) =>
 };
 
 export const createPostgresOrganizationRepository = (pool: Pool) => ({
+  async listAreas(includeInactive = false): Promise<AreaView[]> {
+    return (
+      await pool.query<AreaView>(
+        `select a.id,a.name,a.department_id as "departmentId",d.name as "departmentName",a.active from areas a join departments d on d.id=a.department_id where $1 or (a.active and d.active) order by d.code,a.name`,
+        [includeInactive],
+      )
+    ).rows;
+  },
+  async createArea(input: { name: string; departmentId: string; actorAccountId: string }) {
+    return withTransaction(pool, async (client) => {
+      const row = (
+        await client.query<AreaView>(
+          `insert into areas(name,department_id) select $1,id from departments where id=$2 and active returning id,name,department_id as "departmentId",active`,
+          [input.name, input.departmentId],
+        )
+      ).rows[0];
+      if (row)
+        await audit(client, {
+          actorAccountId: input.actorAccountId,
+          action: "area.created",
+          objectType: "area",
+          objectId: row.id,
+        });
+      return row;
+    });
+  },
+  async updateArea(input: { id: string; name: string; actorAccountId: string }) {
+    return withTransaction(pool, async (client) => {
+      const row = (
+        await client.query(`update areas set name=$2,updated_at=now() where id=$1 returning id`, [
+          input.id,
+          input.name,
+        ])
+      ).rows[0];
+      if (row)
+        await audit(client, {
+          actorAccountId: input.actorAccountId,
+          action: "area.updated",
+          objectType: "area",
+          objectId: input.id,
+        });
+      return !!row;
+    });
+  },
+  async deactivateArea(input: { id: string; actorAccountId: string }) {
+    return withTransaction(pool, async (client) => {
+      const row = (
+        await client.query(
+          `update areas set active=false,updated_at=now() where id=$1 and active returning id`,
+          [input.id],
+        )
+      ).rows[0];
+      if (row)
+        await audit(client, {
+          actorAccountId: input.actorAccountId,
+          action: "area.deactivated",
+          objectType: "area",
+          objectId: input.id,
+        });
+      return !!row;
+    });
+  },
+  async setEmployeeArea(input: {
+    employeeId: string;
+    areaId: string | null;
+    actorAccountId: string;
+  }) {
+    return withTransaction(pool, async (client) => {
+      const employee = (
+        await client.query<{ departmentId: string }>(
+          `select department_id as "departmentId" from employees where id=$1 and active for update`,
+          [input.employeeId],
+        )
+      ).rows[0];
+      if (!employee) return false;
+      if (
+        input.areaId &&
+        !(
+          await client.query(
+            `select a.id from areas a join departments d on d.id=a.department_id where a.id=$1 and a.department_id=$2 and a.active and d.active for share of a,d`,
+            [input.areaId, employee.departmentId],
+          )
+        ).rowCount
+      )
+        return false;
+      await client.query(`update employees set area_id=$2,updated_at=now() where id=$1`, [
+        input.employeeId,
+        input.areaId,
+      ]);
+      await audit(client, {
+        actorAccountId: input.actorAccountId,
+        action: "employee.area_changed",
+        objectType: "employee",
+        objectId: input.employeeId,
+        summary: { areaId: input.areaId },
+      });
+      return true;
+    });
+  },
+
   async listDepartments(includeInactive = false): Promise<DepartmentView[]> {
     const result = await pool.query<DepartmentView>(
       `select id, code, name, active
@@ -242,13 +343,14 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       }
     >(
       `select e.id, e.employee_number as "employeeNumber", e.display_name as "displayName",
-              e.department_id as "departmentId", d.name as "departmentName",
+              e.department_id as "departmentId", d.name as "departmentName", e.area_id as "areaId", ar.name as "areaName",
               pa.position_id as "positionId", p.name as "positionName",
               e.hire_date::text as "hireDate", e.phone, e.gender, e.age,
               e.identity_number as "identityNumber", e.tenure_years::float as "tenureYears", e.education, a.role,
               (e.active and a.active) as active
        from employees e
        join user_accounts a on a.employee_id = e.id
+       left join areas ar on ar.id = e.area_id
        left join departments d on d.id = e.department_id
        left join position_assignments pa on pa.employee_id = e.id and pa.ended_at is null
        left join positions p on p.id = pa.position_id
@@ -274,6 +376,8 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       id: row.id,
       employeeNumber: row.employeeNumber,
       displayName: row.displayName,
+      ...(row.areaId ? { areaId: row.areaId } : {}),
+      ...(row.areaName ? { areaName: row.areaName } : {}),
       role: row.role,
       active: row.active,
       ...(row.gender ? { gender: row.gender } : {}),
@@ -398,7 +502,7 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       );
       if (created.rowCount === 0) return false;
       await client.query(
-        "update employees set department_id = $2, updated_at = now() where id = $1",
+        "update employees set area_id = case when department_id = $2 then area_id else null end, department_id = $2, updated_at = now() where id = $1",
         [input.employeeId, input.departmentId],
       );
       await audit(client, {
@@ -520,10 +624,20 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
         );
         const target = reference.rows[0];
         if (!target) throw new Error(`IMPORT_REFERENCE_CHANGED:${row.rowNumber}`);
+        if (
+          row.areaId &&
+          !(
+            await client.query(
+              `select id from areas where id=$1 and department_id=$2 and active for share`,
+              [row.areaId, target.departmentId],
+            )
+          ).rowCount
+        )
+          throw new Error(`IMPORT_REFERENCE_CHANGED:${row.rowNumber}`);
         const employee = await client.query<{ id: string }>(
           `insert into employees (
-             employee_number, display_name, department_id, hire_date, phone, gender, age, identity_number, tenure_years, education
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+             employee_number, display_name, department_id, hire_date, phone, gender, age, identity_number, tenure_years, education, area_id
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
           [
             row.employeeNumber,
             row.displayName,
@@ -535,6 +649,7 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
             row.identityNumber ?? null,
             row.tenureYears ?? null,
             row.education ?? null,
+            row.areaId ?? null,
           ],
         );
         await client.query(

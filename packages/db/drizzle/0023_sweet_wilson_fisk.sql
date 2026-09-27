@@ -1,0 +1,2 @@
+ALTER TABLE "training_plans" ADD CONSTRAINT "training_plans_hours" CHECK ("training_plans"."planned_hours" >= 0);--> statement-breakpoint
+ALTER TABLE "training_tasks" ADD CONSTRAINT "training_tasks_hours" CHECK ("training_tasks"."actual_hours" >= 0);
