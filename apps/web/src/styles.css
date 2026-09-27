@@ -1016,6 +1016,13 @@ main {
   display: grid;
   gap: 18px;
 }
+.matrix-page {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.matrix-page > * {
+  min-width: 0;
+}
 .skill-form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
