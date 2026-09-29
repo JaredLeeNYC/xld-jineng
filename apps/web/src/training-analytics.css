@@ -32,3 +32,69 @@
     border-radius: 10px;
   }
 }
+.training-analytics {
+  margin-top: 0;
+}
+.training-analytics .action-row {
+  padding: 16px;
+  margin: 16px 0;
+  background: #f5f8f6;
+  border-radius: 8px;
+  align-items: end;
+  gap: 12px;
+}
+.training-analytics .action-row label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  flex: 1 1 130px;
+  min-width: 0;
+}
+.training-analytics .action-row input,
+.training-analytics .action-row select {
+  width: 100%;
+  max-width: none;
+}
+.training-analytics .analytics-desktop {
+  overflow-x: auto;
+}
+.training-analytics table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.training-analytics th {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.training-analytics th,
+.training-analytics td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.training-analytics p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 12px 0;
+}
+.training-analytics h3 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 20px 0 8px;
+}
+@media (max-width: 720px) {
+  .training-analytics .action-row {
+    padding: 12px;
+    gap: 10px;
+  }
+  .training-analytics .action-row label {
+    flex-basis: calc(50% - 10px);
+  }
+  .training-analytics article {
+    background: #fbfcfb;
+    padding: 16px;
+  }
+  .training-analytics article h3 {
+    margin-top: 0;
+  }
+}

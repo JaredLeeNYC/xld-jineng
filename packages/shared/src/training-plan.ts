@@ -44,6 +44,7 @@ export const trainingScopeTypes = ["department", "position", "employees"] as con
 export type TrainingScopeType = (typeof trainingScopeTypes)[number];
 
 export type TrainingPlanView = {
+  estimatedParticipantCount?: number;
   plannedHours?: number | null;
   id: string;
 

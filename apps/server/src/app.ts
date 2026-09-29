@@ -1549,6 +1549,7 @@ export const createApp = ({
         query: t.Object({
           year: t.Numeric({ minimum: 2000, maximum: 2100 }),
           departmentId: t.Optional(t.String({ format: "uuid" })),
+          areaId: t.Optional(t.String({ format: "uuid" })),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },

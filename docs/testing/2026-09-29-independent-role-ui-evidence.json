@@ -1,0 +1,46 @@
+{
+  "method": "real Chrome localhost HR/manager/employee",
+  "results": [
+    {
+      "name": "培训默认年度表，部门/区域/月/状态筛选与重置",
+      "pass": true
+    },
+    {
+      "name": "培训4子模块互斥，任务和资料分离",
+      "pass": true
+    },
+    {
+      "name": "HR矩阵入口、L0至L4四块等级图例、区域筛选",
+      "pass": true
+    },
+    {
+      "name": "年度时数统计显示计划和实际并可按部门查看",
+      "pass": true
+    },
+    {
+      "name": "主管负责人看见部门外待审批计划，人数完整，禁止跨部门审批提示",
+      "pass": true
+    },
+    {
+      "name": "主管年度统计API强制本部门",
+      "pass": true
+    },
+    {
+      "name": "主管培训手机卡片与可见计划不溢出",
+      "pass": true
+    },
+    {
+      "name": "员工仅可见本人评定，区域筛选可用，无创建入口",
+      "pass": true
+    },
+    {
+      "name": "员工培训仅任务无管理模块",
+      "pass": true
+    },
+    {
+      "name": "浏览器无JavaScript异常",
+      "pass": true,
+      "errors": []
+    }
+  ]
+}

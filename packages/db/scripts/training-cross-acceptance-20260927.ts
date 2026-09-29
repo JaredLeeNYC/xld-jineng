@@ -12,6 +12,7 @@ import {
   migrationsFolder,
   createPostgresOrganizationRepository,
   createPostgresTrainingRepository,
+  createPostgresAssessmentRepository,
 } from "../src";
 const adminUrl =
   process.env.POSTGRES_CONTRACT_ADMIN_URL ??
@@ -294,6 +295,139 @@ try {
     (await repo.listPlans(base.actor)).find((p) => p.id === newId)?.plannedHours,
     null,
     "HTTP clears plannedHours",
+  );
+  // 09-29 区域筛选：只使用匹配区域参训人员，保留离职人员历史并限制主管范围。
+  const areaA = (
+    await pool.query("insert into areas(name,department_id) values ('区域A',$1) returning id", [d1])
+  ).rows[0].id;
+  const areaB = (
+    await pool.query("insert into areas(name,department_id) values ('区域B',$1) returning id", [d1])
+  ).rows[0].id;
+  const areaC = (
+    await pool.query("insert into areas(name,department_id) values ('区域C',$1) returning id", [d2])
+  ).rows[0].id;
+  await pool.query("update employees set area_id=$1 where id=$2", [areaA, e1]);
+  await pool.query("update employees set area_id=$1 where id=$2", [areaB, e2]);
+  await pool.query("update employees set area_id=$1 where id=$2", [areaC, e3]);
+  const areaFacts = await analytics.loadFacts(2026, d1, areaB);
+  assert.equal(areaFacts.employeeCount, 1, "area denominator only current matching employees");
+  assert.equal(
+    areaFacts.plans.find((p) => p.id === draft)?.participantCount,
+    1,
+    "area draft participants",
+  );
+  assert.equal(
+    areaFacts.plans.find((p) => p.id === published)?.participantCount,
+    1,
+    "area published participants",
+  );
+  assert.deepEqual(
+    areaFacts.tasks.map((t) => t.employeeId),
+    [e2],
+    "area tasks exclude other areas",
+  );
+  const areaResponse = await request(
+    `/api/reports/training-analytics?year=2026&departmentId=${d1}&areaId=${areaB}`,
+  );
+  assert.equal(areaResponse.status, 200);
+  assert.equal(areaResponse.body.data.areaId, areaB, "HTTP echoes selected area");
+  assert.equal(
+    areaResponse.body.data.months[1].actualPersonHours,
+    1.75,
+    "area actual person hours",
+  );
+  assert.equal(
+    areaResponse.body.data.months[1].averageHours,
+    1.75,
+    "area average uses scoped denominator",
+  );
+  assert.equal(
+    (await request("/api/reports/training-analytics?year=2026&areaId=bad")).status,
+    422,
+    "area UUID validation",
+  );
+  const deniedArea = await service.dashboard(manager, {
+    year: 2026,
+    departmentId: d2,
+    areaId: areaC,
+  });
+  assert(deniedArea.ok);
+  assert.equal(deniedArea.data.departmentId, d1);
+  assert.equal(
+    deniedArea.data.employeeCount,
+    0,
+    "outside department area must not expose denominator",
+  );
+  assert.deepEqual(deniedArea.data.plans, [], "outside department area must not expose plans");
+  assert.equal(
+    deniedArea.data.months[1]?.actualPersonHours,
+    0,
+    "outside department area must not expose hours",
+  );
+  const factoryArea = await service.dashboard(
+    { ...manager, factoryRead: true },
+    { year: 2026, areaId: areaC },
+  );
+  assert(factoryArea.ok);
+  assert.equal(factoryArea.data.employeeCount, 1, "factory reader can filter across departments");
+  assert.equal(factoryArea.data.months[1]?.actualPersonHours, 2.5);
+  await pool.query("update employees set active=false where id=$1", [e2]);
+  const historyArea = await service.dashboard(hr, { year: 2026, areaId: areaB });
+  assert(historyArea.ok);
+  assert.equal(historyArea.data.employeeCount, 0, "inactive employee excluded from denominator");
+  assert.equal(historyArea.data.months[1]?.actualPersonHours, 1.75, "inactive history preserved");
+  assert.equal(
+    historyArea.data.months[1]?.averageHours,
+    null,
+    "empty area denominator remains null",
+  );
+  assert(
+    !historyArea.data.plans.some((p) => p.id === draft),
+    "draft without matching active participant excluded",
+  );
+  assert(
+    historyArea.data.plans.some((p) => p.id === published),
+    "published historical participants preserved",
+  );
+  const assessmentSkill = (
+    await pool.query(
+      "insert into skills(code,name,category) values ('AREA-QA','区域评定读取','general') returning id",
+    )
+  ).rows[0].id;
+  for (const employeeId of [e1, e3, managerEmployee]) {
+    await pool.query(
+      "insert into skill_assessments(employee_id,skill_id,level,status,passed,method,assessor_account_id,source_type,source_reference,assessed_at) values($1,$2,2,'draft',true,'written',$3,'manual_assessment','区域契约验收','2026-09-29')",
+      [employeeId, assessmentSkill, actor],
+    );
+  }
+  const assessments = createPostgresAssessmentRepository(pool);
+  const hrAssessments = await assessments.list({ ...hr, role: "hr_admin" });
+  assert.equal(
+    hrAssessments.find((a) => a.employeeId === e1)?.areaId,
+    areaA,
+    "assessment reads employee area id",
+  );
+  assert.equal(
+    hrAssessments.find((a) => a.employeeId === e1)?.areaName,
+    "区域A",
+    "assessment reads area name",
+  );
+  assert.equal(
+    hrAssessments.find((a) => a.employeeId === managerEmployee)?.areaId,
+    undefined,
+    "unassigned area omitted",
+  );
+  const managerAssessments = await assessments.list({ ...manager, role: "department_manager" });
+  assert(
+    !managerAssessments.some((a) => a.employeeId === e3),
+    "assessment area metadata does not expand manager scope",
+  );
+  await pool.query("update areas set active=false where id=$1", [areaA]);
+  assert.equal(
+    (await assessments.list({ ...hr, role: "hr_admin" })).find((a) => a.employeeId === e1)
+      ?.areaName,
+    "区域A",
+    "inactive area keeps assessment historical label",
   );
   session = { ...hr, role: "employee" };
   assert.equal(

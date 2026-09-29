@@ -109,7 +109,10 @@ describe("application shell", () => {
     );
 
     expect(html).toContain("只展示与你本人有关的培训与技能事项");
-    expect(html).toContain("设备点检规范");
+    expect(html).not.toContain("设备点检规范");
+    expect(html).not.toContain("岗位达标 8 / 12");
+    expect(html).toContain("正在加载培训");
+    expect(html).not.toContain("⌘ K");
     expect(html).not.toContain("王强等 4 人");
     expect(html).toContain('aria-label="退出登录"');
   });
@@ -132,6 +135,7 @@ describe("application shell", () => {
     expect(html).toContain("重置密码");
     expect(html).toContain("旧会话失效");
     expect(html).toContain("正在加载账号");
+    expect(html).not.toContain('aria-label="通知"');
   });
 
   test("organization list has an explicit loading state before data arrives", () => {

@@ -101,6 +101,11 @@ const planSelect = `select p.id,p.title,p.training_type as "trainingType",p.stat
     or exists (select 1 from training_plan_scope_employees se join position_assignments pa on pa.employee_id=se.employee_id and pa.ended_at is null where se.plan_id=p.id and se.active=true and pa.position_id=pos.id)) as positions,
   (select coalesce(jsonb_agg(e.display_name order by e.employee_number),'[]') from training_plan_scope_employees se join employees e on e.id=se.employee_id where se.plan_id=p.id and se.active=true) as "scopeEmployeeNames",
   coalesce(array_agg(distinct pse.employee_id) filter (where pse.active=true),'{}') as "scopeEmployeeIds",
+  (select count(distinct target.id)::int from employees target where target.active=true and (
+    (p.scope_type='department' and target.department_id=any(p.scope_department_ids))
+    or (p.scope_type='position' and exists (select 1 from position_assignments assignment where assignment.employee_id=target.id and assignment.ended_at is null and assignment.position_id=any(p.scope_position_ids)))
+    or (p.scope_type='employees' and exists (select 1 from training_plan_scope_employees target_scope where target_scope.plan_id=p.id and target_scope.employee_id=target.id and target_scope.active=true))
+  )) as "estimatedParticipantCount",
   count(distinct t.id)::int as "taskCount",
   count(distinct r.id)::int as "confirmedCount",p.created_at as "createdAt"
  from training_plans p join training_materials m on m.id=p.material_id
@@ -169,6 +174,8 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     const result = await pool.query(
       `${planSelect}
        where p.deleted_at is null and ($1='hr_admin' or p.created_by_account_id=$2
+         or exists (select 1 from user_accounts owner_account where owner_account.id=$2 and owner_account.active=true
+           and owner_account.employee_id=any(p.owner_employee_ids))
          or (p.scope_type='department' and $3::uuid=any(p.scope_department_ids))
          or exists (select 1 from positions sp where sp.id=any(p.scope_position_ids) and sp.department_id=$3::uuid)
          or exists (select 1 from training_plan_scope_employees se join employees ee on ee.id=se.employee_id where se.plan_id=p.id and se.active=true and ee.department_id=$3::uuid)

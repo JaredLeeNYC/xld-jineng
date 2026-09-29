@@ -41,6 +41,8 @@ export type SkillAssessmentView = {
   employeeName: string;
   departmentId: string;
   departmentName: string;
+  areaId?: string;
+  areaName?: string;
   skillId: string;
   skillCode: string;
   skillName: string;

@@ -1,0 +1,46 @@
+{
+  "environment": "isolated local PostgreSQL + real Chrome headless",
+  "results": [
+    {
+      "name": "组织三个子模块互斥，HR真实新增部门",
+      "pass": true
+    },
+    {
+      "name": "岗位子模块真实新增岗位、部门筛选和空状态",
+      "pass": true
+    },
+    {
+      "name": "员工子模块真实新建员工，其他子模块不显示员工导入",
+      "pass": true
+    },
+    {
+      "name": "技能两个子模块互斥，真实新增技能",
+      "pass": true
+    },
+    {
+      "name": "当前岗位要求真实保存与部门筛选",
+      "pass": true
+    },
+    {
+      "name": "真实创建3个区域评定，含停用区域与未分配区域",
+      "pass": true
+    },
+    {
+      "name": "评定停用区域、未分配区域及部门联动筛选精确",
+      "pass": true
+    },
+    {
+      "name": "手机组织/技能/评定列表卡片且页面无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "全厂概况仅时数统计、不显示培训计划明细",
+      "pass": true
+    },
+    {
+      "name": "浏览器无JavaScript异常",
+      "pass": true,
+      "errors": []
+    }
+  ]
+}

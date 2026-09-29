@@ -1,5 +1,7 @@
+import { ModuleNavigation } from "./module-navigation";
 import { AreaManagement, EmployeeAreaPicker, AreaSelect } from "./area-management";
 import { TrainingManagement } from "./training-management";
+import { TrainingWorkspace } from "./training-workspace";
 import { MaterialLibrary } from "./material-library";
 import { TrainingExamsPage } from "./training-exams";
 import { RequirementsView } from "./requirements-view";
@@ -31,14 +33,12 @@ import {
 import {
   Bell,
   BookOpenCheck,
-  ChevronRight,
   ClipboardCheck,
   Factory,
   GraduationCap,
   LayoutDashboard,
   LockKeyhole,
   LogIn,
-  Search,
   Settings,
   ShieldCheck,
   TrendingUp,
@@ -358,38 +358,6 @@ function PasswordChangePage({
   );
 }
 
-const statisticsForRole = (role: FixedRole) => {
-  if (role === "employee") {
-    return [
-      { label: "已掌握技能", value: "12", note: "其中 8 项达到岗位要求", tone: "green" },
-      { label: "待完成培训", value: "3", note: "最近一项截止本周五", tone: "amber" },
-      { label: "即将到期", value: "1", note: "焊接操作将在 28 天后到期", tone: "red" },
-      { label: "未读消息", value: "2", note: "培训安排与评定结果", tone: "blue" },
-    ];
-  }
-  if (role === "system_admin") {
-    return [
-      { label: "启用账号", value: "286", note: "五类固定角色", tone: "green" },
-      { label: "临时锁定", value: "2", note: "15 分钟后自动解除", tone: "amber" },
-      { label: "今日安全事件", value: "9", note: "无高风险事件", tone: "blue" },
-      { label: "服务状态", value: "正常", note: "数据库与迁移已就绪", tone: "green" },
-    ];
-  }
-  return [
-    { label: "在岗员工", value: "286", note: "本月新增 8 人", tone: "green" },
-    { label: "技能达标率", value: "82.6%", note: "较上月 +3.2%", tone: "amber" },
-    { label: "待确认评定", value: "6", note: "其中 2 项即将超期", tone: "red" },
-    { label: "培训完成率", value: "91.4%", note: "本月任务 128 项", tone: "blue" },
-  ];
-};
-
-const departments = [
-  { name: "装配一部", people: 68, rate: 91, color: "var(--green)" },
-  { name: "机加车间", people: 54, rate: 84, color: "var(--amber)" },
-  { name: "质量部", people: 32, rate: 79, color: "var(--blue)" },
-  { name: "装配二部", people: 71, rate: 73, color: "var(--coral)" },
-];
-
 function NavigationButton({
   active,
   item,
@@ -509,6 +477,10 @@ function AdminResetPanel() {
 }
 
 export function OrganizationPanel({ canManage }: { canManage: boolean }) {
+  const [module, setModule] = useState<"departments" | "positions" | "employees">(
+    canManage ? "departments" : "employees",
+  );
+  const [positionDepartment, setPositionDepartment] = useState("");
   const [state, setState] = useState<
     | { status: "loading" }
     | { status: "error"; message: string }
@@ -690,10 +662,12 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
   const filteredDepartments = state.departments.filter((department) =>
     `${department.code} ${department.name}`.toLowerCase().includes(normalizedMasterQuery),
   );
-  const filteredPositions = state.positions.filter((position) =>
-    `${position.code} ${position.name} ${position.departmentName}`
-      .toLowerCase()
-      .includes(normalizedMasterQuery),
+  const filteredPositions = state.positions.filter(
+    (position) =>
+      (!positionDepartment || position.departmentId === positionDepartment) &&
+      `${position.code} ${position.name} ${position.departmentName}`
+        .toLowerCase()
+        .includes(normalizedMasterQuery),
   );
   const employeeActions = (employee: Employee) => (
     <>
@@ -789,21 +763,43 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
 
   return (
     <div className="organization-page">
+      {canManage && (
+        <ModuleNavigation
+          label="组织人员子模块"
+          value={module}
+          items={[
+            { id: "departments", label: "部门与区域" },
+            { id: "positions", label: "岗位管理" },
+            { id: "employees", label: "员工管理" },
+          ]}
+          onChange={(next) => {
+            setModule(next);
+            setMasterQuery("");
+            setNotice("");
+            setEditing(undefined);
+            setEditingDepartment(undefined);
+            setEditingPosition(undefined);
+            setHistory(undefined);
+          }}
+        />
+      )}
       <section className="welcome organization-heading">
         <div>
           <p className="eyebrow">组织与人员</p>
           <h1>工厂人员与岗位</h1>
           <p>维护稳定业务编码、当前岗位与可追溯任职履历。</p>
         </div>
-        <a
-          className="primary-button export-link"
-          href={`/api/organization/employees/export.xlsx${query ? `?query=${encodeURIComponent(query)}` : ""}`}
-        >
-          导出当前数据
-        </a>
+        {module === "employees" && (
+          <a
+            className="primary-button export-link"
+            href={`/api/organization/employees/export.xlsx${query ? `?query=${encodeURIComponent(query)}` : ""}`}
+          >
+            导出当前数据
+          </a>
+        )}
       </section>
 
-      {canManage && state.status === "ready" && (
+      {canManage && module === "departments" && state.status === "ready" && (
         <AreaManagement departments={state.departments} onChanged={() => void load()} />
       )}
       {notice && <p className="organization-notice">{notice}</p>}
@@ -824,224 +820,253 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
 
       {canManage && (
         <section className="organization-form-grid">
-          <form
-            className="panel compact-form"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (await mutate("/api/organization/departments", "POST", departmentForm)) {
-                setDepartmentForm({ code: "", name: "" });
-              }
-            }}
-          >
-            <h2>新增部门</h2>
-            <input
-              placeholder="部门编码"
-              required
-              value={departmentForm.code}
-              onChange={(event) =>
-                setDepartmentForm({ ...departmentForm, code: event.target.value })
-              }
-            />
-            <input
-              placeholder="部门名称"
-              required
-              value={departmentForm.name}
-              onChange={(event) =>
-                setDepartmentForm({ ...departmentForm, name: event.target.value })
-              }
-            />
-            <button className="primary-button" type="submit">
-              保存部门
-            </button>
-          </form>
-          <form
-            className="panel compact-form"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (await mutate("/api/organization/positions", "POST", positionForm)) {
-                setPositionForm({
-                  code: "",
-                  name: "",
-                  departmentId: state.departments[0]?.id ?? "",
-                });
-              }
-            }}
-          >
-            <h2>新增岗位</h2>
-            <input
-              placeholder="岗位编码"
-              required
-              value={positionForm.code}
-              onChange={(event) => setPositionForm({ ...positionForm, code: event.target.value })}
-            />
-            <input
-              placeholder="岗位名称"
-              required
-              value={positionForm.name}
-              onChange={(event) => setPositionForm({ ...positionForm, name: event.target.value })}
-            />
-            <select
-              required
-              value={positionForm.departmentId}
-              onChange={(event) =>
-                setPositionForm({ ...positionForm, departmentId: event.target.value })
-              }
-            >
-              {state.departments
-                .filter((item) => item.active)
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.code} · {item.name}
-                  </option>
-                ))}
-            </select>
-            <button className="primary-button" type="submit">
-              保存岗位
-            </button>
-          </form>
-          <form
-            className="panel compact-form"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              setNotice("");
-              try {
-                const { result } = await request<{
-                  imported: number;
-                  credentials: Array<{ employeeNumber: string; temporaryPassword: string }>;
-                }>("/api/organization/employees", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    ...employeeForm,
-                    areaId: employeeForm.areaId || undefined,
-                    hireDate: employeeForm.hireDate || undefined,
-                    age: employeeForm.age ? Number(employeeForm.age) : undefined,
-                    tenureYears: employeeForm.tenureYears
-                      ? Number(employeeForm.tenureYears)
-                      : undefined,
-                  }),
-                });
-                if (!result.ok) {
-                  setNotice(result.error.message);
-                  return;
+          {module === "departments" && (
+            <form
+              className="panel compact-form"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (await mutate("/api/organization/departments", "POST", departmentForm)) {
+                  setDepartmentForm({ code: "", name: "" });
                 }
-                setCredentials(result.data.credentials);
-                setNotice("员工已创建；初始凭证仅在本页显示一次。");
-                setEmployeeForm({
-                  areaId: "",
-                  phone: "",
-                  hireDate: "",
-                  gender: "",
-                  age: "",
-                  identityNumber: "",
-                  tenureYears: "",
-                  education: "",
-                  role: "employee",
-                  employeeNumber: "",
-                  displayName: "",
-                  departmentCode: "",
-                  positionCode: "",
-                });
-                await load();
-              } catch {
-                setNotice("创建员工失败，请稍后再试");
-              }
-            }}
-          >
-            <h2>新增员工</h2>
-            <label>
-              账号角色
+              }}
+            >
+              <h2>新增部门</h2>
+              <input
+                placeholder="部门编码"
+                required
+                value={departmentForm.code}
+                onChange={(event) =>
+                  setDepartmentForm({ ...departmentForm, code: event.target.value })
+                }
+              />
+              <input
+                placeholder="部门名称"
+                required
+                value={departmentForm.name}
+                onChange={(event) =>
+                  setDepartmentForm({ ...departmentForm, name: event.target.value })
+                }
+              />
+              <button className="primary-button" type="submit">
+                保存部门
+              </button>
+            </form>
+          )}
+          {module === "positions" && (
+            <form
+              className="panel compact-form"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (await mutate("/api/organization/positions", "POST", positionForm)) {
+                  setPositionForm({
+                    code: "",
+                    name: "",
+                    departmentId: state.departments[0]?.id ?? "",
+                  });
+                }
+              }}
+            >
+              <h2>新增岗位</h2>
+              <input
+                placeholder="岗位编码"
+                required
+                value={positionForm.code}
+                onChange={(event) => setPositionForm({ ...positionForm, code: event.target.value })}
+              />
+              <input
+                placeholder="岗位名称"
+                required
+                value={positionForm.name}
+                onChange={(event) => setPositionForm({ ...positionForm, name: event.target.value })}
+              />
               <select
-                aria-label="账号角色"
-                value={employeeForm.role}
-                onChange={(event) => setEmployeeForm({ ...employeeForm, role: event.target.value })}
+                required
+                value={positionForm.departmentId}
+                onChange={(event) =>
+                  setPositionForm({ ...positionForm, departmentId: event.target.value })
+                }
               >
-                <option value="employee">普通员工</option>
-                <option value="department_manager">部门主管</option>
+                {state.departments
+                  .filter((item) => item.active)
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.code} · {item.name}
+                    </option>
+                  ))}
               </select>
-            </label>
-            {(
-              [
-                ["phone", "手机号"],
-                ["hireDate", "入职日期"],
-                ["gender", "性别"],
-                ["age", "年龄"],
-                ["identityNumber", "身份证号"],
-                ["tenureYears", "司龄（年）"],
-                ["education", "学历"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key}>
-                {label}
-                <input
-                  aria-label={label}
-                  type={
-                    key === "hireDate"
-                      ? "date"
-                      : key === "age" || key === "tenureYears"
-                        ? "number"
-                        : "text"
+              <button className="primary-button" type="submit">
+                保存岗位
+              </button>
+            </form>
+          )}
+          {module === "employees" && (
+            <form
+              className="panel compact-form"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setNotice("");
+                try {
+                  const { result } = await request<{
+                    imported: number;
+                    credentials: Array<{ employeeNumber: string; temporaryPassword: string }>;
+                  }>("/api/organization/employees", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      ...employeeForm,
+                      areaId: employeeForm.areaId || undefined,
+                      hireDate: employeeForm.hireDate || undefined,
+                      age: employeeForm.age ? Number(employeeForm.age) : undefined,
+                      tenureYears: employeeForm.tenureYears
+                        ? Number(employeeForm.tenureYears)
+                        : undefined,
+                    }),
+                  });
+                  if (!result.ok) {
+                    setNotice(result.error.message);
+                    return;
                   }
-                  min={0}
-                  step={key === "tenureYears" ? "0.1" : undefined}
-                  value={employeeForm[key]}
+                  setCredentials(result.data.credentials);
+                  setNotice("员工已创建；初始凭证仅在本页显示一次。");
+                  setEmployeeForm({
+                    areaId: "",
+                    phone: "",
+                    hireDate: "",
+                    gender: "",
+                    age: "",
+                    identityNumber: "",
+                    tenureYears: "",
+                    education: "",
+                    role: "employee",
+                    employeeNumber: "",
+                    displayName: "",
+                    departmentCode: "",
+                    positionCode: "",
+                  });
+                  await load();
+                } catch {
+                  setNotice("创建员工失败，请稍后再试");
+                }
+              }}
+            >
+              <h2>新增员工</h2>
+              <label>
+                账号角色
+                <select
+                  aria-label="账号角色"
+                  value={employeeForm.role}
                   onChange={(event) =>
-                    setEmployeeForm({ ...employeeForm, [key]: event.target.value })
+                    setEmployeeForm({ ...employeeForm, role: event.target.value })
                   }
-                />
+                >
+                  <option value="employee">普通员工</option>
+                  <option value="department_manager">部门主管</option>
+                </select>
               </label>
-            ))}
-            <input
-              placeholder="工号"
-              required
-              value={employeeForm.employeeNumber}
-              onChange={(event) =>
-                setEmployeeForm({ ...employeeForm, employeeNumber: event.target.value })
-              }
-            />
-            <input
-              placeholder="姓名"
-              required
-              value={employeeForm.displayName}
-              onChange={(event) =>
-                setEmployeeForm({ ...employeeForm, displayName: event.target.value })
-              }
-            />
-            <input
-              placeholder="部门编码"
-              required
-              value={employeeForm.departmentCode}
-              onChange={(event) =>
-                setEmployeeForm({ ...employeeForm, departmentCode: event.target.value, areaId: "" })
-              }
-            />
-            <AreaSelect
-              departmentId={
-                state.departments.find(
-                  (d) => d.code === employeeForm.departmentCode.trim().toUpperCase(),
-                )?.id ?? ""
-              }
-              value={employeeForm.areaId}
-              onChange={(areaId) => setEmployeeForm({ ...employeeForm, areaId })}
-            />
-            <input
-              placeholder="岗位编码"
-              required
-              value={employeeForm.positionCode}
-              onChange={(event) =>
-                setEmployeeForm({ ...employeeForm, positionCode: event.target.value })
-              }
-            />
-            <button className="primary-button" type="submit">
-              创建并生成账号
-            </button>
-          </form>
+              {(
+                [
+                  ["phone", "手机号"],
+                  ["hireDate", "入职日期"],
+                  ["gender", "性别"],
+                  ["age", "年龄"],
+                  ["identityNumber", "身份证号"],
+                  ["tenureYears", "司龄（年）"],
+                  ["education", "学历"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key}>
+                  {label}
+                  <input
+                    aria-label={label}
+                    type={
+                      key === "hireDate"
+                        ? "date"
+                        : key === "age" || key === "tenureYears"
+                          ? "number"
+                          : "text"
+                    }
+                    min={0}
+                    step={key === "tenureYears" ? "0.1" : undefined}
+                    value={employeeForm[key]}
+                    onChange={(event) =>
+                      setEmployeeForm({ ...employeeForm, [key]: event.target.value })
+                    }
+                  />
+                </label>
+              ))}
+              <input
+                placeholder="工号"
+                required
+                value={employeeForm.employeeNumber}
+                onChange={(event) =>
+                  setEmployeeForm({ ...employeeForm, employeeNumber: event.target.value })
+                }
+              />
+              <input
+                placeholder="姓名"
+                required
+                value={employeeForm.displayName}
+                onChange={(event) =>
+                  setEmployeeForm({ ...employeeForm, displayName: event.target.value })
+                }
+              />
+              <input
+                placeholder="部门编码"
+                required
+                value={employeeForm.departmentCode}
+                onChange={(event) =>
+                  setEmployeeForm({
+                    ...employeeForm,
+                    departmentCode: event.target.value,
+                    areaId: "",
+                  })
+                }
+              />
+              <AreaSelect
+                departmentId={
+                  state.departments.find(
+                    (d) => d.code === employeeForm.departmentCode.trim().toUpperCase(),
+                  )?.id ?? ""
+                }
+                value={employeeForm.areaId}
+                onChange={(areaId) => setEmployeeForm({ ...employeeForm, areaId })}
+              />
+              <input
+                placeholder="岗位编码"
+                required
+                value={employeeForm.positionCode}
+                onChange={(event) =>
+                  setEmployeeForm({ ...employeeForm, positionCode: event.target.value })
+                }
+              />
+              <button className="primary-button" type="submit">
+                创建并生成账号
+              </button>
+            </form>
+          )}
         </section>
       )}
 
-      {canManage && (
+      {canManage && module !== "employees" && (
         <section className="organization-master-grid">
+          {module === "positions" && (
+            <label className="master-filter">
+              所属部门
+              <select
+                aria-label="岗位部门筛选"
+                value={positionDepartment}
+                onChange={(e) => setPositionDepartment(e.target.value)}
+              >
+                <option value="">全部部门</option>
+                {state.departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="master-filter">
-            筛选部门与岗位
+            {module === "departments" ? "筛选部门" : "筛选岗位"}
             <input
               className="table-filter"
               placeholder="输入编码、名称或所属部门"
@@ -1049,106 +1074,110 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
               onChange={(event) => setMasterQuery(event.target.value)}
             />
           </label>
-          <section className="panel master-list">
-            <div className="panel-heading">
-              <div>
-                <h2>部门</h2>
-                <p>停用后不影响历史记录</p>
+          {module === "departments" && (
+            <section className="panel master-list">
+              <div className="panel-heading">
+                <div>
+                  <h2>部门</h2>
+                  <p>停用后不影响历史记录</p>
+                </div>
               </div>
-            </div>
-            {filteredDepartments.length === 0 ? (
-              <p className="list-state">当前筛选暂无部门</p>
-            ) : (
-              <>
-                <div className="master-table-wrap">
-                  <table className="master-table">
-                    <thead>
-                      <tr>
-                        <th>编码</th>
-                        <th>名称</th>
-                        <th>状态</th>
-                        <th>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredDepartments.map((department) => (
-                        <tr key={department.id}>
-                          <td>{department.code}</td>
-                          <td>{department.name}</td>
-                          <td>{department.active ? "启用" : "停用"}</td>
-                          <td>{departmentActions(department)}</td>
+              {filteredDepartments.length === 0 ? (
+                <p className="list-state">当前筛选暂无部门</p>
+              ) : (
+                <>
+                  <div className="master-table-wrap">
+                    <table className="master-table">
+                      <thead>
+                        <tr>
+                          <th>编码</th>
+                          <th>名称</th>
+                          <th>状态</th>
+                          <th>操作</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {filteredDepartments.map((department) => (
+                          <tr key={department.id}>
+                            <td>{department.code}</td>
+                            <td>{department.name}</td>
+                            <td>{department.active ? "启用" : "停用"}</td>
+                            <td>{departmentActions(department)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="master-cards">
+                    {filteredDepartments.map((department) => (
+                      <article className="master-card" key={department.id}>
+                        <header>
+                          <strong>{department.name}</strong>
+                          <span>{department.code}</span>
+                        </header>
+                        <p>{department.active ? "启用" : "停用"}</p>
+                        <footer>{departmentActions(department)}</footer>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+          {module === "positions" && (
+            <section className="panel master-list">
+              <div className="panel-heading">
+                <div>
+                  <h2>岗位</h2>
+                  <p>岗位编码作为稳定业务键</p>
                 </div>
-                <div className="master-cards">
-                  {filteredDepartments.map((department) => (
-                    <article className="master-card" key={department.id}>
-                      <header>
-                        <strong>{department.name}</strong>
-                        <span>{department.code}</span>
-                      </header>
-                      <p>{department.active ? "启用" : "停用"}</p>
-                      <footer>{departmentActions(department)}</footer>
-                    </article>
-                  ))}
-                </div>
-              </>
-            )}
-          </section>
-          <section className="panel master-list">
-            <div className="panel-heading">
-              <div>
-                <h2>岗位</h2>
-                <p>岗位编码作为稳定业务键</p>
               </div>
-            </div>
-            {filteredPositions.length === 0 ? (
-              <p className="list-state">当前筛选暂无岗位</p>
-            ) : (
-              <>
-                <div className="master-table-wrap">
-                  <table className="master-table">
-                    <thead>
-                      <tr>
-                        <th>编码 / 岗位</th>
-                        <th>部门</th>
-                        <th>状态</th>
-                        <th>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredPositions.map((position) => (
-                        <tr key={position.id}>
-                          <td>
-                            {position.code} · {position.name}
-                          </td>
-                          <td>{position.departmentName}</td>
-                          <td>{position.active ? "启用" : "停用"}</td>
-                          <td>{positionActions(position)}</td>
+              {filteredPositions.length === 0 ? (
+                <p className="list-state">当前筛选暂无岗位</p>
+              ) : (
+                <>
+                  <div className="master-table-wrap">
+                    <table className="master-table">
+                      <thead>
+                        <tr>
+                          <th>编码 / 岗位</th>
+                          <th>部门</th>
+                          <th>状态</th>
+                          <th>操作</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="master-cards">
-                  {filteredPositions.map((position) => (
-                    <article className="master-card" key={position.id}>
-                      <header>
-                        <strong>{position.name}</strong>
-                        <span>{position.code}</span>
-                      </header>
-                      <p>
-                        {position.departmentName} · {position.active ? "启用" : "停用"}
-                      </p>
-                      <footer>{positionActions(position)}</footer>
-                    </article>
-                  ))}
-                </div>
-              </>
-            )}
-          </section>
+                      </thead>
+                      <tbody>
+                        {filteredPositions.map((position) => (
+                          <tr key={position.id}>
+                            <td>
+                              {position.code} · {position.name}
+                            </td>
+                            <td>{position.departmentName}</td>
+                            <td>{position.active ? "启用" : "停用"}</td>
+                            <td>{positionActions(position)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="master-cards">
+                    {filteredPositions.map((position) => (
+                      <article className="master-card" key={position.id}>
+                        <header>
+                          <strong>{position.name}</strong>
+                          <span>{position.code}</span>
+                        </header>
+                        <p>
+                          {position.departmentName} · {position.active ? "启用" : "停用"}
+                        </p>
+                        <footer>{positionActions(position)}</footer>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          )}
         </section>
       )}
 
@@ -1255,7 +1284,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
         </form>
       )}
 
-      {canManage && (
+      {canManage && module === "employees" && (
         <form className="panel import-panel" onSubmit={dryRun}>
           <div>
             <h2>Excel 批量导入</h2>
@@ -1513,88 +1542,92 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
         </section>
       )}
 
-      <section className="panel employee-list-panel">
-        <div className="panel-heading">
-          <div>
-            <h2>员工列表</h2>
-            <p>{filteredEmployees.length} 名员工</p>
+      {module === "employees" && (
+        <section className="panel employee-list-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>员工列表</h2>
+              <p>{filteredEmployees.length} 名员工</p>
+            </div>
+            <input
+              className="table-filter"
+              placeholder="筛选工号、姓名、部门或岗位"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
           </div>
-          <input
-            className="table-filter"
-            placeholder="筛选工号、姓名、部门或岗位"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        {filteredEmployees.length === 0 ? (
-          <p className="list-state">当前筛选没有员工</p>
-        ) : (
-          <>
-            <div className="employee-table-wrap">
-              <table className="employee-table">
-                <thead>
-                  <tr>
-                    <th>工号 / 姓名</th>
-                    <th>部门</th>
-                    <th>岗位</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredEmployees.map((employee) => (
-                    <tr key={employee.id}>
-                      <td>
-                        <strong>{employee.employeeNumber}</strong>
-                        <small>{employee.displayName}</small>
-                      </td>
-                      <td>
-                        {employee.departmentName ?? "未分配"}
-                        <small>{employee.areaName ?? "未分配区域"}</small>
-                      </td>
-                      <td>{employee.positionName ?? "未分配"}</td>
-                      <td>{employee.active ? "在职" : "已停用"}</td>
-                      <td>{employeeActions(employee)}</td>
+          {filteredEmployees.length === 0 ? (
+            <p className="list-state">当前筛选没有员工</p>
+          ) : (
+            <>
+              <div className="employee-table-wrap">
+                <table className="employee-table">
+                  <thead>
+                    <tr>
+                      <th>工号 / 姓名</th>
+                      <th>部门</th>
+                      <th>岗位</th>
+                      <th>状态</th>
+                      <th>操作</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="employee-cards">
-              {filteredEmployees.map((employee) => (
-                <article className="employee-card" key={employee.id}>
-                  <header>
-                    <strong>{employee.displayName}</strong>
-                    <span>{employee.employeeNumber}</span>
-                  </header>
-                  <dl>
-                    <div>
-                      <dt>部门</dt>
-                      <dd>
-                        {employee.departmentName ?? "未分配"} · {employee.areaName ?? "未分配区域"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>岗位</dt>
-                      <dd>{employee.positionName ?? "未分配"}</dd>
-                    </div>
-                    <div>
-                      <dt>状态</dt>
-                      <dd>{employee.active ? "在职" : "已停用"}</dd>
-                    </div>
-                  </dl>
-                  <footer>{employeeActions(employee)}</footer>
-                </article>
-              ))}
-            </div>
-          </>
-        )}
-      </section>
+                  </thead>
+                  <tbody>
+                    {filteredEmployees.map((employee) => (
+                      <tr key={employee.id}>
+                        <td>
+                          <strong>{employee.employeeNumber}</strong>
+                          <small>{employee.displayName}</small>
+                        </td>
+                        <td>
+                          {employee.departmentName ?? "未分配"}
+                          <small>{employee.areaName ?? "未分配区域"}</small>
+                        </td>
+                        <td>{employee.positionName ?? "未分配"}</td>
+                        <td>{employee.active ? "在职" : "已停用"}</td>
+                        <td>{employeeActions(employee)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="employee-cards">
+                {filteredEmployees.map((employee) => (
+                  <article className="employee-card" key={employee.id}>
+                    <header>
+                      <strong>{employee.displayName}</strong>
+                      <span>{employee.employeeNumber}</span>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>部门</dt>
+                        <dd>
+                          {employee.departmentName ?? "未分配"} ·{" "}
+                          {employee.areaName ?? "未分配区域"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>岗位</dt>
+                        <dd>{employee.positionName ?? "未分配"}</dd>
+                      </div>
+                      <div>
+                        <dt>状态</dt>
+                        <dd>{employee.active ? "在职" : "已停用"}</dd>
+                      </div>
+                    </dl>
+                    <footer>{employeeActions(employee)}</footer>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }
 
 export function SkillAdminPanel() {
+  const [module, setModule] = useState<"catalog" | "requirements">("catalog");
   const [state, setState] = useState<
     | { status: "loading" }
     | { status: "error"; message: string }
@@ -1724,6 +1757,18 @@ export function SkillAdminPanel() {
 
   return (
     <div className="skill-page">
+      <ModuleNavigation
+        label="技能标准子模块"
+        value={module}
+        items={[
+          { id: "catalog", label: "岗位技能目录" },
+          { id: "requirements", label: "当前岗位要求" },
+        ]}
+        onChange={(next) => {
+          setModule(next);
+          setEditingSkill(undefined);
+        }}
+      />
       <section className="welcome">
         <div>
           <p className="eyebrow">技能标准</p>
@@ -1733,329 +1778,347 @@ export function SkillAdminPanel() {
       </section>
       {notice && <p className="organization-notice">{notice}</p>}
       <section className="skill-form-grid">
-        <form
-          className="panel compact-form"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (
-              await mutate("/api/skills", "POST", {
-                ...skillForm,
-                ...(skillForm.reassessmentRequired ? {} : { validityMonths: undefined }),
-              })
-            )
-              setSkillForm({
-                code: "",
-                name: "",
-                category: "professional",
-                reassessmentRequired: false,
-                validityMonths: 12,
-              });
-          }}
-        >
-          <h2>新增技能</h2>
-          <input
-            required
-            placeholder="技能编码"
-            value={skillForm.code}
-            onChange={(event) => setSkillForm({ ...skillForm, code: event.target.value })}
-          />
-          <input
-            required
-            placeholder="技能名称"
-            value={skillForm.name}
-            onChange={(event) => setSkillForm({ ...skillForm, name: event.target.value })}
-          />
-          <select
-            value={skillForm.category}
-            onChange={(event) =>
-              setSkillForm({ ...skillForm, category: event.target.value as SkillCategory })
-            }
-          >
-            {Object.entries(skillCategoryLabels).map(([value, label]) => (
-              <option value={value} key={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <label>
-            <input
-              type="checkbox"
-              checked={skillForm.reassessmentRequired}
-              onChange={(event) =>
-                setSkillForm({ ...skillForm, reassessmentRequired: event.target.checked })
-              }
-            />
-            需要复评
-          </label>
-          {skillForm.reassessmentRequired && (
-            <input
-              type="number"
-              min={1}
-              max={120}
-              value={skillForm.validityMonths}
-              onChange={(event) =>
-                setSkillForm({ ...skillForm, validityMonths: Number(event.target.value) })
-              }
-            />
-          )}
-          <button className="primary-button" type="submit">
-            保存技能
-          </button>
-        </form>
-        <form
-          className="panel compact-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void mutate("/api/position-skill-requirements", "PUT", requirement);
-          }}
-        >
-          <h2>岗位要求</h2>
-          <select
-            required
-            value={requirement.positionId}
-            onChange={(event) => setRequirement({ ...requirement, positionId: event.target.value })}
-          >
-            {activePositions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.code} · {item.name}
-              </option>
-            ))}
-          </select>
-          <select
-            required
-            value={requirement.skillId}
-            onChange={(event) => setRequirement({ ...requirement, skillId: event.target.value })}
-          >
-            {activeSkills.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.code} · {item.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={requirement.requiredLevel}
-            onChange={(event) =>
-              setRequirement({ ...requirement, requiredLevel: Number(event.target.value) })
-            }
-          >
-            {Object.entries(skillLevelMeanings).map(([level, meaning]) => (
-              <option key={level} value={level}>
-                {level} · {meaning}
-              </option>
-            ))}
-          </select>
-          <label>
-            <input
-              type="checkbox"
-              checked={requirement.required}
-              onChange={(event) =>
-                setRequirement({ ...requirement, required: event.target.checked })
-              }
-            />
-            必备技能
-          </label>
-          <button className="primary-button" type="submit">
-            保存要求
-          </button>
-        </form>
-        <form
-          className="panel compact-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void mutate("/api/position-skill-requirements/copy", "POST", copyForm);
-          }}
-        >
-          <h2>复制岗位要求</h2>
-          <select
-            value={copyForm.sourcePositionId}
-            onChange={(event) => setCopyForm({ ...copyForm, sourcePositionId: event.target.value })}
-          >
-            {activePositions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={copyForm.targetPositionId}
-            onChange={(event) => setCopyForm({ ...copyForm, targetPositionId: event.target.value })}
-          >
-            {activePositions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <label>
-            统一调整等级
-            <input
-              type="number"
-              min={-4}
-              max={4}
-              value={copyForm.levelDelta}
-              onChange={(event) =>
-                setCopyForm({ ...copyForm, levelDelta: Number(event.target.value) })
-              }
-            />
-          </label>
-          <button className="primary-button" type="submit">
-            复制并调整
-          </button>
-        </form>
-      </section>
-      <div className="list-filters">
-        <label>
-          部门
-          <select
-            aria-label="技能部门筛选"
-            value={departmentFilter}
-            onChange={(event) => {
-              setDepartmentFilter(event.target.value);
-              setPositionFilter("");
+        {module === "catalog" && (
+          <form
+            className="panel compact-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (
+                await mutate("/api/skills", "POST", {
+                  ...skillForm,
+                  ...(skillForm.reassessmentRequired ? {} : { validityMonths: undefined }),
+                })
+              )
+                setSkillForm({
+                  code: "",
+                  name: "",
+                  category: "professional",
+                  reassessmentRequired: false,
+                  validityMonths: 12,
+                });
             }}
           >
-            <option value="">全部部门</option>
-            {departmentOptions.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          岗位
-          <select
-            aria-label="技能岗位筛选"
-            value={positionFilter}
-            onChange={(event) => setPositionFilter(event.target.value)}
-          >
-            <option value="">全部岗位</option>
-            {state.positions
-              .filter((p) => !departmentFilter || p.departmentId === departmentFilter)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+            <h2>新增技能</h2>
+            <input
+              required
+              placeholder="技能编码"
+              value={skillForm.code}
+              onChange={(event) => setSkillForm({ ...skillForm, code: event.target.value })}
+            />
+            <input
+              required
+              placeholder="技能名称"
+              value={skillForm.name}
+              onChange={(event) => setSkillForm({ ...skillForm, name: event.target.value })}
+            />
+            <select
+              value={skillForm.category}
+              onChange={(event) =>
+                setSkillForm({ ...skillForm, category: event.target.value as SkillCategory })
+              }
+            >
+              {Object.entries(skillCategoryLabels).map(([value, label]) => (
+                <option value={value} key={value}>
+                  {label}
                 </option>
               ))}
-          </select>
-        </label>
-      </div>
-      <section className="panel skill-catalog">
-        <div className="panel-heading">
-          <div>
-            <h2>技能目录</h2>
-            <p>共 {filtered.length} 项</p>
-          </div>
-          <input
-            className="table-filter"
-            placeholder="筛选编码、名称或分类"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        {filtered.length === 0 ? (
-          <p className="list-state">当前筛选暂无技能</p>
-        ) : (
-          <>
-            <div className="skill-table-wrap">
-              <table className="skill-table">
-                <thead>
-                  <tr>
-                    <th>编码 / 名称</th>
-                    <th>部门</th>
-                    <th>岗位</th>
-                    <th>分类</th>
-                    <th>复评</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((skill) => (
-                    <tr key={skill.id}>
-                      <td>
-                        {skill.code} · {skill.name}
-                      </td>
-                      <td>{(skill.departments ?? []).map((d) => d.name).join("、") || "未关联"}</td>
-                      <td>{(skill.positions ?? []).map((p) => p.name).join("、") || "未关联"}</td>
-                      <td>{skillCategoryLabels[skill.category]}</td>
-                      <td>
-                        {skill.reassessmentRequired ? `${skill.validityMonths} 个月` : "无需"}
-                      </td>
-                      <td>{skill.active ? "启用" : "停用"}</td>
-                      <td>
-                        {!skill.active && (
-                          <button
-                            type="button"
-                            onClick={() => void mutate(`/api/skills/${skill.id}/archive`, "POST")}
-                          >
-                            删除（归档）
-                          </button>
-                        )}
-                        {skill.active && (
-                          <>
-                            <button type="button" onClick={() => setEditingSkill(skill)}>
-                              编辑
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void mutate(`/api/skills/${skill.id}/deactivate`, "POST")
-                              }
-                            >
-                              停用
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="skill-cards">
-              {filtered.map((skill) => (
-                <article className="skill-card" key={skill.id}>
-                  <header>
-                    <strong>{skill.name}</strong>
-                    <span>{skill.code}</span>
-                  </header>
-                  <p>
-                    {skillCategoryLabels[skill.category]} ·{" "}
-                    {skill.reassessmentRequired ? `${skill.validityMonths} 个月复评` : "无需复评"} ·{" "}
-                    {skill.active ? "启用" : "停用"}
-                  </p>
-                  <p>
-                    部门：{(skill.departments ?? []).map((d) => d.name).join("、") || "未关联"}
-                    ；岗位：{(skill.positions ?? []).map((p) => p.name).join("、") || "未关联"}
-                  </p>
-                  {!skill.active && (
-                    <button
-                      type="button"
-                      onClick={() => void mutate(`/api/skills/${skill.id}/archive`, "POST")}
-                    >
-                      删除（归档）
-                    </button>
-                  )}
-                  {skill.active && (
-                    <footer>
-                      <button type="button" onClick={() => setEditingSkill(skill)}>
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void mutate(`/api/skills/${skill.id}/deactivate`, "POST")}
-                      >
-                        停用
-                      </button>
-                    </footer>
-                  )}
-                </article>
+            </select>
+            <label>
+              <input
+                type="checkbox"
+                checked={skillForm.reassessmentRequired}
+                onChange={(event) =>
+                  setSkillForm({ ...skillForm, reassessmentRequired: event.target.checked })
+                }
+              />
+              需要复评
+            </label>
+            {skillForm.reassessmentRequired && (
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={skillForm.validityMonths}
+                onChange={(event) =>
+                  setSkillForm({ ...skillForm, validityMonths: Number(event.target.value) })
+                }
+              />
+            )}
+            <button className="primary-button" type="submit">
+              保存技能
+            </button>
+          </form>
+        )}
+        {module === "requirements" && (
+          <form
+            className="panel compact-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void mutate("/api/position-skill-requirements", "PUT", requirement);
+            }}
+          >
+            <h2>岗位要求</h2>
+            <select
+              required
+              value={requirement.positionId}
+              onChange={(event) =>
+                setRequirement({ ...requirement, positionId: event.target.value })
+              }
+            >
+              {activePositions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.code} · {item.name}
+                </option>
               ))}
-            </div>
-          </>
+            </select>
+            <select
+              required
+              value={requirement.skillId}
+              onChange={(event) => setRequirement({ ...requirement, skillId: event.target.value })}
+            >
+              {activeSkills.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.code} · {item.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={requirement.requiredLevel}
+              onChange={(event) =>
+                setRequirement({ ...requirement, requiredLevel: Number(event.target.value) })
+              }
+            >
+              {Object.entries(skillLevelMeanings).map(([level, meaning]) => (
+                <option key={level} value={level}>
+                  {level} · {meaning}
+                </option>
+              ))}
+            </select>
+            <label>
+              <input
+                type="checkbox"
+                checked={requirement.required}
+                onChange={(event) =>
+                  setRequirement({ ...requirement, required: event.target.checked })
+                }
+              />
+              必备技能
+            </label>
+            <button className="primary-button" type="submit">
+              保存要求
+            </button>
+          </form>
+        )}
+        {module === "requirements" && (
+          <form
+            className="panel compact-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void mutate("/api/position-skill-requirements/copy", "POST", copyForm);
+            }}
+          >
+            <h2>复制岗位要求</h2>
+            <select
+              value={copyForm.sourcePositionId}
+              onChange={(event) =>
+                setCopyForm({ ...copyForm, sourcePositionId: event.target.value })
+              }
+            >
+              {activePositions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={copyForm.targetPositionId}
+              onChange={(event) =>
+                setCopyForm({ ...copyForm, targetPositionId: event.target.value })
+              }
+            >
+              {activePositions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <label>
+              统一调整等级
+              <input
+                type="number"
+                min={-4}
+                max={4}
+                value={copyForm.levelDelta}
+                onChange={(event) =>
+                  setCopyForm({ ...copyForm, levelDelta: Number(event.target.value) })
+                }
+              />
+            </label>
+            <button className="primary-button" type="submit">
+              复制并调整
+            </button>
+          </form>
         )}
       </section>
+      {module === "catalog" && (
+        <div className="list-filters">
+          <label>
+            部门
+            <select
+              aria-label="技能部门筛选"
+              value={departmentFilter}
+              onChange={(event) => {
+                setDepartmentFilter(event.target.value);
+                setPositionFilter("");
+              }}
+            >
+              <option value="">全部部门</option>
+              {departmentOptions.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            岗位
+            <select
+              aria-label="技能岗位筛选"
+              value={positionFilter}
+              onChange={(event) => setPositionFilter(event.target.value)}
+            >
+              <option value="">全部岗位</option>
+              {state.positions
+                .filter((p) => !departmentFilter || p.departmentId === departmentFilter)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+      )}
+      {module === "catalog" && (
+        <section className="panel skill-catalog">
+          <div className="panel-heading">
+            <div>
+              <h2>技能目录</h2>
+              <p>共 {filtered.length} 项</p>
+            </div>
+            <input
+              className="table-filter"
+              placeholder="筛选编码、名称或分类"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          {filtered.length === 0 ? (
+            <p className="list-state">当前筛选暂无技能</p>
+          ) : (
+            <>
+              <div className="skill-table-wrap">
+                <table className="skill-table">
+                  <thead>
+                    <tr>
+                      <th>编码 / 名称</th>
+                      <th>部门</th>
+                      <th>岗位</th>
+                      <th>分类</th>
+                      <th>复评</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((skill) => (
+                      <tr key={skill.id}>
+                        <td>
+                          {skill.code} · {skill.name}
+                        </td>
+                        <td>
+                          {(skill.departments ?? []).map((d) => d.name).join("、") || "未关联"}
+                        </td>
+                        <td>{(skill.positions ?? []).map((p) => p.name).join("、") || "未关联"}</td>
+                        <td>{skillCategoryLabels[skill.category]}</td>
+                        <td>
+                          {skill.reassessmentRequired ? `${skill.validityMonths} 个月` : "无需"}
+                        </td>
+                        <td>{skill.active ? "启用" : "停用"}</td>
+                        <td>
+                          {!skill.active && (
+                            <button
+                              type="button"
+                              onClick={() => void mutate(`/api/skills/${skill.id}/archive`, "POST")}
+                            >
+                              删除（归档）
+                            </button>
+                          )}
+                          {skill.active && (
+                            <>
+                              <button type="button" onClick={() => setEditingSkill(skill)}>
+                                编辑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void mutate(`/api/skills/${skill.id}/deactivate`, "POST")
+                                }
+                              >
+                                停用
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="skill-cards">
+                {filtered.map((skill) => (
+                  <article className="skill-card" key={skill.id}>
+                    <header>
+                      <strong>{skill.name}</strong>
+                      <span>{skill.code}</span>
+                    </header>
+                    <p>
+                      {skillCategoryLabels[skill.category]} ·{" "}
+                      {skill.reassessmentRequired ? `${skill.validityMonths} 个月复评` : "无需复评"}{" "}
+                      · {skill.active ? "启用" : "停用"}
+                    </p>
+                    <p>
+                      部门：{(skill.departments ?? []).map((d) => d.name).join("、") || "未关联"}
+                      ；岗位：{(skill.positions ?? []).map((p) => p.name).join("、") || "未关联"}
+                    </p>
+                    {!skill.active && (
+                      <button
+                        type="button"
+                        onClick={() => void mutate(`/api/skills/${skill.id}/archive`, "POST")}
+                      >
+                        删除（归档）
+                      </button>
+                    )}
+                    {skill.active && (
+                      <footer>
+                        <button type="button" onClick={() => setEditingSkill(skill)}>
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void mutate(`/api/skills/${skill.id}/deactivate`, "POST")}
+                        >
+                          停用
+                        </button>
+                      </footer>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
       {editingSkill && (
         <form
           className="panel inline-editor"
@@ -2129,153 +2192,164 @@ export function SkillAdminPanel() {
           </button>
         </form>
       )}
-      <section className="panel requirement-list">
-        <div className="panel-heading">
-          <div>
-            <h2>当前岗位要求</h2>
-            <p>{filteredRequirements.length} 条唯一要求</p>
-          </div>
-          <label>
-            部门筛选
-            <select
-              aria-label="岗位要求部门筛选"
-              value={requirementDepartment}
-              onChange={(event) => setRequirementDepartment(event.target.value)}
-            >
-              <option value="">全部部门</option>
-              {departmentOptions.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {filteredRequirements.length === 0 ? (
-          <p className="list-state">当前筛选暂无岗位要求</p>
-        ) : (
-          <>
-            <div className="requirement-table-wrap">
-              <table className="skill-table">
-                <thead>
-                  <tr>
-                    <th>部门</th>
-                    <th>岗位</th>
-                    <th>技能</th>
-                    <th>等级</th>
-                    <th>类型</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRequirements.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.departmentName}</td>
-                      <td>
-                        {item.positionCode} · {item.positionName}
-                      </td>
-                      <td>
-                        {item.skillCode} · {item.skillName}
-                      </td>
-                      <td>{item.requiredLevel}</td>
-                      <td>{item.required ? "必备" : "非必备"}</td>
-                      <td>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm("删除此岗位要求？历史评定仍会保留。"))
-                              void mutate(`/api/position-skill-requirements/${item.id}`, "DELETE");
-                          }}
-                        >
-                          删除
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {module === "requirements" && (
+        <section className="panel requirement-list">
+          <div className="panel-heading">
+            <div>
+              <h2>当前岗位要求</h2>
+              <p>{filteredRequirements.length} 条唯一要求</p>
             </div>
-            <div className="requirement-cards">
-              {filteredRequirements.map((item) => (
-                <article key={item.id}>
-                  <strong>
-                    {item.departmentName} · {item.positionName} · {item.skillName}
-                  </strong>
-                  <span>
-                    要求 {item.requiredLevel} 级 · {item.required ? "必备" : "非必备"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm("删除此岗位要求？历史评定仍会保留。"))
-                        void mutate(`/api/position-skill-requirements/${item.id}`, "DELETE");
-                    }}
-                  >
-                    删除
-                  </button>{" "}
-                </article>
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-      <form
-        className="panel import-panel"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          if (!file) return;
-          const body = new FormData();
-          body.set("file", file);
-          const { result } = await request<ImportPreview>("/api/skill-baselines/import/dry-run", {
-            method: "POST",
-            body,
-          });
-          if (result.ok) setPreview(result.data);
-          else setNotice(result.error.message);
-        }}
-      >
-        <div>
-          <h2>初始技能 Excel</h2>
-          <p>每行必须包含档案来源，预检通过后才归档。</p>
-        </div>
-        <input type="file" accept=".xlsx" onChange={(event) => setFile(event.target.files?.[0])} />
-        <button className="primary-button" disabled={!file} type="submit">
-          预检基线
-        </button>
-        {preview && (
-          <div className="import-preview">
-            <strong>
-              {preview.totalRows} 行，{preview.validRows} 行有效
-            </strong>
-            {preview.errors.length === 0 ? (
-              <button
-                className="primary-button"
-                type="button"
-                onClick={async () => {
-                  const { result } = await request<{ imported: number }>(
-                    `/api/skill-baselines/import/${preview.previewId}/confirm`,
-                    { method: "POST" },
-                  );
-                  if (result.ok) {
-                    setNotice(`已归档 ${result.data.imported} 条初始技能`);
-                    setPreview(undefined);
-                  } else setNotice(result.error.message);
-                }}
+            <label>
+              部门筛选
+              <select
+                aria-label="岗位要求部门筛选"
+                value={requirementDepartment}
+                onChange={(event) => setRequirementDepartment(event.target.value)}
               >
-                确认归档
-              </button>
-            ) : (
-              <ul>
-                {preview.errors.slice(0, 20).map((item) => (
-                  <li key={`${item.rowNumber}-${item.field}`}>
-                    第 {item.rowNumber} 行：{item.message}
-                  </li>
+                <option value="">全部部门</option>
+                {departmentOptions.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
                 ))}
-              </ul>
-            )}
+              </select>
+            </label>
           </div>
-        )}
-      </form>
+          {filteredRequirements.length === 0 ? (
+            <p className="list-state">当前筛选暂无岗位要求</p>
+          ) : (
+            <>
+              <div className="requirement-table-wrap">
+                <table className="skill-table">
+                  <thead>
+                    <tr>
+                      <th>部门</th>
+                      <th>岗位</th>
+                      <th>技能</th>
+                      <th>等级</th>
+                      <th>类型</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRequirements.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.departmentName}</td>
+                        <td>
+                          {item.positionCode} · {item.positionName}
+                        </td>
+                        <td>
+                          {item.skillCode} · {item.skillName}
+                        </td>
+                        <td>{item.requiredLevel}</td>
+                        <td>{item.required ? "必备" : "非必备"}</td>
+                        <td>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm("删除此岗位要求？历史评定仍会保留。"))
+                                void mutate(
+                                  `/api/position-skill-requirements/${item.id}`,
+                                  "DELETE",
+                                );
+                            }}
+                          >
+                            删除
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="requirement-cards">
+                {filteredRequirements.map((item) => (
+                  <article key={item.id}>
+                    <strong>
+                      {item.departmentName} · {item.positionName} · {item.skillName}
+                    </strong>
+                    <span>
+                      要求 {item.requiredLevel} 级 · {item.required ? "必备" : "非必备"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm("删除此岗位要求？历史评定仍会保留。"))
+                          void mutate(`/api/position-skill-requirements/${item.id}`, "DELETE");
+                      }}
+                    >
+                      删除
+                    </button>{" "}
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
+      {module === "catalog" && (
+        <form
+          className="panel import-panel"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (!file) return;
+            const body = new FormData();
+            body.set("file", file);
+            const { result } = await request<ImportPreview>("/api/skill-baselines/import/dry-run", {
+              method: "POST",
+              body,
+            });
+            if (result.ok) setPreview(result.data);
+            else setNotice(result.error.message);
+          }}
+        >
+          <div>
+            <h2>初始技能 Excel</h2>
+            <p>每行必须包含档案来源，预检通过后才归档。</p>
+          </div>
+          <input
+            type="file"
+            accept=".xlsx"
+            onChange={(event) => setFile(event.target.files?.[0])}
+          />
+          <button className="primary-button" disabled={!file} type="submit">
+            预检基线
+          </button>
+          {preview && (
+            <div className="import-preview">
+              <strong>
+                {preview.totalRows} 行，{preview.validRows} 行有效
+              </strong>
+              {preview.errors.length === 0 ? (
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={async () => {
+                    const { result } = await request<{ imported: number }>(
+                      `/api/skill-baselines/import/${preview.previewId}/confirm`,
+                      { method: "POST" },
+                    );
+                    if (result.ok) {
+                      setNotice(`已归档 ${result.data.imported} 条初始技能`);
+                      setPreview(undefined);
+                    } else setNotice(result.error.message);
+                  }}
+                >
+                  确认归档
+                </button>
+              ) : (
+                <ul>
+                  {preview.errors.slice(0, 20).map((item) => (
+                    <li key={`${item.rowNumber}-${item.field}`}>
+                      第 {item.rowNumber} 行：{item.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </form>
+      )}
     </div>
   );
 }
@@ -3438,6 +3512,7 @@ const chinaInputTime = (value: string) =>
   new Date(new Date(value).getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16);
 const emptyListFilters = {
   department: "",
+  area: "",
   position: "",
   employee: "",
   owner: "",
@@ -3453,6 +3528,7 @@ function ListFilterBar({
   onChange,
   departments = [],
   positions = [],
+  areas,
   employees = [],
   statuses = {},
   training = false,
@@ -3461,6 +3537,7 @@ function ListFilterBar({
   onChange: (value: ListFilters) => void;
   departments?: Array<{ id: string; name: string }>;
   positions?: Array<{ id: string; name: string }>;
+  areas?: Array<{ id: string; name: string }>;
   employees?: Array<{ id: string; name: string }>;
   statuses?: Record<string, string>;
   training?: boolean;
@@ -3479,7 +3556,8 @@ function ListFilterBar({
           onChange({
             ...value,
             [key]: event.target.value,
-            ...(key === "department" ? { position: "" } : {}),
+            ...(key === "department" ? { position: "", area: "", employee: "" } : {}),
+            ...(key === "area" ? { employee: "" } : {}),
           })
         }
       >
@@ -3495,6 +3573,7 @@ function ListFilterBar({
   return (
     <div className="list-filters">
       {select("department", "部门", departments)}
+      {areas && select("area", "区域", areas)}
       {training && select("position", "岗位", positions)}
       {select("employee", "员工", employees)}
       {training && (
@@ -3650,6 +3729,8 @@ export function AssessmentPanel({ session }: { session: Session }) {
     .filter(
       (item) =>
         (!filters.department || item.departmentId === filters.department) &&
+        (!filters.area ||
+          (filters.area === "unassigned" ? !item.areaId : item.areaId === filters.area)) &&
         (!filters.employee || item.employeeId === filters.employee) &&
         (!filters.status || item.status === filters.status) &&
         inDateRange(item.assessedAt, filters),
@@ -3938,8 +4019,23 @@ export function AssessmentPanel({ session }: { session: Session }) {
           value={filters}
           onChange={setFilters}
           departments={departmentOptions}
+          areas={[
+            { id: "unassigned", name: "未分配区域" },
+            ...uniqueOptions(
+              state.assessments
+                .filter((a) => !filters.department || a.departmentId === filters.department)
+                .map((a) => ({ id: a.areaId ?? "", name: a.areaName ?? "" })),
+            ),
+          ]}
           employees={uniqueOptions(
-            state.assessments.map((e) => ({ id: e.employeeId, name: e.employeeName })),
+            state.assessments
+              .filter(
+                (e) =>
+                  (!filters.department || e.departmentId === filters.department) &&
+                  (!filters.area ||
+                    (filters.area === "unassigned" ? !e.areaId : e.areaId === filters.area)),
+              )
+              .map((e) => ({ id: e.employeeId, name: e.employeeName })),
           )}
           statuses={assessmentStatusLabels}
         />
@@ -3973,7 +4069,10 @@ export function AssessmentPanel({ session }: { session: Session }) {
                           {item.skillCode} · {item.skillName}
                         </small>
                       </td>
-                      <td>{item.departmentName}</td>
+                      <td>
+                        {item.departmentName}
+                        <small>{item.areaName ?? "未分配区域"}</small>
+                      </td>
                       <td>{item.method ? assessmentMethodLabels[item.method] : "基线"}</td>
                       <td>{item.score ?? "—"}</td>
                       <td>{item.passed ? `通过 · L${item.level}` : `未通过 · L${item.level}`}</td>
@@ -4001,7 +4100,8 @@ export function AssessmentPanel({ session }: { session: Session }) {
                     <span>{assessmentStatusLabels[item.status]}</span>
                   </header>
                   <p>
-                    {item.departmentName} · {chinaDate(item.assessedAt)} ·{" "}
+                    {item.departmentName} · {item.areaName ?? "未分配区域"} ·{" "}
+                    {chinaDate(item.assessedAt)} ·{" "}
                     {item.method ? assessmentMethodLabels[item.method] : "基线"}
                   </p>
                   <p>
@@ -5136,7 +5236,6 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
       : []),
   ];
   const [activeNavigation, setActiveNavigation] = useState(navigation[0]?.id ?? "dashboard");
-  const statistics = statisticsForRole(session.role);
   const isManagement = ["department_manager", "hr_admin", "executive_viewer"].includes(
     session.role,
   );
@@ -5184,9 +5283,10 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
       <main>
         <header className="topbar">
           <div className="search">
-            <Search size={18} />
-            <span>搜索员工、岗位或技能</span>
-            <kbd>⌘ K</kbd>
+            <LayoutDashboard size={18} />
+            <span>
+              {navigation.find((item) => item.id === activeNavigation)?.label ?? "消息通知"}
+            </span>
           </div>
           <div className="account">
             <button
@@ -5197,10 +5297,16 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             >
               <LogIn className="logout-icon" size={19} />
             </button>
-            <button className="icon-button" type="button" aria-label="通知">
-              <Bell size={19} />
-              <i />
-            </button>
+            {session.role !== "system_admin" && (
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="通知"
+                onClick={() => setActiveNavigation("notifications")}
+              >
+                <Bell size={19} />
+              </button>
+            )}
             <span className="avatar">{session.displayName.slice(0, 1)}</span>
             <span className="account-name">
               <strong>{session.displayName}</strong>
@@ -5208,7 +5314,6 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
                 {session.employeeNumber} · {roleLabel[session.role]}
               </small>
             </span>
-            <ChevronRight size={16} />
           </div>
         </header>
 
@@ -5230,12 +5335,14 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
           ) : activeNavigation === "my-skills" ? (
             <SkillMatrixPanel personal />
           ) : activeNavigation === "training" || activeNavigation === "my-training" ? (
-            <div className="training-workspace">
-              <TrainingManagement session={session} />
-              <MaterialLibrary
-                canManage={session.role === "hr_admin" || session.role === "department_manager"}
-              />
-            </div>
+            session.role === "employee" ? (
+              <div className="training-workspace">
+                <TrainingManagement session={session} />
+                <MaterialLibrary canManage={false} />
+              </div>
+            ) : (
+              <TrainingWorkspace session={session} />
+            )
           ) : activeNavigation === "assessments" || activeNavigation === "my-assessments" ? (
             <AssessmentPanel session={session} />
           ) : activeNavigation === "notifications" ? (
@@ -5248,6 +5355,7 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
             <>
               <ReportDashboardPanel />
               <TrainingAnalyticsPanel
+                showPlanDetails={false}
                 canReadFactory={
                   session.role === "hr_admin" ||
                   session.role === "executive_viewer" ||
@@ -5256,185 +5364,60 @@ function Dashboard({ onLoggedOut, session }: { onLoggedOut: () => void; session:
                 {...(session.departmentId ? { departmentId: session.departmentId } : {})}
               />
             </>
-          ) : (
-            <>
+          ) : session.role === "employee" ? (
+            <div className="employee-workspace">
               <section className="welcome">
                 <div>
-                  <p className="eyebrow">技能与培训工作空间</p>
-                  <h1>早上好，{session.displayName}</h1>
-                  <p>
-                    {session.role === "employee"
-                      ? "查看你的培训安排、技能差距和最新评定。"
-                      : "这里是你当前权限范围内的工厂技能概况。"}
-                  </p>
+                  <p className="eyebrow">我的工作台</p>
+                  <h1>你好，{session.displayName}</h1>
+                  <p>只展示与你本人有关的培训与技能事项。</p>
                 </div>
-                {session.role !== "executive_viewer" && (
-                  <button className="primary-button" type="button">
-                    <ClipboardCheck size={18} />
-                    查看待办
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => setActiveNavigation("notifications")}
+                >
+                  <Bell size={18} />
+                  查看消息通知
+                </button>
+              </section>
+              <section className="panel personal-shortcuts" aria-label="个人工作入口">
+                <div>
+                  <h2>我的技能差距</h2>
+                  <p>查看当前岗位要求、有效技能等级与评定结果。</p>
+                </div>
+                <div className="action-row">
+                  <button type="button" onClick={() => setActiveNavigation("my-skills")}>
+                    查看技能档案
                   </button>
-                )}
+                  <button type="button" onClick={() => setActiveNavigation("my-assessments")}>
+                    查看我的评定
+                  </button>
+                  <button type="button" onClick={() => setActiveNavigation("training-exams")}>
+                    查看培训考核档案
+                  </button>
+                </div>
               </section>
-
-              <section className="stat-grid" aria-label="关键指标">
-                {statistics.map((item) => (
-                  <article className="stat-card" key={item.label}>
-                    <div className={`metric-icon ${item.tone}`}>
-                      <TrendingUp size={18} />
-                    </div>
-                    <span>{item.label}</span>
-                    <strong>{item.value}</strong>
-                    <small>{item.note}</small>
-                  </article>
-                ))}
+              <TrainingManagement session={session} view="tasks" />
+            </div>
+          ) : (
+            <div className="organization-page">
+              <section className="welcome">
+                <div>
+                  <p className="eyebrow">系统管理</p>
+                  <h1>账号与访问管理</h1>
+                  <p>查询账号状态、重置密码并查看安全审计。</p>
+                </div>
+                <button type="button" onClick={() => setActiveNavigation("audit")}>
+                  查看审计日志
+                </button>
               </section>
-
-              {isManagement ? (
-                <div className="dashboard-grid">
-                  <section className="panel matrix-panel">
-                    <div className="panel-heading">
-                      <div>
-                        <h2>部门技能达标概况</h2>
-                        <p>按部门查看当前在岗员工达标情况</p>
-                      </div>
-                      <button type="button">
-                        查看完整矩阵 <ChevronRight size={16} />
-                      </button>
-                    </div>
-                    <div className="department-list">
-                      {departments.map((department) => (
-                        <div className="department-row" key={department.name}>
-                          <span className="department-icon">
-                            <Factory size={18} />
-                          </span>
-                          <div className="department-copy">
-                            <div>
-                              <strong>{department.name}</strong>
-                              <small>{department.people} 人</small>
-                              <b>{department.rate}%</b>
-                            </div>
-                            <div className="progress">
-                              <i
-                                style={{
-                                  width: `${department.rate}%`,
-                                  background: department.color,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                  <TodoPanel mode={session.role === "executive_viewer" ? "viewer" : "management"} />
-                </div>
-              ) : session.role === "employee" ? (
-                <div className="dashboard-grid">
-                  <section className="panel matrix-panel">
-                    <div className="panel-heading">
-                      <div>
-                        <h2>我的技能差距</h2>
-                        <p>当前岗位要求与有效能力等级</p>
-                      </div>
-                      <button type="button">
-                        查看技能档案 <ChevronRight size={16} />
-                      </button>
-                    </div>
-                    <div className="skill-gap">
-                      <strong>岗位达标 8 / 12</strong>
-                      <div className="progress">
-                        <i style={{ width: "67%", background: "var(--green)" }} />
-                      </div>
-                      <p>建议优先完成“设备点检规范”培训，并申请焊接操作复评。</p>
-                    </div>
-                  </section>
-                  <TodoPanel mode="employee" />
-                </div>
-              ) : (
-                <div className="dashboard-grid">
-                  <AdminResetPanel />
-                  <TodoPanel mode="system" />
-                </div>
-              )}
-            </>
+              <AdminResetPanel />
+            </div>
           )}
         </div>
       </main>
     </div>
-  );
-}
-
-const todoContent = {
-  management: {
-    title: "我的待办",
-    subtitle: "需要你处理的工厂管理事项",
-    items: [
-      ["技能评定待确认", "王强等 4 人提交了评定"],
-      ["培训任务提醒", "2 项线下培训即将到期"],
-      ["档案完整性", "1 名员工缺少岗位信息"],
-    ],
-  },
-  viewer: {
-    title: "关注事项",
-    subtitle: "只读查看当前经营风险",
-    items: [
-      ["关键岗位缺口", "3 个岗位存在技能覆盖风险"],
-      ["培训完成趋势", "本月完成率较上月提升"],
-      ["证书到期提醒", "未来 30 天有 6 项到期"],
-    ],
-  },
-  employee: {
-    title: "我的待办",
-    subtitle: "只展示与你本人有关的培训与技能事项",
-    items: [
-      ["待完成培训", "设备点检规范 · 本周五前完成"],
-      ["评定结果已更新", "焊接操作技能已完成复评"],
-      ["技能到期提醒", "安全作业证将在 30 天后到期"],
-    ],
-  },
-  system: {
-    title: "安全待办",
-    subtitle: "账号与访问安全事项",
-    items: [
-      ["首次登录账号", "2 个账号仍需修改初始密码"],
-      ["临时锁定", "查看近期登录失败与锁定记录"],
-      ["安全审计", "密码重置与越权拒绝均已留痕"],
-    ],
-  },
-} as const;
-
-function TodoPanel({ mode }: { mode: keyof typeof todoContent }) {
-  const content = todoContent[mode];
-  return (
-    <section className="panel todo-panel">
-      <div className="panel-heading">
-        <div>
-          <h2>{content.title}</h2>
-          <p>{content.subtitle}</p>
-        </div>
-        <span className="count-pill">3</span>
-      </div>
-      <div className="todo-list">
-        {content.items.map(([title, detail], index) => (
-          <button type="button" key={title}>
-            <span className={`todo-icon ${["amber", "blue", "green"][index]}`}>
-              {index === 0 ? (
-                <ClipboardCheck size={19} />
-              ) : index === 1 ? (
-                <GraduationCap size={19} />
-              ) : (
-                <UserRound size={19} />
-              )}
-            </span>
-            <span>
-              <strong>{title}</strong>
-              <small>{detail}</small>
-            </span>
-            <ChevronRight size={17} />
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }
 

@@ -31,6 +31,7 @@ export type TrainingMonth = {
 export type TrainingAnalytics = {
   year: number;
   departmentId?: string;
+  areaId?: string;
   employeeCount: number;
   plans: AnnualTrainingPlan[];
   months: TrainingMonth[];

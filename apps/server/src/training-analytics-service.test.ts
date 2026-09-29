@@ -16,11 +16,11 @@ const manager = {
   mustChangePassword: false,
 };
 test("manager scope is forced while factory read only expands reads", async () => {
-  const scopes: (string | undefined)[] = [];
+  const scopes: { departmentId: string | undefined; areaId: string | undefined }[] = [];
   const writes: string[] = [];
   const service = createTrainingAnalyticsService({
-    loadFacts: async (_year, departmentId) => {
-      scopes.push(departmentId);
+    loadFacts: async (_year, departmentId, areaId) => {
+      scopes.push({ departmentId, areaId });
       return { employeeCount: 0, plans: [], tasks: [] };
     },
     registerHours: async (input) => {
@@ -28,10 +28,23 @@ test("manager scope is forced while factory read only expands reads", async () =
       return true;
     },
   });
-  await service.dashboard(manager, { year: 2026, departmentId: "d2" });
-  await service.dashboard({ ...manager, factoryRead: true }, { year: 2026, departmentId: "d2" });
+  const restricted = await service.dashboard(manager, {
+    year: 2026,
+    departmentId: "d2",
+    areaId: "area2",
+  });
+  await service.dashboard(
+    { ...manager, factoryRead: true },
+    { year: 2026, departmentId: "d2", areaId: "area2" },
+  );
+  await service.dashboard({ ...manager, role: "hr_admin" }, { year: 2026 });
   await service.registerHours({ ...manager, factoryRead: true }, "t", 2.5);
-  expect(scopes).toEqual(["d1", "d2"]);
+  expect(scopes).toEqual([
+    { departmentId: "d1", areaId: "area2" },
+    { departmentId: "d2", areaId: "area2" },
+    { departmentId: undefined, areaId: undefined },
+  ]);
+  expect(restricted).toMatchObject({ ok: true, data: { departmentId: "d1", areaId: "area2" } });
   expect(writes).toEqual(["department_manager:d1"]);
   expect((await service.dashboard({ ...manager, role: "employee" }, { year: 2026 })).ok).toBe(
     false,

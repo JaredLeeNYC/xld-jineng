@@ -2,7 +2,7 @@ import type { Pool } from "pg";
 import type { AnnualTrainingPlan, TrainingHoursFact } from "../../shared/src/training-analytics";
 
 export const createPostgresTrainingAnalyticsRepository = (pool: Pool) => ({
-  async loadFacts(year: number, departmentId?: string) {
+  async loadFacts(year: number, departmentId?: string, areaId?: string) {
     const client = await pool.connect();
     try {
       await client.query("begin isolation level repeatable read read only");
@@ -10,14 +10,15 @@ export const createPostgresTrainingAnalyticsRepository = (pool: Pool) => ({
         `${year}-01-01T00:00:00+08:00`,
         `${year + 1}-01-01T00:00:00+08:00`,
         departmentId ?? null,
+        areaId ?? null,
       ];
       const employees = await client.query<{ count: number }>(
-        "select count(*)::int as count from employees where active=true and ($1::uuid is null or department_id=$1)",
-        [departmentId ?? null],
+        "select count(*)::int as count from employees where active=true and ($1::uuid is null or department_id=$1) and ($2::uuid is null or area_id=$2)",
+        [departmentId ?? null, areaId ?? null],
       );
       const plans = await client.query<AnnualTrainingPlan>(
-        `select p.id,p.title,p.status,p.start_at as "startAt",p.due_at as "dueAt",p.planned_hours::float8 as "plannedHours",
-        (select count(distinct e.id)::int from employees e where ($3::uuid is null or e.department_id=$3) and (
+        `select * from (select p.id,p.title,p.status,p.start_at as "startAt",p.due_at as "dueAt",p.planned_hours::float8 as "plannedHours",
+        (select count(distinct e.id)::int from employees e where ($3::uuid is null or e.department_id=$3) and ($4::uuid is null or e.area_id=$4) and (
           (p.published_at is not null and exists (select 1 from training_tasks t where t.plan_id=p.id and t.employee_id=e.id and t.status<>'cancelled')) or
           (p.published_at is null and e.active=true and (
             (p.scope_type='department' and e.department_id=any(p.scope_department_ids)) or
@@ -29,7 +30,8 @@ export const createPostgresTrainingAnalyticsRepository = (pool: Pool) => ({
           or (p.scope_type='position' and exists (select 1 from positions pos where pos.id=any(p.scope_position_ids) and pos.department_id=$3))
           or exists (select 1 from training_plan_scope_employees se join employees e on e.id=se.employee_id where se.plan_id=p.id and se.active=true and e.department_id=$3)
           or exists (select 1 from training_tasks t join employees e on e.id=t.employee_id where t.plan_id=p.id and t.status<>'cancelled' and e.department_id=$3))
-        order by p.start_at,p.title`,
+        ) scoped where ($4::uuid is null or "participantCount">0)
+        order by "startAt",title`,
         params,
       );
       const tasks = await client.query<TrainingHoursFact>(
@@ -38,7 +40,7 @@ export const createPostgresTrainingAnalyticsRepository = (pool: Pool) => ({
         from training_tasks t join training_plans p on p.id=t.plan_id join employees e on e.id=t.employee_id
         where p.deleted_at is null and p.status<>'cancelled' and t.status='confirmed'
           and coalesce(t.actual_completed_at,t.confirmed_at) >= $1::timestamptz and coalesce(t.actual_completed_at,t.confirmed_at) < $2::timestamptz
-          and ($3::uuid is null or e.department_id=$3)`,
+          and ($3::uuid is null or e.department_id=$3) and ($4::uuid is null or e.area_id=$4)`,
         params,
       );
       await client.query("commit");

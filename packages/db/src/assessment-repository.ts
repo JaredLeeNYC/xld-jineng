@@ -65,6 +65,7 @@ type AssessmentInput = {
 
 const selectAssessment = `select a.id,a.employee_id as "employeeId",e.employee_number as "employeeNumber",
  e.display_name as "employeeName",e.department_id as "departmentId",d.name as "departmentName",
+ e.area_id as "areaId",area.name as "areaName",
  a.skill_id as "skillId",s.code as "skillCode",s.name as "skillName",
  assessor.employee_id as "assessorEmployeeId",assessor_employee.display_name as "assessorName",
  a.training_exam_id as "trainingExamId",a.score,
@@ -75,7 +76,8 @@ const selectAssessment = `select a.id,a.employee_id as "employeeId",e.employee_n
  a.archived_at as "archivedAt",a.created_at as "createdAt"
  from skill_assessments a join employees e on e.id=a.employee_id join departments d on d.id=e.department_id
  join skills s on s.id=a.skill_id left join user_accounts assessor on assessor.id=a.assessor_account_id
- left join employees assessor_employee on assessor_employee.id=assessor.employee_id`;
+ left join employees assessor_employee on assessor_employee.id=assessor.employee_id
+ left join areas area on area.id=e.area_id and area.department_id=e.department_id`;
 
 const normalize = (row: any): SkillAssessmentView => ({
   id: row.id,
@@ -84,6 +86,8 @@ const normalize = (row: any): SkillAssessmentView => ({
   employeeName: row.employeeName,
   departmentId: row.departmentId,
   departmentName: row.departmentName,
+  ...(row.areaId ? { areaId: row.areaId } : {}),
+  ...(row.areaName ? { areaName: row.areaName } : {}),
   skillId: row.skillId,
   skillCode: row.skillCode,
   skillName: row.skillName,

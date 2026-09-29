@@ -1,0 +1,21 @@
+{
+  "method": "real Chrome with controlled local network fault and recovery",
+  "results": [
+    {
+      "name": "组织人员 loading/error/retry",
+      "pass": true
+    },
+    {
+      "name": "技能标准 loading/error/retry",
+      "pass": true
+    },
+    {
+      "name": "评定归档 loading/error/retry",
+      "pass": true
+    },
+    {
+      "name": "培训管理 loading/error/retry",
+      "pass": true
+    }
+  ]
+}

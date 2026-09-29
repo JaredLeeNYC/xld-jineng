@@ -1,0 +1,58 @@
+{
+  "method": "real Chrome keyboard/viewport/three-role interactions after UI changes",
+  "results": [
+    {
+      "name": "1440 长名单真实键盘展开/收起、焦点可见和布局",
+      "pass": true
+    },
+    {
+      "name": "1440 培训表单输入框边界、触控尺寸和横向布局",
+      "pass": true
+    },
+    {
+      "name": "390 长名单真实键盘展开/收起、焦点可见和布局",
+      "pass": true
+    },
+    {
+      "name": "390 培训表单输入框边界、触控尺寸和横向布局",
+      "pass": true
+    },
+    {
+      "name": "320 长名单真实键盘展开/收起、焦点可见和布局",
+      "pass": true
+    },
+    {
+      "name": "320 培训表单输入框边界、触控尺寸和横向布局",
+      "pass": true
+    },
+    {
+      "name": "EMP001 1440 真实工作台/账号页和通知往返",
+      "pass": true
+    },
+    {
+      "name": "EMP001 390 真实工作台/账号页和通知往返",
+      "pass": true
+    },
+    {
+      "name": "EMP001 320 真实工作台/账号页和通知往返",
+      "pass": true
+    },
+    {
+      "name": "ADMIN001 1440 真实工作台/账号页和通知往返",
+      "pass": true
+    },
+    {
+      "name": "ADMIN001 390 真实工作台/账号页和通知往返",
+      "pass": true
+    },
+    {
+      "name": "ADMIN001 320 真实工作台/账号页和通知往返",
+      "pass": true
+    },
+    {
+      "name": "最终UI无JavaScript异常",
+      "pass": true,
+      "errors": []
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { MaterialPreviewButton } from "./material-preview";
+import "./training-management.css";
 import {
   trainingTypes,
   trainingTypeLabels,
@@ -9,7 +10,7 @@ import {
   type TrainingScopeType,
 } from "@jineng/skill-matrix-shared";
 
-type Session = { role: string; accountId: string; employeeId: string };
+type Session = { role: string; accountId: string; employeeId: string; departmentId?: string };
 type Option = {
   id: string;
   name?: string;
@@ -80,7 +81,7 @@ function MultiSelect({
   return (
     <fieldset>
       <legend>{label}（可多选）</legend>
-      <div style={{ maxHeight: 150, overflow: "auto", display: "flex", flexWrap: "wrap", gap: 12 }}>
+      <div className="training-choice-list">
         {options
           .filter((o) => o.active !== false)
           .map((o) => (
@@ -98,6 +99,23 @@ function MultiSelect({
           ))}
       </div>
     </fieldset>
+  );
+}
+function TrainingScopeSummary({ plan }: { plan: TrainingPlanView }) {
+  const names = [
+    ...plan.departments.map((d) => d.name),
+    ...plan.positions.map((d) => d.name),
+    ...plan.scopeEmployeeNames,
+  ];
+  if (!names.length) return <span className="muted">未指定培训对象</span>;
+  if (names.length <= 3 && names.join("、").length <= 45) return <span>{names.join("、")}</span>;
+  return (
+    <details className="training-scope-summary">
+      <summary>
+        {names.slice(0, 2).join("、")}等 {names.length} 项对象 · 查看详情
+      </summary>
+      <p>{names.join("、")}</p>
+    </details>
   );
 }
 const emptyListFilters = {
@@ -213,7 +231,13 @@ function ListFilterBar({
   );
 }
 
-export function TrainingManagement({ session }: { session: Session }) {
+export function TrainingManagement({
+  session,
+  view = "all",
+}: {
+  session: Session;
+  view?: "plans" | "tasks" | "all";
+}) {
   const canManage = ["hr_admin", "department_manager"].includes(session.role);
   const [state, setState] = useState<{
     plans: TrainingPlanView[];
@@ -301,9 +325,14 @@ export function TrainingManagement({ session }: { session: Session }) {
         <br />
       </span>
     ));
+  const mayEditPlan = (plan: TrainingPlanView) =>
+    session.role === "hr_admin" || plan.createdByAccountId === session.accountId;
+  const crossesDepartment = (plan: TrainingPlanView) =>
+    session.role === "department_manager" &&
+    plan.departments.some((d) => d.id !== session.departmentId);
   const planActions = (plan: TrainingPlanView) => (
     <div className="action-row">
-      {plan.status === "draft" && (
+      {plan.status === "draft" && mayEditPlan(plan) && (
         <>
           <button disabled={busy} onClick={() => edit(plan)}>
             编辑
@@ -313,7 +342,13 @@ export function TrainingManagement({ session }: { session: Session }) {
           </button>
         </>
       )}
+      {plan.status === "pending_approval" && crossesDepartment(plan) && (
+        <p className="muted">
+          包含其他部门培训对象，须由非创建人、非提交人的 HR 独立审批；指定负责人可查看计划。
+        </p>
+      )}
       {plan.status === "pending_approval" &&
+        !crossesDepartment(plan) &&
         plan.createdByAccountId !== session.accountId &&
         plan.submittedByAccountId !== session.accountId && (
           <>
@@ -335,17 +370,19 @@ export function TrainingManagement({ session }: { session: Session }) {
             </button>
           </>
         )}
-      {["pending_approval", "published", "in_progress"].includes(plan.status) && (
-        <button disabled={busy} onClick={() => mutate(`/api/training-plans/${plan.id}/withdraw`)}>
-          撤回修改
-        </button>
-      )}
-      {["draft", "pending_approval", "published", "in_progress"].includes(plan.status) && (
-        <button disabled={busy} onClick={() => mutate(`/api/training-plans/${plan.id}/cancel`)}>
-          取消计划
-        </button>
-      )}
-      {["draft", "cancelled"].includes(plan.status) && (
+      {mayEditPlan(plan) &&
+        ["pending_approval", "published", "in_progress"].includes(plan.status) && (
+          <button disabled={busy} onClick={() => mutate(`/api/training-plans/${plan.id}/withdraw`)}>
+            撤回修改
+          </button>
+        )}
+      {mayEditPlan(plan) &&
+        ["draft", "pending_approval", "published", "in_progress"].includes(plan.status) && (
+          <button disabled={busy} onClick={() => mutate(`/api/training-plans/${plan.id}/cancel`)}>
+            取消计划
+          </button>
+        )}
+      {mayEditPlan(plan) && ["draft", "cancelled"].includes(plan.status) && (
         <button disabled={busy} onClick={() => mutate(`/api/training-plans/${plan.id}`, "DELETE")}>
           删除
         </button>
@@ -469,7 +506,9 @@ export function TrainingManagement({ session }: { session: Session }) {
           : (p.scopePositionIds ?? [p.scopePositionId]).includes(e.positionId),
     );
   const participantCount = (p: TrainingPlanView) =>
-    ["draft", "pending_approval"].includes(p.status) ? planTargets(p).length : p.taskCount;
+    ["draft", "pending_approval"].includes(p.status)
+      ? (p.estimatedParticipantCount ?? planTargets(p).length)
+      : p.taskCount;
   const plans = state.plans.filter(
     (p) =>
       baseMatch(p, planFilters, p.confirmedCount, participantCount(p)) &&
@@ -505,9 +544,8 @@ export function TrainingManagement({ session }: { session: Session }) {
   ]);
   return (
     <div className="training-management">
-      <style>{`.training-mobile{display:none}.training-management table{width:100%;border-collapse:collapse}.training-management th,.training-management td{padding:10px;text-align:left;border-bottom:1px solid #dfe5e9}.training-management fieldset{margin:12px 0}.training-management form>label{display:inline-flex;flex-direction:column;margin:8px;gap:6px}.training-management article{padding:16px;margin:12px 0;border:1px solid #dfe5e9;border-radius:10px}@media(max-width:760px){.training-desktop{display:none}.training-mobile{display:block}}`}</style>
       {notice && <p role="status">{notice}</p>}
-      {canManage && (
+      {canManage && view !== "tasks" && (
         <>
           <section className="panel">
             <h2>{editing ? "编辑培训计划" : "新建培训计划"}</h2>
@@ -693,6 +731,9 @@ export function TrainingManagement({ session }: { session: Session }) {
           </section>
           <section className="panel">
             <h2>培训计划</h2>
+            <p className="muted">
+              计划须由授权范围内的其他主管或 HR 独立审批；本人创建或提交的计划不显示审批按钮。
+            </p>
             <ListFilterBar
               value={planFilters}
               onChange={setPlanFilters}
@@ -707,7 +748,7 @@ export function TrainingManagement({ session }: { session: Session }) {
             ) : (
               <>
                 <div className="training-desktop">
-                  <table>
+                  <table className="training-records">
                     <thead>
                       <tr>
                         <th>序号</th>
@@ -723,9 +764,8 @@ export function TrainingManagement({ session }: { session: Session }) {
                         <tr key={p.id}>
                           <td>{index + 1}</td>
                           <td>
-                            {p.title}
-                            <br />
-                            {trainingTypeLabels[p.trainingType]}
+                            <strong className="training-plan-title">{p.title}</strong>
+                            <small className="muted">{trainingTypeLabels[p.trainingType]}</small>
                           </td>
                           <td>
                             {materialLinks(p)}
@@ -739,17 +779,15 @@ export function TrainingManagement({ session }: { session: Session }) {
                             {p.location}
                           </td>
                           <td>
-                            {[
-                              ...p.departments.map((d) => d.name),
-                              ...p.positions.map((d) => d.name),
-                              ...p.scopeEmployeeNames,
-                            ].join("、")}
+                            <TrainingScopeSummary plan={p} />
                             <br />
                             {participantCount(p)} 人 /{" "}
                             {p.taskCount ? Math.round((p.confirmedCount / p.taskCount) * 100) : 0}%
                           </td>
                           <td>
-                            {planLabels[p.status]}
+                            <span className={`training-status status-${p.status}`}>
+                              {planLabels[p.status]}
+                            </span>
                             {p.historicalCompleted && <p>历史补录 · 审批后自动完成</p>}
                             {p.approvalComment && <p>退回原因：{p.approvalComment}</p>}
                             {planActions(p)}
@@ -776,14 +814,10 @@ export function TrainingManagement({ session }: { session: Session }) {
                         负责人：{p.ownerNames?.join("、") ?? p.ownerName} · {p.confirmedCount}/
                         {participantCount(p)} 人完成
                       </p>
-                      <p>
-                        培训对象：
-                        {[
-                          ...p.departments.map((d) => d.name),
-                          ...p.positions.map((d) => d.name),
-                          ...p.scopeEmployeeNames,
-                        ].join("、") || "—"}
-                      </p>
+                      <div className="training-card-scope">
+                        <span className="muted">培训对象：</span>
+                        <TrainingScopeSummary plan={p} />
+                      </div>
                       {p.approvalComment && <p>{p.approvalComment}</p>}
                       {materialLinks(p)}
                       {planActions(p)}
@@ -795,100 +829,103 @@ export function TrainingManagement({ session }: { session: Session }) {
           </section>
         </>
       )}
-      <section className="panel">
-        <h2>{canManage ? "培训任务" : "我的培训"}</h2>
-        <ListFilterBar
-          value={taskFilters}
-          onChange={setTaskFilters}
-          departments={departments}
-          positions={positions}
-          employees={employees}
-          statuses={taskLabels}
-          training
-        />
-        {!tasks.length ? (
-          <p>暂无培训任务</p>
-        ) : (
-          <>
-            <div className="training-desktop">
-              <table>
-                <thead>
-                  <tr>
-                    <th>序号</th>
-                    <th>计划 / 对象</th>
-                    <th>负责人</th>
-                    <th>计划时间</th>
-                    <th>实际时间</th>
-                    <th>状态 / 操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map((t, index) => (
-                    <tr key={t.id}>
-                      <td>{index + 1}</td>
-                      <td>
-                        {t.planTitle}
-                        <br />
-                        {trainingTypeLabels[t.trainingType]} · {t.employeeName}（{t.employeeNumber}
-                        ）
-                        <br />
-                        {t.departmentName} · {t.positionName ?? "未分配岗位"}
-                      </td>
-                      <td>{t.ownerNames?.join("、") ?? t.ownerName}</td>
-                      <td>
-                        {date(t.startAt)}
-                        <br />
-                        {date(t.dueAt)}
-                      </td>
-                      <td>
-                        {date(t.actualStartAt)}
-                        <br />
-                        {date(t.actualCompletedAt)}
-                      </td>
-                      <td>
-                        {taskLabels[t.status]}
-                        {t.overdue && <p>已逾期</p>}
-                        {t.returnReason && <p>退回原因：{t.returnReason}</p>}
-                        <br />
-                        {taskActions(t)}
-                      </td>
+      {view !== "plans" && (
+        <section className="panel">
+          <h2>{canManage ? "培训任务" : "我的培训"}</h2>
+          <ListFilterBar
+            value={taskFilters}
+            onChange={setTaskFilters}
+            departments={departments}
+            positions={positions}
+            employees={employees}
+            statuses={taskLabels}
+            training
+          />
+          {!tasks.length ? (
+            <p>暂无培训任务</p>
+          ) : (
+            <>
+              <div className="training-desktop">
+                <table className="training-records">
+                  <thead>
+                    <tr>
+                      <th>序号</th>
+                      <th>计划 / 对象</th>
+                      <th>负责人</th>
+                      <th>计划时间</th>
+                      <th>实际时间</th>
+                      <th>状态 / 操作</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="training-mobile">
-              {tasks.map((t, index) => (
-                <article key={t.id}>
-                  <h3>
-                    {index + 1}. {t.planTitle}
-                  </h3>
-                  <p>
-                    {t.employeeName}（{t.employeeNumber}） · {taskLabels[t.status]}
-                  </p>
-                  <p>
-                    部门：{t.departmentName} · 岗位：{t.positionName ?? "—"}
-                  </p>
-                  <p>
-                    类型：{trainingTypeLabels[t.trainingType]} · 负责人：
-                    {t.ownerNames?.join("、") ?? t.ownerName}
-                  </p>
-                  <p>地点：{t.location}</p>
-                  {t.overdue && <p>已逾期</p>}
-                  {t.returnReason && <p>退回原因：{t.returnReason}</p>}
-                  <p>
-                    计划：{date(t.startAt)} — {date(t.dueAt)}
-                  </p>
-                  <p>
-                    实际：{date(t.actualStartAt)} — {date(t.actualCompletedAt)}
-                  </p>
-                  {taskActions(t)}
-                </article>
-              ))}
-            </div>
-          </>
-        )}
-      </section>
+                  </thead>
+                  <tbody>
+                    {tasks.map((t, index) => (
+                      <tr key={t.id}>
+                        <td>{index + 1}</td>
+                        <td>
+                          {t.planTitle}
+                          <br />
+                          {trainingTypeLabels[t.trainingType]} · {t.employeeName}（
+                          {t.employeeNumber}
+                          ）
+                          <br />
+                          {t.departmentName} · {t.positionName ?? "未分配岗位"}
+                        </td>
+                        <td>{t.ownerNames?.join("、") ?? t.ownerName}</td>
+                        <td>
+                          {date(t.startAt)}
+                          <br />
+                          {date(t.dueAt)}
+                        </td>
+                        <td>
+                          {date(t.actualStartAt)}
+                          <br />
+                          {date(t.actualCompletedAt)}
+                        </td>
+                        <td>
+                          {taskLabels[t.status]}
+                          {t.overdue && <p>已逾期</p>}
+                          {t.returnReason && <p>退回原因：{t.returnReason}</p>}
+                          <br />
+                          {taskActions(t)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="training-mobile">
+                {tasks.map((t, index) => (
+                  <article key={t.id}>
+                    <h3>
+                      {index + 1}. {t.planTitle}
+                    </h3>
+                    <p>
+                      {t.employeeName}（{t.employeeNumber}） · {taskLabels[t.status]}
+                    </p>
+                    <p>
+                      部门：{t.departmentName} · 岗位：{t.positionName ?? "—"}
+                    </p>
+                    <p>
+                      类型：{trainingTypeLabels[t.trainingType]} · 负责人：
+                      {t.ownerNames?.join("、") ?? t.ownerName}
+                    </p>
+                    <p>地点：{t.location}</p>
+                    {t.overdue && <p>已逾期</p>}
+                    {t.returnReason && <p>退回原因：{t.returnReason}</p>}
+                    <p>
+                      计划：{date(t.startAt)} — {date(t.dueAt)}
+                    </p>
+                    <p>
+                      实际：{date(t.actualStartAt)} — {date(t.actualCompletedAt)}
+                    </p>
+                    {taskActions(t)}
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

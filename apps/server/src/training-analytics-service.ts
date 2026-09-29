@@ -10,7 +10,10 @@ const fail = (code: string, message: string, status: 400 | 403 | 409) => ({
   error: { code, message, status },
 });
 export const createTrainingAnalyticsService = (repository: TrainingAnalyticsRepository) => ({
-  async dashboard(actor: SessionView, filters: { year: number; departmentId?: string }) {
+  async dashboard(
+    actor: SessionView,
+    filters: { year: number; departmentId?: string; areaId?: string },
+  ) {
     if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role))
       return fail("FORBIDDEN", "无权查看培训统计", 403);
     if (!Number.isInteger(filters.year) || filters.year < 2000 || filters.year > 2100)
@@ -21,12 +24,13 @@ export const createTrainingAnalyticsService = (repository: TrainingAnalyticsRepo
       actor.role === "department_manager" && !actor.factoryRead
         ? actor.departmentId
         : filters.departmentId;
-    const facts = await repository.loadFacts(filters.year, departmentId);
+    const facts = await repository.loadFacts(filters.year, departmentId, filters.areaId);
     return {
       ok: true as const,
       data: {
         year: filters.year,
         ...(departmentId ? { departmentId } : {}),
+        ...(filters.areaId ? { areaId: filters.areaId } : {}),
         employeeCount: facts.employeeCount,
         plans: facts.plans,
         months: calculateTrainingMonths(

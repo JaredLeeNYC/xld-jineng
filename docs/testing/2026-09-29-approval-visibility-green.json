@@ -1,0 +1,26 @@
+{
+  "database": "jineng_acceptance_20260929",
+  "productionWrites": false,
+  "results": [
+    {
+      "scenario": "负责人不在培训对象部门",
+      "id": "1c5994b5-3c80-4d33-89a1-ebaa28c114a8",
+      "ownerVisible": true,
+      "status": 409,
+      "error": {
+        "code": "PLAN_APPROVAL_REJECTED",
+        "message": "负责人或培训对象无效、超出管理范围，或没有有效参训员工"
+      }
+    },
+    {
+      "scenario": "跨部门包含负责人本部门",
+      "id": "a675b8d9-9e41-4a6c-a176-3313e60c5c93",
+      "ownerVisible": true,
+      "status": 409,
+      "error": {
+        "code": "PLAN_APPROVAL_REJECTED",
+        "message": "负责人或培训对象无效、超出管理范围，或没有有效参训员工"
+      }
+    }
+  ]
+}

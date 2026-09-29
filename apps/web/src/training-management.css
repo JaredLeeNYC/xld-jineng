@@ -1,0 +1,243 @@
+.training-management form input:not([type="checkbox"]),
+.training-management form select {
+  min-height: 42px;
+  border: 1px solid #879b95;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: #fff;
+  color: #183c32;
+  max-width: 100%;
+}
+.training-management form input:focus-visible,
+.training-management form select:focus-visible {
+  outline: 3px solid #b9d9cf;
+  outline-offset: 2px;
+  border-color: #246b55;
+}
+.training-management form fieldset {
+  min-width: 0;
+  border: 1px solid #a7bcb4;
+  border-radius: 10px;
+  padding: 16px;
+  background: #f8fbf9;
+}
+.training-management form legend {
+  padding: 0 8px;
+  font-weight: 600;
+}
+.training-management form fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.training-management form input[type="checkbox"] {
+  accent-color: #246b55;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+.training-management form > label {
+  max-width: calc(100% - 16px);
+}
+@media (max-width: 760px) {
+  .training-management form > label {
+    display: flex !important;
+  }
+  .training-management form input:not([type="checkbox"]),
+  .training-management form select {
+    width: 100%;
+  }
+}
+.training-management {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.training-management .panel > h2 {
+  margin-bottom: 12px;
+}
+.training-management form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.training-management form > label {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  max-width: none;
+  font-size: 13px;
+}
+.training-management form > fieldset {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-color: var(--line);
+}
+.training-management form > button {
+  justify-self: start;
+}
+.training-management form > button[type="submit"] {
+  color: white;
+  background: var(--green);
+  border-color: var(--green);
+  padding-inline: 24px;
+}
+.training-management form > fieldset p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.training-choice-list {
+  max-height: 192px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px 12px;
+}
+.training-management .training-choice-list label {
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.training-choice-list label:hover,
+.training-choice-list label:has(input:checked) {
+  background: var(--pale-green);
+}
+.training-mobile {
+  display: none;
+}
+.training-desktop {
+  overflow-x: auto;
+}
+.training-management .training-records {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.training-records th,
+.training-records td {
+  padding: 14px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.training-records th {
+  font-size: 12px;
+}
+.training-records th:nth-child(1) {
+  width: 5%;
+}
+.training-records th:nth-child(2) {
+  width: 18%;
+}
+.training-records th:nth-child(3) {
+  width: 18%;
+}
+.training-records th:nth-child(4) {
+  width: 18%;
+}
+.training-records th:nth-child(5) {
+  width: 23%;
+}
+.training-records th:nth-child(6) {
+  width: 18%;
+}
+.training-records .action-row {
+  margin-top: 10px;
+  gap: 6px;
+}
+.training-records td button {
+  font-size: 12px;
+  min-height: 36px;
+  padding: 6px 8px;
+}
+.training-records td p {
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.training-plan-title {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 650;
+}
+.training-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: #edf2ef;
+  font-size: 12px;
+  font-weight: 600;
+}
+.training-status.status-pending_approval {
+  background: #fff3d9;
+  color: #825410;
+}
+.training-status.status-published,
+.training-status.status-in_progress,
+.training-status.status-completed {
+  background: var(--pale-green);
+  color: var(--deep-green);
+}
+.training-scope-summary summary {
+  color: var(--green);
+  cursor: pointer;
+  line-height: 1.8;
+  border-radius: 4px;
+}
+.training-scope-summary[open] summary {
+  margin-bottom: 8px;
+}
+.training-scope-summary p {
+  max-height: 224px;
+  overflow-y: auto;
+  padding: 8px;
+  background: #f5f8f6;
+  border-radius: 6px;
+}
+.training-management article {
+  padding: 16px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.training-management article h3 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0 0 8px;
+}
+.training-management article p {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.training-management article .action-row {
+  margin-top: 12px;
+}
+.training-card-scope {
+  font-size: 13px;
+  margin-block: 12px;
+}
+@media (max-width: 760px) {
+  .training-desktop {
+    display: none;
+  }
+  .training-mobile {
+    display: block;
+  }
+  .training-management form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .training-management form > label {
+    display: grid !important;
+  }
+  .training-choice-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .training-management article button {
+    min-height: 44px;
+  }
+}
