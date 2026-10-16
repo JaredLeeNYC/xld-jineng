@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { TrainingTaskView } from "@jineng/skill-matrix-shared";
 import { TrainingTaskCard } from "./app";
+import { TrainingHoursForm, mayBackfillHours } from "./training-management";
 const task: TrainingTaskView = {
   id: "task-1",
   planId: "plan-1",
@@ -28,6 +29,31 @@ const task: TrainingTaskView = {
   evidence: [],
 };
 describe("mobile training task card", () => {
+  test("hours backfill requires a confirmed task and HR or its own-department designated manager", () => {
+    const confirmed = { ...task, status: "confirmed" as const };
+    const manager = {
+      role: "department_manager",
+      accountId: "a",
+      employeeId: "owner-1",
+      departmentId: "dept-1",
+    };
+    expect(mayBackfillHours(manager, confirmed)).toBe(true);
+    expect(mayBackfillHours({ ...manager, departmentId: "other" }, confirmed)).toBe(false);
+    expect(mayBackfillHours({ ...manager, employeeId: "other" }, confirmed)).toBe(false);
+    expect(mayBackfillHours({ ...manager, role: "employee" }, confirmed)).toBe(false);
+    expect(mayBackfillHours({ ...manager, role: "hr_admin", employeeId: "other" }, confirmed)).toBe(
+      true,
+    );
+    expect(mayBackfillHours(manager, task)).toBe(false);
+    expect(
+      renderToStaticMarkup(<TrainingHoursForm label="李华实际时数" onSave={async () => {}} />),
+    ).toContain("登记实际时数");
+    expect(
+      renderToStaticMarkup(
+        <TrainingHoursForm label="历史计划授课小时" planned onSave={async () => {}} />,
+      ),
+    ).toContain("补录 / 修改授课小时");
+  });
   test("shows department, position, training type and both China-local business times", () => {
     const html = renderToStaticMarkup(
       <TrainingTaskCard task={task} canManage>

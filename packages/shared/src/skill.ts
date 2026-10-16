@@ -70,6 +70,7 @@ export type SkillImportError = {
 };
 
 export type SkillMatrixCell = {
+  photoUrl?: string;
   areaId?: string;
   areaName?: string;
   employeeId: string;

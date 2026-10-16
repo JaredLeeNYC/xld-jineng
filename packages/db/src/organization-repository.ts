@@ -46,6 +46,46 @@ const withTransaction = async <T>(pool: Pool, operation: (client: PoolClient) =>
 };
 
 export const createPostgresOrganizationRepository = (pool: Pool) => ({
+  async getEmployeePhoto(employeeId: string) {
+    return (
+      await pool.query<{ bytes: Buffer; mime: string }>(
+        `select photo_bytes as bytes, photo_mime as mime from employees where id=$1 and photo_bytes is not null`,
+        [employeeId],
+      )
+    ).rows[0];
+  },
+  async setEmployeePhoto(input: {
+    employeeId: string;
+    actorAccountId: string;
+    photo: { bytes: Buffer; mime: string; revision: string } | null;
+  }) {
+    return withTransaction(pool, async (client) => {
+      const result = await client.query(
+        `update employees set photo_bytes=$2,photo_mime=$3,photo_revision=$4,updated_at=now() where id=$1 returning id`,
+        [
+          input.employeeId,
+          input.photo?.bytes ?? null,
+          input.photo?.mime ?? null,
+          input.photo?.revision ?? null,
+        ],
+      );
+      if (!result.rowCount) return false;
+      await audit(client, {
+        actorAccountId: input.actorAccountId,
+        action: input.photo ? "employee.photo_updated" : "employee.photo_removed",
+        objectType: "employee",
+        objectId: input.employeeId,
+        summary: input.photo
+          ? {
+              mime: input.photo.mime,
+              size: input.photo.bytes.length,
+              revision: input.photo.revision,
+            }
+          : {},
+      });
+      return true;
+    });
+  },
   async listAreas(includeInactive = false): Promise<AreaView[]> {
     return (
       await pool.query<AreaView>(
@@ -343,6 +383,7 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       }
     >(
       `select e.id, e.employee_number as "employeeNumber", e.display_name as "displayName",
+              case when e.photo_revision is not null then '/api/organization/employees/' || e.id || '/photo?v=' || e.photo_revision end as "photoUrl",
               e.department_id as "departmentId", d.name as "departmentName", e.area_id as "areaId", ar.name as "areaName",
               pa.position_id as "positionId", p.name as "positionName",
               e.hire_date::text as "hireDate", e.phone, e.gender, e.age,
@@ -376,6 +417,7 @@ export const createPostgresOrganizationRepository = (pool: Pool) => ({
       id: row.id,
       employeeNumber: row.employeeNumber,
       displayName: row.displayName,
+      ...(row.photoUrl ? { photoUrl: row.photoUrl } : {}),
       ...(row.areaId ? { areaId: row.areaId } : {}),
       ...(row.areaName ? { areaName: row.areaName } : {}),
       role: row.role,

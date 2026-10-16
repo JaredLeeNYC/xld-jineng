@@ -36,6 +36,7 @@ export type PositionAssignmentView = {
 };
 
 export type EmployeeView = {
+  photoUrl?: string;
   areaId?: string;
   areaName?: string;
   id: string;

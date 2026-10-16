@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { EmployeePhoto, EmployeePhotoMaintenance } from "./employee-photo";
 import {
   App,
   AuditPanel,
@@ -18,6 +19,25 @@ import {
 } from "./app";
 
 describe("application shell", () => {
+  test("employee photos show initials without a URL and retain protected versioned URLs", () => {
+    const fallback = renderToStaticMarkup(<EmployeePhoto name="李华" />);
+    expect(fallback).toContain("李华的照片");
+    expect(fallback).toContain(">李</span>");
+    expect(fallback).not.toContain("<img");
+    const photo = renderToStaticMarkup(
+      <EmployeePhoto name="李华" photoUrl="/api/organization/employees/e1/photo?v=2" />,
+    );
+    expect(photo).toContain('src="/api/organization/employees/e1/photo?v=2"');
+    const maintenance = renderToStaticMarkup(
+      <EmployeePhotoMaintenance
+        employee={{ id: "e1", displayName: "李华", photoUrl: "/photo" }}
+        onSaved={async () => {}}
+      />,
+    );
+    expect(maintenance).toContain("李华：替换照片");
+    expect(maintenance).toContain("移除照片");
+    expect(maintenance).toContain('accept="image/png,image/jpeg,image/webp"');
+  });
   test("exposes the phase-one factory management areas", () => {
     const html = renderToStaticMarkup(
       <App

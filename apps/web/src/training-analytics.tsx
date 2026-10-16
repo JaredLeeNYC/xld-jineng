@@ -235,8 +235,7 @@ export function TrainingAnalyticsPanel({
             <p>
               {data.departmentId
                 ? `${departments.find((d) => d.id === data.departmentId)?.name ?? "本部门"}年度培训计划`
-                : "全厂年度培训计划"}{" "}
-              · 当前在岗人数：{data.employeeCount} 人
+                : "全厂年度培训计划"}
             </p>
             {showStatistics && (
               <>

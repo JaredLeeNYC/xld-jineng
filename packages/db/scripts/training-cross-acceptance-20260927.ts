@@ -440,8 +440,110 @@ try {
     403,
     "employee denied write",
   );
+  // October: backfill approved historical plan teaching hours without reopening it.
+  session = hr;
+  const history = await request("/api/training-plans", "POST", {
+    ...planBody,
+    title: "已完成历史计划时数补录",
+    scopeType: "employees",
+    scopeDepartmentIds: [],
+    scopeEmployeeIds: [e1, managerEmployee],
+    historicalCompleted: true,
+    plannedHours: null,
+  });
+  assert.equal(history.status, 200, JSON.stringify(history.body));
+  const historyId = history.body.data.id;
+  assert.equal((await request(`/api/training-plans/${historyId}/submit`, "POST")).status, 200);
+  session = manager;
+  assert.equal((await request(`/api/training-plans/${historyId}/approve`, "POST")).status, 200);
+  const historyTasks = async () =>
+    (
+      await pool!.query("select * from training_tasks where plan_id=$1 order by employee_id", [
+        historyId,
+      ])
+    ).rows;
+  const tasksBefore = await historyTasks();
+  assert.equal(tasksBefore.length, 2);
+  assert(tasksBefore.every((t) => t.status === "confirmed"));
+  const monthBefore = await request("/api/reports/training-analytics?year=2026");
+  session = hr;
+  assert.equal(
+    (await request(`/api/training-plans/${historyId}/hours`, "PUT", { plannedHours: 2.75 })).status,
+    200,
+  );
+  session = manager;
+  assert.equal(
+    (await request(`/api/training-plans/${historyId}/hours`, "PUT", { plannedHours: 3.25 })).status,
+    200,
+  );
+  assert.deepEqual(
+    await historyTasks(),
+    tasksBefore,
+    "teaching hours must not mutate formal task history or actual hours",
+  );
+  assert.equal(
+    (await pool.query("select status from training_plans where id=$1", [historyId])).rows[0].status,
+    "completed",
+  );
+  const monthAfter = await request("/api/reports/training-analytics?year=2026");
+  assert.equal(
+    monthAfter.body.data.months[0].plannedHours - monthBefore.body.data.months[0].plannedHours,
+    3.25,
+  );
+  assert.equal(
+    monthAfter.body.data.months[0].plannedPersonHours -
+      monthBefore.body.data.months[0].plannedPersonHours,
+    6.5,
+  );
+  assert.equal(
+    monthAfter.body.data.plans.find((p: { id: string }) => p.id === historyId).participantCount,
+    2,
+  );
+  const plannedLogs = (
+    await pool.query(
+      "select summary from audit_logs where action='training_plan.hours_registered' and object_id=$1 order by id",
+      [historyId],
+    )
+  ).rows;
+  assert.deepEqual(
+    plannedLogs.map((r) => r.summary),
+    [
+      { previousHours: null, plannedHours: 2.75 },
+      { previousHours: 2.75, plannedHours: 3.25 },
+    ],
+  );
+  assert.equal(
+    (await request(`/api/training-plans/${published}/hours`, "PUT", { plannedHours: 4 })).status,
+    409,
+    "manager cannot change shared cross-department plan hours",
+  );
+  assert.equal(
+    (await request(`/api/training-plans/${newId}/hours`, "PUT", { plannedHours: 4 })).status,
+    409,
+    "draft still uses draft workflow",
+  );
+  assert.equal(
+    (await request(`/api/training-plans/${historyId}/hours`, "PUT", { plannedHours: 1.111 }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (await request(`/api/training-plans/${historyId}/hours`, "PUT", { plannedHours: 0 })).status,
+    422,
+  );
+  session = { ...manager, employeeId: e2 };
+  assert.equal(
+    (await request(`/api/training-plans/${historyId}/hours`, "PUT", { plannedHours: 4 })).status,
+    409,
+    "nonowner manager denied",
+  );
+  session = { ...hr, role: "employee" };
+  assert.equal(
+    (await request(`/api/training-plans/${historyId}/hours`, "PUT", { plannedHours: 4 })).status,
+    403,
+  );
   console.log(
-    "培训交叉验收通过：草稿/发布人数、部门权限、负责人登记、审计、计划时数往返、HTTP校验。",
+    "培训交叉验收通过：草稿/发布人数、部门权限、负责人登记、审计、已完成历史计划授课小时修订与人时重算、HTTP校验。",
   );
 } finally {
   await pool?.end();

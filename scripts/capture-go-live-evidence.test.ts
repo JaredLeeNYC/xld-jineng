@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join, resolve } from "node:path";
 import { parseAcceptanceConfig } from "./capture-go-live-evidence";
 
 const validEnvironment = {
@@ -31,10 +32,11 @@ describe("go-live evidence configuration", () => {
     expect(() =>
       parseAcceptanceConfig({ ...validEnvironment, ACCEPTANCE_BASE_URL: "http://localhost:3000" }),
     ).toThrow("HTTPS");
+    const repositoryRoot = resolve("dev", "jineng");
     expect(() =>
       parseAcceptanceConfig(
-        { ...validEnvironment, ACCEPTANCE_EVIDENCE_DIR: "D:\\dev\\jineng\\evidence" },
-        "D:\\dev\\jineng",
+        { ...validEnvironment, ACCEPTANCE_EVIDENCE_DIR: join(repositoryRoot, "evidence") },
+        repositoryRoot,
       ),
     ).toThrow("代码仓库之外");
   });

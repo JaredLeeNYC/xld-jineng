@@ -64,6 +64,53 @@ export const createPostgresTrainingAnalyticsRepository = (pool: Pool) => ({
       client.release();
     }
   },
+  async registerPlannedHours(input: {
+    planId: string;
+    hours: number;
+    accountId: string;
+    employeeId: string;
+    role: string;
+    departmentId?: string;
+  }) {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const prior = await client.query<{ plannedHours: number | null }>(
+        `select p.planned_hours::float8 as "plannedHours" from training_plans p
+         where p.id=$1 and p.deleted_at is null and p.status in ('published','in_progress','completed')
+           and ($2='hr_admin' or ($2='department_manager' and $3::uuid=any(p.owner_employee_ids)
+             and exists (select 1 from training_tasks t where t.plan_id=p.id and t.status<>'cancelled')
+             and not exists (select 1 from training_tasks t join employees e on e.id=t.employee_id
+               where t.plan_id=p.id and t.status<>'cancelled' and e.department_id is distinct from $4::uuid)))
+         for update of p`,
+        [input.planId, input.role, input.employeeId, input.departmentId ?? null],
+      );
+      if (!prior.rows.length) {
+        await client.query("rollback");
+        return false;
+      }
+      await client.query(
+        "update training_plans set planned_hours=$2,updated_at=now() where id=$1",
+        [input.planId, input.hours],
+      );
+      await client.query(
+        `insert into audit_logs (actor_account_id,action,object_type,object_id,summary)
+         values ($1,'training_plan.hours_registered','training_plan',$2,$3)`,
+        [
+          input.accountId,
+          input.planId,
+          { previousHours: prior.rows[0]!.plannedHours, plannedHours: input.hours },
+        ],
+      );
+      await client.query("commit");
+      return true;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
   async registerHours(input: {
     taskId: string;
     hours: number;

@@ -11,6 +11,102 @@ import {
 } from "@jineng/skill-matrix-shared";
 
 type Session = { role: string; accountId: string; employeeId: string; departmentId?: string };
+export function TrainingHoursForm({
+  label,
+  hours,
+  planned = false,
+  initialOpen = false,
+  onCancel,
+  onSave,
+}: {
+  label: string;
+  hours?: number | null | undefined;
+  planned?: boolean;
+  initialOpen?: boolean;
+  onCancel?: () => void;
+  onSave: (hours: number) => Promise<void>;
+}) {
+  const [value, setValue] = useState(hours == null ? "" : String(hours));
+  const [open, setOpen] = useState(initialOpen);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!open)
+    return (
+      <button type="button" onClick={() => setOpen(true)}>
+        {planned ? "补录 / 修改授课小时" : "登记实际时数"}
+      </button>
+    );
+  return (
+    <form
+      className="hours-editor"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (busy) return;
+        if (
+          !/^\d+(\.\d{1,2})?$/.test(value) ||
+          !Number.isFinite(Number(value)) ||
+          Number(value) <= 0
+        ) {
+          setError("请输入大于 0 的小时数，最多两位小数");
+          return;
+        }
+        setBusy(true);
+        setError("");
+        try {
+          await onSave(Number(value));
+          setOpen(false);
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : "登记失败，请重试");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <label>
+        {label}
+        <input
+          type="number"
+          required
+          min="0.01"
+          max="999999.99"
+          step="0.01"
+          value={value}
+          disabled={busy}
+          onChange={(event) => setValue(event.target.value)}
+        />
+      </label>
+      <p className="muted">
+        {planned
+          ? "填写本计划授课小时，不含休息。计划人时按授课小时 × 参训人数自动重算；不改变审批、培训履历或个人实际时数，修改保留审计。"
+          : "填写该员工个人实际培训小时，不含休息；不是多人合计的人时数。"}
+      </p>
+      <button type="submit" disabled={busy}>
+        {busy ? "正在保存…" : "保存时数"}
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setOpen(false);
+          setError("");
+          setValue(hours == null ? "" : String(hours));
+          onCancel?.();
+        }}
+      >
+        取消
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </form>
+  );
+}
+
+export const mayBackfillHours = (session: Session, task: TrainingTaskView) =>
+  task.status === "confirmed" &&
+  (session.role === "hr_admin" ||
+    (session.role === "department_manager" &&
+      task.departmentId === session.departmentId &&
+      (task.ownerEmployeeIds ?? [task.ownerEmployeeId]).includes(session.employeeId)));
+
 type Option = {
   id: string;
   name?: string;
@@ -251,6 +347,7 @@ export function TrainingManagement({
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string>();
+  const [hoursPlan, setHoursPlan] = useState<TrainingPlanView>();
   const [form, setForm] = useState(emptyForm);
   const [planFilters, setPlanFilters] = useState({ ...emptyListFilters });
   const [taskFilters, setTaskFilters] = useState({ ...emptyListFilters });
@@ -273,6 +370,10 @@ export function TrainingManagement({
   useEffect(() => {
     void load();
   }, [session.accountId]);
+  useEffect(() => {
+    if (hoursPlan)
+      document.getElementById("plan-hours-editor")?.scrollIntoView({ block: "center" });
+  }, [hoursPlan]);
   const mutate = async (path: string, method = "POST", body?: unknown) => {
     if (busy) return false;
     setBusy(true);
@@ -327,11 +428,51 @@ export function TrainingManagement({
     ));
   const mayEditPlan = (plan: TrainingPlanView) =>
     session.role === "hr_admin" || plan.createdByAccountId === session.accountId;
+  const hoursForm = (task: TrainingTaskView) => (
+    <TrainingHoursForm
+      key={task.id}
+      label={`${task.employeeName}（${task.employeeNumber}）实际培训时数（小时）`}
+      hours={task.actualHours}
+      onSave={async (actualHours) => {
+        await request(`/api/training-tasks/${task.id}/hours`, "PUT", { actualHours });
+        await load();
+      }}
+    />
+  );
   const crossesDepartment = (plan: TrainingPlanView) =>
     session.role === "department_manager" &&
     plan.departments.some((d) => d.id !== session.departmentId);
   const planActions = (plan: TrainingPlanView) => (
     <div className="action-row">
+      {["published", "in_progress", "completed"].includes(plan.status) &&
+        (session.role === "hr_admin" ||
+          (session.role === "department_manager" &&
+            !!session.departmentId &&
+            (plan.ownerEmployeeIds ?? [plan.ownerEmployeeId]).includes(session.employeeId) &&
+            plan.departments.length > 0 &&
+            !crossesDepartment(plan))) && (
+          <button type="button" onClick={() => setHoursPlan(plan)}>
+            补录 / 修改授课小时
+          </button>
+        )}
+      {state?.tasks.some((task) => task.planId === plan.id && mayBackfillHours(session, task)) && (
+        <details>
+          <summary>登记本计划已完成员工的实际时数</summary>
+          <p className="muted">
+            按员工逐条登记小时，不是多人合计人时；仅 HR 或本部门指定负责人可维护。
+          </p>
+          {state.tasks
+            .filter((task) => task.planId === plan.id && mayBackfillHours(session, task))
+            .map((task) => (
+              <div key={task.id}>
+                <p>
+                  {task.employeeName}（{task.employeeNumber}）：{task.actualHours ?? "未登记"} 小时
+                </p>
+                {hoursForm(task)}
+              </div>
+            ))}
+        </details>
+      )}
       {plan.status === "draft" && mayEditPlan(plan) && (
         <>
           <button disabled={busy} onClick={() => edit(plan)}>
@@ -393,26 +534,7 @@ export function TrainingManagement({
     <>
       {materialLinks(task)}
       {task.status === "confirmed" && <p>实际培训时数：{task.actualHours ?? "未登记"} 小时</p>}
-      {canManage &&
-        task.status === "confirmed" &&
-        (session.role === "hr_admin" ||
-          (task.ownerEmployeeIds ?? [task.ownerEmployeeId]).includes(session.employeeId)) && (
-          <button
-            disabled={busy}
-            onClick={() => {
-              const value = window.prompt(
-                "登记该员工实际培训小时（不含休息，最多两位小数）",
-                task.actualHours == null ? "" : String(task.actualHours),
-              );
-              if (value !== null && value.trim())
-                void mutate(`/api/training-tasks/${task.id}/hours`, "PUT", {
-                  actualHours: Number(value),
-                });
-            }}
-          >
-            登记实际时数
-          </button>
-        )}
+      {mayBackfillHours(session, task) && hoursForm(task)}
       {task.evidence.map((evidence) => (
         <div key={evidence.id}>
           <MaterialPreviewButton
@@ -733,6 +855,9 @@ export function TrainingManagement({
             <h2>培训计划</h2>
             <p className="muted">
               计划须由授权范围内的其他主管或 HR 独立审批；本人创建或提交的计划不显示审批按钮。
+              跨部门培训对象或负责人可能需要 HR
+              审批，最终以服务端权限校验为准。指定负责人负责培训执行与时数登记，不代表拥有审批权限。
+              培训完成后，可展开对应计划的“登记本计划已完成员工的实际时数”，按员工补登小时。
             </p>
             <ListFilterBar
               value={planFilters}
@@ -743,6 +868,26 @@ export function TrainingManagement({
               statuses={planLabels}
               training
             />
+            {hoursPlan && (
+              <section id="plan-hours-editor" className="panel">
+                <h3>{hoursPlan.title}：补录 / 修改授课小时</h3>
+                <TrainingHoursForm
+                  key={hoursPlan.id}
+                  label="授课小时"
+                  hours={hoursPlan.plannedHours}
+                  planned
+                  initialOpen
+                  onCancel={() => setHoursPlan(undefined)}
+                  onSave={async (plannedHours) => {
+                    await request(`/api/training-plans/${hoursPlan.id}/hours`, "PUT", {
+                      plannedHours,
+                    });
+                    await load();
+                    setHoursPlan(undefined);
+                  }}
+                />
+              </section>
+            )}
             {plans.length === 0 ? (
               <p>暂无培训计划</p>
             ) : (

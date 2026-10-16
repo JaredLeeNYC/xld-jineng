@@ -27,6 +27,7 @@ test("manager scope is forced while factory read only expands reads", async () =
       writes.push(`${input.role}:${input.departmentId}`);
       return true;
     },
+    registerPlannedHours: async () => true,
   });
   const restricted = await service.dashboard(manager, {
     year: 2026,
@@ -52,6 +53,11 @@ test("manager scope is forced while factory read only expands reads", async () =
   expect((await service.dashboard(manager, { year: NaN })).ok).toBe(false);
   expect((await service.registerHours(manager, "t", -2)).ok).toBe(false);
   expect((await service.registerHours({ ...manager, role: "employee" }, "t", 2)).ok).toBe(false);
+  const { departmentId: _departmentId, ...unscopedManager } = manager;
+  expect(await service.registerPlannedHours(unscopedManager, "p", 2)).toMatchObject({
+    ok: false,
+    error: { status: 403 },
+  });
 });
 test("hours use declared teaching time, deduplicate monthly people, preserve missing values and Shanghai year boundary", () => {
   const p: AnnualTrainingPlan = {

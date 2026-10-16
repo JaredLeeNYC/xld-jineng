@@ -13,6 +13,37 @@ const hrSession = {
 };
 
 describe("organization HTTP API", () => {
+  test("photo endpoints require session and password change and reject URL-only uploads", async () => {
+    const path = `http://localhost/api/organization/employees/${hrSession.employeeId}/photo`;
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      const body = new FormData();
+      body.set(
+        "file",
+        new File([new Uint8Array([255, 216, 255])], "a.jpg", { type: "image/jpeg" }),
+      );
+      const response = await createApp({
+        authService: {
+          getSession: async () => ({ ok: true, data: { ...hrSession, mustChangePassword: true } }),
+        },
+        organizationService: {},
+      } as never).handle(new Request(path, { method, ...(method === "PUT" ? { body } : {}) }));
+      expect(response.status).toBe(403);
+    }
+    const app = createApp({
+      authService: { getSession: async () => ({ ok: true, data: hrSession }) },
+      organizationService: {},
+    } as never);
+    const response = await app.handle(
+      new Request(path, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ photoUrl: "https://example.com/photo.png" }),
+      }),
+    );
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ ok: false });
+  });
+
   test("maps the authenticated actor into organization list and mutation workflows", async () => {
     const calls: string[] = [];
     const app = createApp({

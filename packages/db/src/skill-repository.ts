@@ -414,6 +414,7 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
       employeeId: string;
       employeeNumber: string;
       employeeName: string;
+      photoUrl: string | null;
       areaId: string | null;
       areaName: string | null;
       departmentId: string;
@@ -430,6 +431,7 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
       assessmentId: string | null;
     }>(
       `select e.id as "employeeId", e.employee_number as "employeeNumber", e.display_name as "employeeName",
+              case when e.photo_revision is not null then '/api/organization/employees/' || e.id || '/photo?v=' || e.photo_revision end as "photoUrl",
               ar.id as "areaId", ar.name as "areaName", d.id as "departmentId", d.name as "departmentName", p.id as "positionId", p.name as "positionName",
               s.id as "skillId", s.code as "skillCode", s.name as "skillName", r.required_level as "requiredLevel", r.required,
               a.level as "currentLevel", a.valid_until as "validUntil", a.id as "assessmentId"
@@ -464,6 +466,7 @@ export const createPostgresSkillRepository = (pool: Pool) => ({
         employeeId: row.employeeId,
         employeeNumber: row.employeeNumber,
         employeeName: row.employeeName,
+        ...(row.photoUrl ? { photoUrl: row.photoUrl } : {}),
         ...(row.areaId ? { areaId: row.areaId } : {}),
         ...(row.areaName ? { areaName: row.areaName } : {}),
         departmentId: row.departmentId,

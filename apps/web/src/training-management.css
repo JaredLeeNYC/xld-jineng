@@ -221,6 +221,10 @@
   font-size: 13px;
   margin-block: 12px;
 }
+.training-management form.hours-editor {
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+}
 @media (max-width: 760px) {
   .training-desktop {
     display: none;

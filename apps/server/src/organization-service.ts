@@ -168,6 +168,61 @@ export const createOrganizationService = (dependencies: {
 }) => {
   const { repository, passwordHash, temporaryPassword, idSource, now } = dependencies;
   return {
+    async getEmployeePhoto(actor: SessionView, employeeId: string) {
+      const employees = await this.listEmployees(actor);
+      if (!employees.ok) return employees;
+      if (!employees.data.some((employee) => employee.id === employeeId))
+        return failure("FORBIDDEN", "无权查看该员工照片", 403);
+      const photo = await repository.getEmployeePhoto(employeeId);
+      return photo
+        ? { ok: true as const, data: photo }
+        : failure("PHOTO_NOT_FOUND", "员工尚未设置照片", 404);
+    },
+    async putEmployeePhoto(actor: SessionView, employeeId: string, file: File) {
+      const denied = requireHr(actor);
+      if (denied) return denied;
+      if (!file.size || file.size > 1024 * 1024)
+        return failure("INVALID_PHOTO", "照片应为不超过 1 MiB 的 JPEG、PNG 或 WebP 文件", 400);
+      const bytes = Buffer.from(await file.arrayBuffer());
+      const mime =
+        bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+          ? "image/jpeg"
+          : bytes.length >= 8 &&
+              bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+            ? "image/png"
+            : bytes.length >= 12 &&
+                bytes.toString("ascii", 0, 4) === "RIFF" &&
+                bytes.toString("ascii", 8, 12) === "WEBP"
+              ? "image/webp"
+              : undefined;
+      if (!mime || mime !== file.type)
+        return failure("INVALID_PHOTO", "照片内容与 JPEG、PNG 或 WebP 类型不符", 400);
+      const revision = idSource();
+      return (await repository.setEmployeePhoto({
+        employeeId,
+        actorAccountId: actor.accountId,
+        photo: { bytes, mime, revision },
+      }))
+        ? {
+            ok: true as const,
+            data: {
+              id: employeeId,
+              photoUrl: `/api/organization/employees/${employeeId}/photo?v=${revision}`,
+            },
+          }
+        : failure("EMPLOYEE_NOT_FOUND", "员工不存在", 404);
+    },
+    async removeEmployeePhoto(actor: SessionView, employeeId: string) {
+      const denied = requireHr(actor);
+      if (denied) return denied;
+      return (await repository.setEmployeePhoto({
+        employeeId,
+        actorAccountId: actor.accountId,
+        photo: null,
+      }))
+        ? { ok: true as const, data: { id: employeeId } }
+        : failure("EMPLOYEE_NOT_FOUND", "员工不存在", 404);
+    },
     async listAreas(actor: SessionView, includeInactive = false) {
       if (!["hr_admin", "department_manager", "executive_viewer"].includes(actor.role))
         return failure("FORBIDDEN", "无权查看区域", 403);

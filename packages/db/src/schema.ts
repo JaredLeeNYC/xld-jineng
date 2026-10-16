@@ -6,6 +6,7 @@ import {
   boolean,
   char,
   check,
+  customType,
   date,
   foreignKey,
   index,
@@ -26,6 +27,8 @@ const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 };
+
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 
 export const fixedRoleEnum = pgEnum("fixed_role", fixedRoles);
 export const skillCategoryEnum = pgEnum("skill_category", skillCategories);
@@ -90,6 +93,9 @@ export const employees = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     employeeNumber: varchar("employee_number", { length: 50 }).notNull(),
     displayName: varchar("display_name", { length: 100 }).notNull(),
+    photoBytes: bytea("photo_bytes"),
+    photoMime: varchar("photo_mime", { length: 30 }),
+    photoRevision: uuid("photo_revision"),
     departmentId: uuid("department_id").references(() => departments.id, {
       onDelete: "restrict",
     }),

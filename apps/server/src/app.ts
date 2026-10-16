@@ -128,6 +128,7 @@ const positionResponse = t.Object({
 });
 
 const employeeResponse = t.Object({
+  photoUrl: t.Optional(t.String()),
   areaId: t.Optional(t.String()),
   areaName: t.Optional(t.String()),
   id: t.String(),
@@ -895,6 +896,84 @@ export const createApp = ({
       },
     )
     .get(
+      "/api/organization/employees/:id/photo",
+      async ({ params, request, set }) => {
+        const auth = await organizationActor(authService, request);
+        set.headers["cache-control"] = "private, no-store";
+        set.headers["x-content-type-options"] = "nosniff";
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.getEmployeePhoto(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return new Response(new Uint8Array(result.data.bytes), {
+          headers: {
+            "content-type": result.data.mime,
+            "cache-control": "private, no-store",
+            "x-content-type-options": "nosniff",
+          },
+        });
+      },
+      { params: t.Object({ id: t.String({ format: "uuid" }) }) },
+    )
+    .put(
+      "/api/organization/employees/:id/photo",
+      async ({ params, request, set, body }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.putEmployeePhoto(auth.actor, params.id, body.file);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ file: t.File() }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .delete(
+      "/api/organization/employees/:id/photo",
+      async ({ params, request, set }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!organizationService) {
+          set.status = 503;
+          return failure("ORGANIZATION_UNAVAILABLE", "组织服务暂不可用");
+        }
+        const result = await organizationService.removeEmployeePhoto(auth.actor, params.id);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
       "/api/organization/employees",
       async ({ query, request, set }) => {
         const authenticated = await organizationActor(authService, request);
@@ -1551,6 +1630,35 @@ export const createApp = ({
           departmentId: t.Optional(t.String({ format: "uuid" })),
           areaId: t.Optional(t.String({ format: "uuid" })),
         }),
+        response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .put(
+      "/api/training-plans/:id/hours",
+      async ({ request, set, params, body }) => {
+        const auth = await organizationActor(authService, request);
+        if (!auth.ok) {
+          set.status = auth.status;
+          return failure(auth.code, auth.message);
+        }
+        if (!trainingAnalyticsService) {
+          set.status = 503;
+          return failure("UNAVAILABLE", "培训统计服务暂不可用");
+        }
+        const result = await trainingAnalyticsService.registerPlannedHours(
+          auth.actor,
+          params.id,
+          body.plannedHours,
+        );
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      {
+        params: t.Object({ id: t.String({ format: "uuid" }) }),
+        body: t.Object({ plannedHours: t.Number({ minimum: 0.01, maximum: 999999.99 }) }),
         response: { 200: t.Any(), ...organizationErrorResponses },
       },
     )

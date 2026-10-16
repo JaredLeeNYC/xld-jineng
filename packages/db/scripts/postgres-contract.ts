@@ -242,6 +242,9 @@ try {
     now: () => new Date(),
   });
   const notificationRepository = createPostgresNotificationRepository(contractPool);
+  // PostgreSQL now() retains microseconds; Date truncates to milliseconds. Advance
+  // the test clock one tick so newly enqueued/retried rows are already due.
+  const notificationNow = () => new Date(Date.now() + 1);
   const wecomAttempts: Array<{ url: string; body: string }> = [];
   let wecomShouldFail = false;
   const notificationService = createNotificationService({
@@ -258,7 +261,7 @@ try {
         { status: 200 },
       );
     },
-    now: () => new Date(),
+    now: notificationNow,
     idSource: () => randomUUID(),
   });
   const reportService = createReportService({
@@ -399,6 +402,114 @@ try {
   if (oldSessionResponse.status !== 401) {
     throw new Error("首次改密后旧会话仍然有效");
   }
+
+  // Photos live in PostgreSQL and share employee visibility, never material storage.
+  const photoEmployeeId = employeeIds.get("employee")!;
+  const photoPath = `/api/organization/employees/${photoEmployeeId}/photo`;
+  const photoRequest = (method: string, cookie: string, file?: File, path = photoPath) => {
+    const body = file ? new FormData() : undefined;
+    if (file) body!.set("file", file);
+    return app.handle(
+      new Request(`http://localhost${path}`, {
+        method,
+        headers: { cookie },
+        ...(body ? { body } : {}),
+      }),
+    );
+  };
+  const photoHrCookie = roleLogins.get("hr_admin")!.cookie!;
+  const pngBytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const pngFile = () => new File([pngBytes], "员工.png", { type: "image/png" });
+  const photoAssert = (condition: unknown, label: string) => {
+    if (!condition) throw new Error(`员工照片合同失败：${label}`);
+  };
+  photoAssert((await photoRequest("GET", changedCookie)).status === 404, "旧员工默认无照片");
+  photoAssert((await photoRequest("PUT", changedCookie, pngFile())).status === 403, "员工不得上传");
+  for (const file of [
+    new File(["<svg/>"], "a.svg", { type: "image/svg+xml" }),
+    new File([pngBytes], "a.jpg", { type: "image/jpeg" }),
+    new File([new Uint8Array(1024 * 1024 + 1)], "a.png", { type: "image/png" }),
+    new File([], "empty.png", { type: "image/png" }),
+  ])
+    photoAssert(
+      (await photoRequest("PUT", photoHrCookie, file)).status === 400,
+      `拒绝 ${file.name}`,
+    );
+  const uploaded = await photoRequest("PUT", photoHrCookie, pngFile());
+  const uploadedBody = (await uploaded.json()) as { ok: boolean; data: { photoUrl: string } };
+  photoAssert(
+    uploaded.status === 200 &&
+      uploadedBody.ok &&
+      uploadedBody.data.photoUrl.startsWith(`${photoPath}?v=`),
+    "上传返回版本 URL",
+  );
+  const readPhoto = await photoRequest("GET", changedCookie, undefined, uploadedBody.data.photoUrl);
+  photoAssert(
+    readPhoto.status === 200 && Buffer.from(await readPhoto.arrayBuffer()).equals(pngBytes),
+    "本人读取原始二进制",
+  );
+  photoAssert(
+    readPhoto.headers.get("cache-control") === "private, no-store" &&
+      readPhoto.headers.get("x-content-type-options") === "nosniff" &&
+      readPhoto.headers.get("content-type") === "image/png",
+    "安全响应头",
+  );
+  for (const role of ["department_manager", "hr_admin", "executive_viewer"] as const)
+    photoAssert(
+      (await photoRequest("GET", roleLogins.get(role)!.cookie!)).status === 200,
+      `${role} 读取`,
+    );
+  photoAssert(
+    (await photoRequest("GET", roleLogins.get("system_admin")!.cookie!)).status === 403,
+    "系统管理员拒绝业务照片",
+  );
+  const otherPhotoPath = `/api/organization/employees/${otherEmployee.rows[0]!.id}/photo`;
+  photoAssert(
+    (await photoRequest("GET", changedCookie, undefined, otherPhotoPath)).status === 403,
+    "员工不得读取他人",
+  );
+  photoAssert(
+    (
+      await photoRequest(
+        "GET",
+        roleLogins.get("department_manager")!.cookie!,
+        undefined,
+        otherPhotoPath,
+      )
+    ).status === 403,
+    "主管不得跨部门读取",
+  );
+  photoAssert(
+    (await organizationRepository.listEmployees({ employeeId: photoEmployeeId }))[0]?.photoUrl ===
+      uploadedBody.data.photoUrl,
+    "员工列表投影",
+  );
+  const replacedPhoto = (await (await photoRequest("PUT", photoHrCookie, pngFile())).json()) as {
+    data: { photoUrl: string };
+  };
+  photoAssert(replacedPhoto.data.photoUrl !== uploadedBody.data.photoUrl, "替换生成新版本");
+  photoAssert((await photoRequest("DELETE", changedCookie)).status === 403, "员工不得移除");
+  photoAssert((await photoRequest("DELETE", photoHrCookie)).status === 200, "HR 移除");
+  photoAssert((await photoRequest("GET", changedCookie)).status === 404, "移除后无照片");
+  photoAssert(
+    (await organizationRepository.listEmployees({ employeeId: photoEmployeeId }))[0]?.photoUrl ===
+      undefined,
+    "移除不删除员工",
+  );
+  photoAssert(
+    (await skillRepository.listMatrix({ employeeId: photoEmployeeId, now: new Date() })).every(
+      (cell) => cell.photoUrl === undefined,
+    ),
+    "移除后矩阵省略 URL",
+  );
+  const photoAudits = await contractPool.query(
+    `select action from audit_logs where object_id=$1 and action like 'employee.photo_%'`,
+    [photoEmployeeId],
+  );
+  photoAssert(photoAudits.rows.length === 3, "上传替换移除各一条审计，不记录无效输入");
 
   const profileStatus = async (cookie: string, employeeId: string) =>
     (
@@ -985,6 +1096,26 @@ try {
     firstEmployeeStatuses.get("S004") !== "met"
   )
     throw new Error(`技能矩阵边界计算失败：${JSON.stringify([...firstEmployeeStatuses])}`);
+  const matrixPhotoPath = `/api/organization/employees/${assignment.employeeId}/photo`;
+  const matrixPhotoUpload = await photoRequest("PUT", photoHrCookie, pngFile(), matrixPhotoPath);
+  const matrixPhotoBody = (await matrixPhotoUpload.json()) as { data: { photoUrl: string } };
+  const matrixPhotoCells = await skillRepository.listMatrix({
+    employeeId: assignment.employeeId,
+    now: new Date(),
+  });
+  photoAssert(
+    matrixPhotoUpload.status === 200 &&
+      matrixPhotoCells.length > 0 &&
+      matrixPhotoCells.every((cell) => cell.photoUrl === matrixPhotoBody.data.photoUrl),
+    "矩阵照片投影",
+  );
+  await photoRequest("DELETE", photoHrCookie, undefined, matrixPhotoPath);
+  photoAssert(
+    (
+      await skillRepository.listMatrix({ employeeId: assignment.employeeId, now: new Date() })
+    ).every((cell) => cell.photoUrl === undefined),
+    "移除后非空矩阵省略照片",
+  );
   const baselineCounts = await contractPool.query<{ assessments: number; current: number }>(
     `select (select count(*)::integer from skill_assessments where employee_id = $1 and status = 'archived' and passed = true) as assessments, (select count(*)::integer from employee_current_skills where employee_id = $1) as current`,
     [assignment.employeeId],
@@ -2402,8 +2533,8 @@ try {
     `claim_probe:${randomUUID()}`,
   );
   if (!claimProbeId) throw new Error("无法创建并发领取探针");
-  const firstClaim = await notificationRepository.claim(new Date(), claimProbeId);
-  const duplicateClaim = await notificationRepository.claim(new Date(), claimProbeId);
+  const firstClaim = await notificationRepository.claim(notificationNow(), claimProbeId);
+  const duplicateClaim = await notificationRepository.claim(notificationNow(), claimProbeId);
   if (!firstClaim || duplicateClaim) throw new Error("通知 outbox 可被并发重复领取");
   const staleReclaim = await notificationRepository.claim(
     new Date(Date.now() + 6 * 60_000),
@@ -2444,12 +2575,12 @@ try {
     "update notification_outbox set status='failed',attempts=5,next_attempt_at=now() where id=$1",
     [cappedId],
   );
-  const automaticAfterCap = await notificationRepository.claim(new Date(), cappedId);
+  const automaticAfterCap = await notificationRepository.claim(notificationNow(), cappedId);
   const manualRetryAccepted = await notificationRepository.retry(
     cappedId,
     accountIds.get("system_admin")!,
   );
-  const manualClaim = await notificationRepository.claim(new Date(), cappedId);
+  const manualClaim = await notificationRepository.claim(notificationNow(), cappedId);
   if (automaticAfterCap || !manualRetryAccepted || !manualClaim)
     throw new Error("永久错误未停止自动重试，或人工重试无法恢复");
   await notificationRepository.complete(
@@ -3136,6 +3267,28 @@ try {
     grantAudit.rowCount !== 1
   )
     throw new Error("邓华明唯一账号授权、缺失/重名拒绝、幂等或角色保持失败");
+  const photoFactoryLogin = await login(
+    "10032",
+    ["Concurrent-Contract-Password-111", "Concurrent-Contract-Password-222"][
+      concurrentStatuses.indexOf(200)
+    ]!,
+  );
+  photoAssert(photoFactoryLogin.response.status === 200, "授权轮换会话后重新登录");
+  photoAssert(
+    (await photoRequest("PUT", photoHrCookie, pngFile(), otherPhotoPath)).status === 200,
+    "跨部门员工设置照片",
+  );
+  photoAssert(
+    (await photoRequest("GET", photoFactoryLogin.cookie!, undefined, otherPhotoPath)).status ===
+      200,
+    "全厂只读主管可读取跨部门照片",
+  );
+  photoAssert(
+    (await photoRequest("PUT", photoFactoryLogin.cookie!, pngFile(), otherPhotoPath)).status ===
+      403,
+    "全厂只读不授予照片写权限",
+  );
+  await photoRequest("DELETE", photoHrCookie, undefined, otherPhotoPath);
   await contractPool.query("update employees set display_name='部门主管' where id=$1", [
     employeeIds.get("department_manager")!,
   ]);

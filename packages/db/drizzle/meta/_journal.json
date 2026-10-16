@@ -169,6 +169,13 @@
       "when": 1790477099606,
       "tag": "0023_sweet_wilson_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792138706803,
+      "tag": "0024_organic_grim_reaper",
+      "breakpoints": true
     }
   ]
 }

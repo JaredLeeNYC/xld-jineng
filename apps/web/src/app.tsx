@@ -1,4 +1,5 @@
 import { ModuleNavigation } from "./module-navigation";
+import { EmployeePhoto, EmployeePhotoMaintenance } from "./employee-photo";
 import { AreaManagement, EmployeeAreaPicker, AreaSelect } from "./area-management";
 import { TrainingManagement } from "./training-management";
 import { TrainingWorkspace } from "./training-workspace";
@@ -79,6 +80,7 @@ type Position = {
   active: boolean;
 };
 type Employee = {
+  photoUrl?: string;
   areaId?: string;
   areaName?: string;
   id: string;
@@ -671,6 +673,7 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
   );
   const employeeActions = (employee: Employee) => (
     <>
+      {canManage && <EmployeePhotoMaintenance employee={employee} onSaved={load} />}
       {canManage && employee.active && (
         <EmployeeAreaPicker
           employeeId={employee.id}
@@ -1576,7 +1579,13 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                       <tr key={employee.id}>
                         <td>
                           <strong>{employee.employeeNumber}</strong>
-                          <small>{employee.displayName}</small>
+                          <small className="employee-photo-name">
+                            <EmployeePhoto
+                              name={employee.displayName}
+                              photoUrl={employee.photoUrl}
+                            />
+                            {employee.displayName}
+                          </small>
                         </td>
                         <td>
                           {employee.departmentName ?? "未分配"}
@@ -1594,7 +1603,10 @@ export function OrganizationPanel({ canManage }: { canManage: boolean }) {
                 {filteredEmployees.map((employee) => (
                   <article className="employee-card" key={employee.id}>
                     <header>
-                      <strong>{employee.displayName}</strong>
+                      <strong className="employee-photo-name">
+                        <EmployeePhoto name={employee.displayName} photoUrl={employee.photoUrl} />
+                        {employee.displayName}
+                      </strong>
                       <span>{employee.employeeNumber}</span>
                     </header>
                     <dl>
@@ -2915,7 +2927,13 @@ export function SkillMatrixPanel({
                   return (
                     <tr key={employee.employeeId}>
                       <th className="matrix-employee-column">
-                        <strong>{employee.employeeName}</strong>
+                        <strong className="employee-photo-name">
+                          <EmployeePhoto
+                            name={employee.employeeName}
+                            photoUrl={employee.photoUrl}
+                          />
+                          {employee.employeeName}
+                        </strong>
                         <small>
                           {employee.employeeNumber} · {employee.positionName}
                         </small>
@@ -2986,7 +3004,10 @@ export function SkillMatrixPanel({
               return (
                 <article className="matrix-card" key={employee.employeeId}>
                   <header>
-                    <strong>{employee.employeeName}</strong>
+                    <strong className="employee-photo-name">
+                      <EmployeePhoto name={employee.employeeName} photoUrl={employee.photoUrl} />
+                      {employee.employeeName}
+                    </strong>
                     <span>{employee.positionName}</span>
                   </header>
                   <p className="matrix-card-summary">

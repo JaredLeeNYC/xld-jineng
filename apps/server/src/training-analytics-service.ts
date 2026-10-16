@@ -42,6 +42,29 @@ export const createTrainingAnalyticsService = (repository: TrainingAnalyticsRepo
       },
     };
   },
+  async registerPlannedHours(actor: SessionView, planId: string, hours: unknown) {
+    if (!["hr_admin", "department_manager"].includes(actor.role))
+      return fail("FORBIDDEN", "无权登记计划时数", 403);
+    if (actor.role === "department_manager" && !actor.departmentId)
+      return fail("FORBIDDEN", "主管账号未关联部门", 403);
+    if (!validTrainingHours(hours))
+      return fail("INVALID_HOURS", "授课小时须大于 0，最多两位小数", 400);
+    const updated = await repository.registerPlannedHours({
+      planId,
+      hours,
+      accountId: actor.accountId,
+      employeeId: actor.employeeId,
+      role: actor.role,
+      ...(actor.departmentId ? { departmentId: actor.departmentId } : {}),
+    });
+    return updated
+      ? { ok: true as const, data: { planId, plannedHours: hours } }
+      : fail(
+          "HOURS_REJECTED",
+          "仅 HR 或本部门指定负责人可修改已审批计划的授课小时；跨部门计划请由 HR 维护",
+          409,
+        );
+  },
   async registerHours(actor: SessionView, taskId: string, hours: unknown) {
     if (!["hr_admin", "department_manager"].includes(actor.role))
       return fail("FORBIDDEN", "无权登记培训时数", 403);
