@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Systemd normally restores the database; repair it without reinstalling anything.
+sudo systemctl start postgresql@17-main
+pg_isready -q -h localhost -p 5433

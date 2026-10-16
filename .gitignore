@@ -7,3 +7,4 @@ coverage/
 .tmp/
 packages/db/drizzle/meta/_journal.json.tmp
 *.log
+.amp/portals/

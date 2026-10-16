@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+SECONDS=0
+step() { printf '\n==> [%ss] %s\n' "$SECONDS" "$*"; }
+
+step "Install the repository-pinned Bun"
+bun_version=$(node -p 'require("./package.json").packageManager.split("@")[1]')
+export PATH="$HOME/.bun/bin:$PATH"
+if ! command -v bun >/dev/null || [[ "$(bun --version)" != "$bun_version" ]]; then
+  curl -fsSL https://bun.sh/install | bash -s -- "bun-v$bun_version"
+fi
+test "$(bun --version)" = "$bun_version"
+# Login shells and supervised services must also find the pinned version.
+if [[ "$(/usr/local/bin/bun --version 2>/dev/null || true)" != "$bun_version" ]]; then
+  sudo install -m 755 "$(command -v bun)" /usr/local/bin/bun
+fi
+
+step "Allow sparse virtual memory reservations used by the Vite Plus linter"
+# Oxc's JS-plugin allocator reserves multi-GiB arenas, not resident memory.
+# Debian's heuristic overcommit rejects these on small, swapless orbs.
+echo 'vm.overcommit_memory = 1' | sudo tee /etc/sysctl.d/90-skill-matrix-orb.conf >/dev/null
+sudo sysctl -q -p /etc/sysctl.d/90-skill-matrix-orb.conf
+
+step "Install PostgreSQL 17 and Office preview prerequisites"
+packages=(postgresql-17 libreoffice-writer libreoffice-calc libreoffice-impress fonts-noto-cjk)
+missing=()
+for package in "${packages[@]}"; do
+  if [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)" != "install ok installed" ]]; then
+    missing+=("$package")
+  fi
+done
+if ((${#missing[@]})); then
+  if [[ ! -f /etc/apt/sources.list.d/amp-postgresql.list ]]; then
+    sudo install -d /usr/share/postgresql-common/pgdg
+    sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+      -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+    echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' \
+      | sudo tee /etc/apt/sources.list.d/amp-postgresql.list >/dev/null
+  fi
+  sudo apt-get update -qq
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+fi
+
+step "Install locked workspace dependencies"
+bun install --frozen-lockfile
+
+step "Prepare the orb-only PostgreSQL cluster"
+# Systemd owns the database so it survives setup and snapshot activation.
+if [[ ! -d /etc/postgresql/17/main ]]; then
+  sudo pg_createcluster 17 main --port 5433
+fi
+sudo pg_conftool 17 main set port 5433
+sudo pg_conftool 17 main set listen_addresses localhost
+# This cluster contains disposable development data, never production records.
+sudo pg_conftool 17 main set fsync off
+sudo pg_conftool 17 main set synchronous_commit off
+sudo pg_conftool 17 main set full_page_writes off
+sudo systemctl enable postgresql@17-main >/dev/null
+sudo systemctl restart postgresql@17-main
+sudo -u postgres psql -p 5433 -v ON_ERROR_STOP=1 <<'SQL'
+SELECT 'CREATE ROLE skill_matrix LOGIN CREATEDB PASSWORD ''skill_matrix_dev'''
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'skill_matrix') \gexec
+SELECT 'CREATE DATABASE skill_matrix OWNER skill_matrix'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'skill_matrix') \gexec
+SQL
+
+step "Prepare local configuration and migrate/seed the development database"
+if [[ ! -f .env.local ]]; then
+  # Never copy project/user credentials into the reusable snapshot.
+  (umask 077
+    sed '/^SEED_INITIAL_PASSWORD=/d' .env.example > .env.local
+    printf 'SEED_INITIAL_PASSWORD=Orb-%s!\n' "$(openssl rand -hex 12)" >> .env.local
+    printf 'POSTGRES_CONTRACT_ADMIN_URL=postgres://skill_matrix:skill_matrix_dev@localhost:5433/postgres\n' >> .env.local
+  )
+fi
+# Pin setup writes to the disposable local instance, even when project env is present.
+DATABASE_URL=postgres://skill_matrix:skill_matrix_dev@localhost:5433/skill_matrix bun run db:migrate
+DATABASE_URL=postgres://skill_matrix:skill_matrix_dev@localhost:5433/skill_matrix bun run db:seed
+
+step "Ready: Bun $(bun --version), PostgreSQL 17, dependencies and demo accounts"

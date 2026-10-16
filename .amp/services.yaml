@@ -1,0 +1,16 @@
+services:
+  web:
+    command: bun run dev:web --strictPort
+    port: 3101
+    health: /
+    env:
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: .onamp.dev
+    portal:
+      title: 技能矩阵系统
+      description: 演示账号 EMP001、MGR001、HR001、VIEW001、ADMIN001；初始密码保存在 orb 的 .env.local，首次登录需改密。
+  api:
+    command: bun run dev:server
+    port: 3000
+    health: /api/ready
+    env:
+      APP_URL: ${services.web.publicURL}

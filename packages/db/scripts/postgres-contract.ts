@@ -41,11 +41,14 @@ const docker = (args: string[]) =>
     stdout: "pipe",
   });
 
-const runningServices = docker(["ps", "--status", "running", "--services"]);
+const usesDocker = !process.env.POSTGRES_CONTRACT_ADMIN_URL;
+const runningServices = usesDocker
+  ? docker(["ps", "--status", "running", "--services"])
+  : undefined;
 const postgresWasRunning =
-  runningServices.success && runningServices.stdout.toString().split(/\r?\n/).includes("postgres");
+  runningServices?.success && runningServices.stdout.toString().split(/\r?\n/).includes("postgres");
 
-if (!postgresWasRunning) {
+if (usesDocker && !postgresWasRunning) {
   const started = docker(["up", "-d", "postgres"]);
   if (!started.success) {
     throw new Error(`无法启动 PostgreSQL 合同测试容器：${started.stderr.toString()}`);
@@ -3170,7 +3173,7 @@ try {
     await admin.query(`drop database if exists "${databaseName}"`);
     await admin.end();
   }
-  if (!postgresWasRunning) {
+  if (usesDocker && !postgresWasRunning) {
     docker(["stop", "postgres"]);
   }
 }
