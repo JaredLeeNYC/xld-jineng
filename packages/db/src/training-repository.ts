@@ -419,7 +419,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     return transaction(pool, async (client) => {
       const plan = await client.query<{ id: string }>(
         `select p.id from training_plans p join training_tasks t on t.plan_id=p.id
-        where t.id=$1 and p.deleted_at is null and $2::uuid=any(p.owner_employee_ids) and p.status in ('published','in_progress') and exists (select 1 from user_accounts ua join employees actor_employee on actor_employee.id=ua.employee_id join employees target_employee on target_employee.id=t.employee_id where ua.id=$3 and ua.employee_id=$2 and ua.active=true and actor_employee.active=true and (ua.role='hr_admin' or (ua.role='department_manager' and actor_employee.department_id=target_employee.department_id))) for update of p`,
+        where t.id=$1 and p.deleted_at is null and $2::uuid=any(p.owner_employee_ids) and p.status in ('published','in_progress') and exists (select 1 from user_accounts ua join employees actor_employee on actor_employee.id=ua.employee_id where ua.id=$3 and ua.employee_id=$2 and ua.active=true and actor_employee.active=true and ua.role in ('hr_admin','department_manager')) for update of p`,
         [id, employeeId, accountId],
       );
       if (!plan.rowCount) return false;
@@ -617,7 +617,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
   }) {
     const result = await pool.query(
       `${taskSelect}
-       where ($2='hr_admin' or ($2='employee' and t.employee_id=$3) or ($2='department_manager' and e.department_id=$4::uuid))
+       where ($2='hr_admin' or ($2='employee' and t.employee_id=$3) or ($2='department_manager' and (e.department_id=$4::uuid or $3::uuid=any(p.owner_employee_ids))))
        group by t.id,p.id,m.title,e.id,d.name,pa.position_id,pos.name,owner.display_name
        order by p.start_at desc,t.created_at desc`,
       [input.now, input.actorRole, input.employeeId, input.departmentId ?? null],

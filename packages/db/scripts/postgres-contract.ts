@@ -3187,15 +3187,18 @@ try {
     independentHrCookie,
   );
   if (
+    !scopedOwnerTasks.data.some((t: { id: string }) => t.id === crossOwnerTask.rows[0]!.id) ||
     scopedOwnerTasks.data.some(
-      (t: { departmentId: string }) => t.departmentId !== department.rows[0]!.id,
+      (t: { departmentId: string; ownerEmployeeIds: string[] }) =>
+        t.departmentId !== department.rows[0]!.id &&
+        !t.ownerEmployeeIds.includes(employeeIds.get("department_manager")!),
     ) ||
-    crossOwnerStart.status !== 409 ||
-    crossOwnerComplete.status !== 409 ||
-    hrOwnerStart.status !== 200 ||
-    hrOwnerComplete.status !== 200
+    crossOwnerStart.status !== 200 ||
+    crossOwnerComplete.status !== 200 ||
+    hrOwnerStart.status !== 409 ||
+    hrOwnerComplete.status !== 409
   )
-    throw new Error("多负责人身份扩大主管部门读写范围，或HR负责人不能合法跨部门执行");
+    throw new Error("指定主管跨部门任务查看/执行或多负责人重复操作状态约束失败");
   await contractPool.query("update user_accounts set role='employee' where id=$1", [
     accountIds.get("department_manager")!,
   ]);

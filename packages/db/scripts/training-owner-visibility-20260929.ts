@@ -321,21 +321,92 @@ try {
   );
   const ownTasks = await service.listTasks(owner);
   assert(ownTasks.ok);
-  assert(
-    !ownTasks.data.some((t) => t.employeeId === target.employeeId),
-    "cross-department tasks remain outside manager list",
-  );
+  for (const id of ids)
+    assert(
+      ownTasks.data.some((t) => t.planId === id && t.employeeId === target.employeeId),
+      "designated non-first owner sees existing future and historical cross-department tasks",
+    );
   const tasks = await service.listTasks(hr);
   assert(tasks.ok);
   const futureTask = tasks.data.find((t) => t.planId === ids[0])!;
   assert(futureTask);
+  const unrelated = await service.createPlan(hr, {
+    title: "非负责人的跨部门任务隔离",
+    materialIds: [materialId],
+    ownerEmployeeIds: [hr.employeeId],
+    scopeType: "employees",
+    scopeEmployeeIds: [target.employeeId],
+    startAt: "2026-10-12T01:00:00Z",
+    dueAt: "2026-10-12T03:00:00Z",
+    location: "会议室",
+  });
+  assert(unrelated.ok);
+  assert((await service.submitPlan(hr, unrelated.data.id)).ok);
+  assert((await service.approvePlan(hrReviewer, unrelated.data.id)).ok);
+  const unrelatedTask = (
+    await repo.listTasks({
+      now: new Date("2026-09-29T08:00:00Z"),
+      actorRole: hr.role,
+      employeeId: hr.employeeId,
+      accountId: hr.accountId,
+    })
+  ).find((t) => t.planId === unrelated.data.id)!;
+  assert(unrelatedTask);
+  session = owner;
+  const visible = (await (await request("/training-tasks")).json()).data;
+  assert(visible.some((t: { id: string }) => t.id === futureTask.id));
+  assert(!visible.some((t: { id: string }) => t.id === unrelatedTask.id));
+  for (const action of ["start", "complete"] as const) {
+    assert.equal(
+      (await request(`/training-tasks/${unrelatedTask.id}/${action}`, "POST")).status,
+      409,
+    );
+    session = { ...stranger, factoryRead: true };
+    assert.equal((await request(`/training-tasks/${futureTask.id}/${action}`, "POST")).status, 409);
+    session = target;
+    assert.equal((await request(`/training-tasks/${futureTask.id}/${action}`, "POST")).status, 403);
+    session = owner;
+  }
+  session = stranger;
+  const strangerTasks = (await (await request("/training-tasks")).json()).data;
+  assert(!strangerTasks.some((t: { id: string }) => t.id === futureTask.id));
+  session = owner;
+  await pool.query("update user_accounts set active=false where id=$1", [owner.accountId]);
   assert.equal(
-    await repo.executeTask(futureTask.id, owner.employeeId, owner.accountId, new Date(), false),
-    false,
-    "direct task operation outside department denied",
+    (await request(`/training-tasks/${futureTask.id}/start`, "POST")).status,
+    409,
+    "inactive designated owner cannot execute tasks",
+  );
+  await pool.query("update user_accounts set active=true where id=$1", [owner.accountId]);
+  assert.equal((await request(`/training-tasks/${futureTask.id}/complete`, "POST")).status, 409);
+  assert.equal((await request(`/training-tasks/${futureTask.id}/start`, "POST")).status, 200);
+  assert.equal((await request(`/training-tasks/${futureTask.id}/start`, "POST")).status, 409);
+  const started = await pool.query(
+    "select t.status,t.actual_start_at,p.status as plan_status from training_tasks t join training_plans p on p.id=t.plan_id where t.id=$1",
+    [futureTask.id],
+  );
+  assert.equal(started.rows[0].status, "in_progress");
+  assert.equal(started.rows[0].plan_status, "in_progress");
+  assert.equal(started.rows[0].actual_start_at.toISOString(), "2026-09-29T08:00:00.000Z");
+  assert.equal((await request(`/training-tasks/${futureTask.id}/complete`, "POST")).status, 200);
+  assert.equal((await request(`/training-tasks/${futureTask.id}/complete`, "POST")).status, 409);
+  const completed = await pool.query(
+    "select t.status,t.actual_completed_at,p.status as plan_status,r.confirmed_by_account_id from training_tasks t join training_plans p on p.id=t.plan_id join training_records r on r.task_id=t.id where t.id=$1",
+    [futureTask.id],
+  );
+  assert.equal(completed.rowCount, 1, "completion creates exactly one formal record");
+  assert.equal(completed.rows[0].status, "confirmed");
+  assert.equal(completed.rows[0].plan_status, "completed");
+  assert.equal(completed.rows[0].confirmed_by_account_id, owner.accountId);
+  assert.equal(completed.rows[0].actual_completed_at.toISOString(), "2026-09-29T08:00:00.000Z");
+  assert.equal(
+    (await pool.query("select count(*)::int as n from training_tasks where plan_id=$1", [ids[0]]))
+      .rows[0].n,
+    1,
+    "existing tasks are reused, not regenerated",
   );
   console.log(
-    "PASS designated owner HTTP approval/return: existing future/history plans; non-first owner; unrelated factory reader and self-review denied; HR fallback; task scope unchanged",
+    "PASS designated owner cross-department approval, task visibility/start/complete and formal record; unrelated manager/factory reader/employee/inactive owner denied; existing tasks reused",
   );
 } finally {
   await pool?.end();
