@@ -2753,6 +2753,27 @@ export const createApp = ({
       },
     )
     .get(
+      "/api/training-plans/selection-options",
+      async ({ request, set }) => {
+        const authenticated = await organizationActor(authService, request);
+        if (!authenticated.ok) {
+          set.status = authenticated.status;
+          return failure(authenticated.code, authenticated.message);
+        }
+        if (!trainingService) {
+          set.status = 503;
+          return failure("TRAINING_SERVICE_UNAVAILABLE", "培训计划服务暂不可用");
+        }
+        const result = await trainingService.listSelectionOptions(authenticated.actor);
+        if (!result.ok) {
+          set.status = result.error.status;
+          return failure(result.error.code, result.error.message);
+        }
+        return success(result.data);
+      },
+      { response: { 200: t.Any(), ...organizationErrorResponses } },
+    )
+    .get(
       "/api/training-plans",
       async ({ request, set }) => {
         const authenticated = await organizationActor(authService, request);

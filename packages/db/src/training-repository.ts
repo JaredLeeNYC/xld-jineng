@@ -1,4 +1,6 @@
 import type {
+  FixedRole,
+  TrainingPlanSelectionOptions,
   TrainingPlanStatus,
   TrainingType,
   TrainingPlanView,
@@ -170,6 +172,48 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     });
   },
 
+  async listSelectionOptions(): Promise<TrainingPlanSelectionOptions> {
+    const [departments, positions, employees] = await Promise.all([
+      pool.query<TrainingPlanSelectionOptions["departments"][number]>(
+        "select id,name from departments where active=true order by name,id",
+      ),
+      pool.query<TrainingPlanSelectionOptions["positions"][number]>(
+        `select p.id,p.name,p.department_id as "departmentId",d.name as "departmentName"
+         from positions p join departments d on d.id=p.department_id
+         where p.active=true and d.active=true order by d.name,p.name,p.id`,
+      ),
+      pool.query<{
+        id: string;
+        displayName: string;
+        employeeNumber: string;
+        departmentId: string | null;
+        departmentName: string | null;
+        positionId: string | null;
+        role: FixedRole | null;
+      }>(
+        `select e.id,e.display_name as "displayName",e.employee_number as "employeeNumber",
+          e.department_id as "departmentId",d.name as "departmentName",pa.position_id as "positionId",ua.role
+         from employees e left join departments d on d.id=e.department_id
+         left join position_assignments pa on pa.employee_id=e.id and pa.ended_at is null
+         left join user_accounts ua on ua.employee_id=e.id and ua.active=true
+         where e.active=true order by e.employee_number,e.id`,
+      ),
+    ]);
+    return {
+      departments: departments.rows,
+      positions: positions.rows,
+      employees: employees.rows.map((row) => ({
+        id: row.id,
+        displayName: row.displayName,
+        employeeNumber: row.employeeNumber,
+        ...(row.departmentId ? { departmentId: row.departmentId } : {}),
+        ...(row.departmentName ? { departmentName: row.departmentName } : {}),
+        ...(row.positionId ? { positionId: row.positionId } : {}),
+        ...(row.role ? { role: row.role } : {}),
+      })),
+    };
+  },
+
   async listPlans(actor: ActorScope): Promise<TrainingPlanView[]> {
     const result = await pool.query(
       `${planSelect}
@@ -199,8 +243,8 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
     ]);
     if (materials.rowCount !== new Set(materialIds).size || !materials.rowCount) return false;
     const owners = await pool.query(
-      "select e.id from employees e where e.id=any($1::uuid[]) and e.active=true and ($2::uuid is null or e.department_id=$2) and exists (select 1 from user_accounts ua where ua.employee_id=e.id and ua.active=true and ua.role in ('hr_admin','department_manager'))",
-      [ownerIds, actor.role === "department_manager" ? actor.departmentId : null],
+      "select e.id from employees e where e.id=any($1::uuid[]) and e.active=true and exists (select 1 from user_accounts ua where ua.employee_id=e.id and ua.active=true and ua.role in ('hr_admin','department_manager'))",
+      [ownerIds],
     );
     if (owners.rowCount !== new Set(ownerIds).size || !owners.rowCount) return false;
     const ids =
@@ -215,10 +259,9 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
         : input.scopeType === "position"
           ? "positions"
           : "employees";
-    const department = input.scopeType === "department" ? "id" : "department_id";
     const scope = await pool.query(
-      `select id from ${table} where id=any($1::uuid[]) and active=true and ($2::uuid is null or ${department}=$2)`,
-      [ids, actor.role === "department_manager" ? actor.departmentId : null],
+      `select id from ${table} where id=any($1::uuid[]) and active=true`,
+      [ids],
     );
     if (!scope.rowCount || scope.rowCount !== new Set(ids).size) return false;
     return true;
@@ -340,10 +383,12 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
         `update training_plans p set status='draft',approval_comment=$4,updated_at=$5
        where p.id=$1 and p.deleted_at is null and p.status='pending_approval' and p.created_by_account_id<>$3 and coalesce(p.submitted_by_account_id,p.created_by_account_id)<>$3
        and ($2='hr_admin' or ($2='department_manager' and $6::uuid is not null
-         and not exists (select 1 from employees e where e.id=any(p.owner_employee_ids) and e.department_id<>$6)
+         and (exists (select 1 from user_accounts ua join employees e on e.id=ua.employee_id
+           where ua.id=$3 and ua.active=true and ua.role='department_manager' and e.active=true and e.id=any(p.owner_employee_ids))
+         or (not exists (select 1 from employees e where e.id=any(p.owner_employee_ids) and e.department_id<>$6)
          and (p.scope_type<>'department' or p.scope_department_ids <@ array[$6::uuid])
          and not exists (select 1 from positions pos where pos.id=any(p.scope_position_ids) and pos.department_id<>$6)
-         and not exists (select 1 from training_plan_scope_employees se join employees e on e.id=se.employee_id where se.plan_id=p.id and se.active=true and e.department_id<>$6))) returning id`,
+         and not exists (select 1 from training_plan_scope_employees se join employees e on e.id=se.employee_id where se.plan_id=p.id and se.active=true and e.department_id<>$6))))) returning id`,
         [id, actor.role, actor.accountId, reason, now, actor.departmentId ?? null],
       );
       if (!result.rowCount) return false;
@@ -430,6 +475,19 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
         return { ok: false as const, reason: "state" as const };
       if (actor.role === "department_manager" && !actor.departmentId)
         return { ok: false as const, reason: "scope" as const };
+      const designatedOwner =
+        actor.role === "department_manager" &&
+        (
+          await client.query(
+            `select ua.id from user_accounts ua join employees e on e.id=ua.employee_id
+             where ua.id=$1 and ua.active=true and ua.role='department_manager'
+               and e.active=true and e.id=any($2::uuid[])`,
+            [actor.accountId, row.owner_employee_ids],
+          )
+        ).rowCount;
+      // Designation authorizes reviewing this plan only, not other cross-department writes.
+      const approvalDepartment =
+        actor.role === "department_manager" && !designatedOwner ? actor.departmentId : null;
       // Approval reviews the plan's existing attachments, not permission to reuse
       // them in a new draft. Owner and participant scope checks below still apply.
       const material = await client.query(
@@ -440,7 +498,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
         return { ok: false as const, reason: "material" as const };
       const owners = await client.query(
         "select e.id from employees e where e.id=any($1::uuid[]) and e.active=true and ($2::uuid is null or e.department_id=$2) and exists (select 1 from user_accounts ua where ua.employee_id=e.id and ua.active=true and ua.role in ('hr_admin','department_manager'))",
-        [row.owner_employee_ids, actor.role === "department_manager" ? actor.departmentId : null],
+        [row.owner_employee_ids, approvalDepartment],
       );
       if (owners.rowCount !== row.owner_employee_ids.length || !owners.rowCount)
         return { ok: false as const, reason: "scope" as const };
@@ -455,7 +513,7 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
         const scopeDepartment = row.scope_type === "department" ? "id" : "department_id";
         const scope = await client.query(
           `select id from ${scopeTable} where id=any($1::uuid[]) and active=true and ($2::uuid is null or ${scopeDepartment}=$2)`,
-          [scopeIds, actor.role === "department_manager" ? actor.departmentId : null],
+          [scopeIds, approvalDepartment],
         );
         if (!scope.rowCount || scope.rowCount !== scopeIds.length)
           return { ok: false as const, reason: "scope" as const };
@@ -478,8 +536,8 @@ export const createPostgresTrainingRepository = (pool: Pool) => ({
         );
       if (
         !employees.rowCount ||
-        (actor.role === "department_manager" &&
-          employees.rows.some((employee) => employee.departmentId !== actor.departmentId))
+        (approvalDepartment &&
+          employees.rows.some((employee) => employee.departmentId !== approvalDepartment))
       )
         return { ok: false as const, reason: "scope" as const };
       for (const employee of new Map(

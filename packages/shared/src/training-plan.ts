@@ -1,3 +1,19 @@
+import type { FixedRole } from "./index";
+
+export type TrainingPlanSelectionOptions = {
+  departments: Array<{ id: string; name: string }>;
+  positions: Array<{ id: string; name: string; departmentId: string; departmentName: string }>;
+  employees: Array<{
+    id: string;
+    displayName: string;
+    employeeNumber: string;
+    departmentId?: string;
+    departmentName?: string;
+    positionId?: string;
+    role?: FixedRole;
+  }>;
+};
+
 export const trainingTypes = ["professional", "general", "safety", "other"] as const;
 
 export type TrainingType = (typeof trainingTypes)[number];

@@ -132,6 +132,10 @@ export const createTrainingService = (dependencies: {
     };
   };
   return {
+    async listSelectionOptions(actor: SessionView) {
+      if (!manager(actor)) return fail("FORBIDDEN", "无权选择培训计划对象", 403);
+      return { ok: true as const, data: await repository.listSelectionOptions() };
+    },
     async listPlans(actor: SessionView) {
       if (!manager(actor)) return fail("FORBIDDEN", "无权查看培训计划", 403);
       await repository.advanceStatuses(now());

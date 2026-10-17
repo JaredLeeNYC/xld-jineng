@@ -59,8 +59,38 @@ export async function verifyTrainingApproval(
   if ((await repository.publish(id, hr, now)).ok) throw new Error("禁止HR自审批");
   await assertPending(id);
   const crossId = await createPending({ scopeEmployeeIds: [input.otherEmployeeId] });
-  if ((await repository.publish(crossId, manager, now)).ok) throw new Error("禁止跨部门审批");
-  await assertPending(crossId);
+  const crossApproval = await repository.publish(crossId, manager, now);
+  if (!crossApproval.ok || crossApproval.status !== "completed")
+    throw new Error("指定负责人应可独立审批跨部门历史计划");
+  const hrEmployeeId = (
+    await pool.query<{ employee_id: string }>("select employee_id from user_accounts where id=$1", [
+      input.hrAccountId,
+    ])
+  ).rows[0]!.employee_id;
+  const managerDraft = {
+    ...plan,
+    ownerEmployeeId: hrEmployeeId,
+    scopeEmployeeIds: [input.otherEmployeeId],
+  };
+  if (!(await repository.validateDraft(managerDraft, manager)))
+    throw new Error("主管应可使用已有资料权限创建跨部门计划并指定其他部门负责人");
+  const managerPlanId = randomUUID();
+  await repository.createDraft({ ...managerDraft, id: managerPlanId, actor: manager });
+  if (!(await repository.submitPlan(managerPlanId, manager, now)))
+    throw new Error("主管跨部门计划提交失败");
+  if ((await repository.publish(managerPlanId, manager, now)).ok)
+    throw new Error("跨部门创建权限不得取消自审隔离");
+  if (!(await repository.publish(managerPlanId, hr, now)).ok)
+    throw new Error("主管创建的跨部门计划应可由独立HR审批");
+  const unrelatedId = await createPending({
+    ownerEmployeeId: hrEmployeeId,
+    scopeEmployeeIds: [input.otherEmployeeId],
+  });
+  if ((await repository.publish(unrelatedId, manager, now)).ok)
+    throw new Error("非负责人主管不得跨部门审批");
+  if (await repository.rejectPlan(unrelatedId, manager, "退回", now))
+    throw new Error("非负责人主管不得跨部门退回");
+  await assertPending(unrelatedId);
   const inactiveId = await createPending();
   await pool.query("update training_materials set active=false where id=$1", [materialId]);
   const inactive = await repository.publish(inactiveId, manager, now);
@@ -89,5 +119,5 @@ export async function verifyTrainingApproval(
   )
     throw new Error("补录审批必须生成完整履历与实际起止时间");
   if ((await repository.publish(id, manager, now)).ok) throw new Error("禁止重复审批");
-  console.log("培训审批回归通过：HR资料、部门范围、失效资料、独立审批与补录履历");
+  console.log("培训审批回归通过：指定负责人跨部门审批、非负责人隔离、失效资料、独立审批与补录履历");
 }

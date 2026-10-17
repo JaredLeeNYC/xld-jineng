@@ -4,6 +4,7 @@ import "./training-management.css";
 import {
   trainingTypes,
   trainingTypeLabels,
+  type TrainingPlanSelectionOptions,
   type TrainingPlanView,
   type TrainingTaskView,
   type TrainingType,
@@ -116,6 +117,7 @@ type Option = {
   active?: boolean;
   role?: string;
   departmentId?: string;
+  departmentName?: string;
   positionId?: string;
 };
 const request = async <T,>(path: string, method = "GET", body?: unknown): Promise<T> => {
@@ -178,6 +180,7 @@ function MultiSelect({
     <fieldset>
       <legend>{label}（可多选）</legend>
       <div className="training-choice-list">
+        {options.length === 0 && <p className="muted">暂无可选{label}</p>}
         {options
           .filter((o) => o.active !== false)
           .map((o) => (
@@ -191,6 +194,7 @@ function MultiSelect({
               />
               {o.name ?? o.title ?? o.displayName}
               {o.employeeNumber ? `（${o.employeeNumber}）` : ""}
+              {o.departmentName ? ` · ${o.departmentName}` : ""}
             </label>
           ))}
       </div>
@@ -354,15 +358,15 @@ export function TrainingManagement({
   const load = async () => {
     setError("");
     try {
-      const [tasks, plans, materials, employees, departments, positions] = await Promise.all([
+      const [tasks, plans, materials, options] = await Promise.all([
         request<TrainingTaskView[]>("/api/training-tasks"),
         canManage ? request<TrainingPlanView[]>("/api/training-plans") : [],
         canManage ? request<Option[]>("/api/training-materials") : [],
-        canManage ? request<Option[]>("/api/organization/employees?active=true") : [],
-        canManage ? request<Option[]>("/api/organization/departments") : [],
-        canManage ? request<Option[]>("/api/organization/positions") : [],
+        canManage
+          ? request<TrainingPlanSelectionOptions>("/api/training-plans/selection-options")
+          : { employees: [], departments: [], positions: [] },
       ]);
-      setState({ tasks, plans, materials, employees, departments, positions });
+      setState({ tasks, plans, materials, ...options });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "加载失败");
     }
@@ -442,13 +446,15 @@ export function TrainingManagement({
   const crossesDepartment = (plan: TrainingPlanView) =>
     session.role === "department_manager" &&
     plan.departments.some((d) => d.id !== session.departmentId);
+  const isPlanOwner = (plan: TrainingPlanView) =>
+    (plan.ownerEmployeeIds ?? [plan.ownerEmployeeId]).includes(session.employeeId);
   const planActions = (plan: TrainingPlanView) => (
     <div className="action-row">
       {["published", "in_progress", "completed"].includes(plan.status) &&
         (session.role === "hr_admin" ||
           (session.role === "department_manager" &&
             !!session.departmentId &&
-            (plan.ownerEmployeeIds ?? [plan.ownerEmployeeId]).includes(session.employeeId) &&
+            isPlanOwner(plan) &&
             plan.departments.length > 0 &&
             !crossesDepartment(plan))) && (
           <button type="button" onClick={() => setHoursPlan(plan)}>
@@ -483,13 +489,20 @@ export function TrainingManagement({
           </button>
         </>
       )}
-      {plan.status === "pending_approval" && crossesDepartment(plan) && (
+      {plan.status === "pending_approval" && crossesDepartment(plan) && !isPlanOwner(plan) && (
         <p className="muted">
-          包含其他部门培训对象，须由非创建人、非提交人的 HR 独立审批；指定负责人可查看计划。
+          包含其他部门培训对象，请由非创建人、非提交人的指定负责人或 HR 独立审批。
         </p>
       )}
       {plan.status === "pending_approval" &&
-        !crossesDepartment(plan) &&
+        (plan.createdByAccountId === session.accountId ||
+          plan.submittedByAccountId === session.accountId) && (
+          <p className="muted">
+            不能审批本人创建或提交的计划，请交由其他有权限的主管、指定负责人或 HR 独立审批。
+          </p>
+        )}
+      {plan.status === "pending_approval" &&
+        (!crossesDepartment(plan) || isPlanOwner(plan)) &&
         plan.createdByAccountId !== session.accountId &&
         plan.submittedByAccountId !== session.accountId && (
           <>
@@ -671,6 +684,10 @@ export function TrainingManagement({
         <>
           <section className="panel">
             <h2>{editing ? "编辑培训计划" : "新建培训计划"}</h2>
+            <p className="muted">
+              可选择跨部门培训对象和负责人；仅开放培训选人，不扩大员工档案权限。
+              跨部门计划须由非创建人、非提交人的指定负责人或 HR 独立审批。
+            </p>
             <p>
               计划时间使用中国时区，可选择过去日期补录历史计划，结束时间须晚于开始时间。
               已完成的历史培训审批通过后自动完成；其他培训由负责人手动开始、完成。
@@ -855,8 +872,8 @@ export function TrainingManagement({
             <h2>培训计划</h2>
             <p className="muted">
               计划须由授权范围内的其他主管或 HR 独立审批；本人创建或提交的计划不显示审批按钮。
-              跨部门培训对象或负责人可能需要 HR
-              审批，最终以服务端权限校验为准。指定负责人负责培训执行与时数登记，不代表拥有审批权限。
+              跨部门计划可由指定负责人或 HR
+              审批，授权仅限该计划，不扩大其他业务权限；最终以服务端权限校验为准。
               培训完成后，可展开对应计划的“登记本计划已完成员工的实际时数”，按员工补登小时。
             </p>
             <ListFilterBar
