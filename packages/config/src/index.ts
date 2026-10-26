@@ -17,6 +17,7 @@ const serverConfigSchema = z.object({
   COS_OBJECT_PREFIX: z.string().min(1).default("skill-matrix/"),
   COS_SECRET_ID: z.string().min(1).optional(),
   COS_SECRET_KEY: z.string().min(1).optional(),
+  MES_SYNC_API_KEY: z.string().min(1).optional(),
 });
 
 export type ServerConfig = {
@@ -31,6 +32,7 @@ export type ServerConfig = {
   cosObjectPrefix?: string;
   cosSecretId?: string;
   cosSecretKey?: string;
+  mesSyncApiKey?: string;
 };
 
 export const parseServerConfig = (
@@ -51,6 +53,7 @@ export const parseServerConfig = (
     port: parsed.PORT,
     materialStorageDir: parsed.MATERIAL_STORAGE_DIR,
     materialStorageProvider: parsed.MATERIAL_STORAGE_PROVIDER,
+    ...(parsed.MES_SYNC_API_KEY ? { mesSyncApiKey: parsed.MES_SYNC_API_KEY } : {}),
     ...(parsed.MATERIAL_STORAGE_PROVIDER === "cos"
       ? {
           cosBucket: parsed.COS_BUCKET!,

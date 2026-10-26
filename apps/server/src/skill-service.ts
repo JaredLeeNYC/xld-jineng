@@ -361,6 +361,10 @@ export const createSkillService = (dependencies: {
       }
     },
 
+    /** MES 只读拉取：全厂矩阵，不按账号收窄范围；鉴权在 route 校验共享 key。 */
+    factoryMatrix() {
+      return repository.listMatrix({ now: now() });
+    },
     async matrix(
       actor: SessionView,
       filters: {

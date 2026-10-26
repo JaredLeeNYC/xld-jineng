@@ -9,6 +9,7 @@ import {
 import { cors } from "@elysiajs/cors";
 import { openapi } from "@elysiajs/openapi";
 import { Elysia, t } from "elysia";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 import type { AuthHttpService } from "./auth-contract";
 import type { SessionView } from "./auth-contract";
@@ -175,6 +176,7 @@ type AppDependencies = {
   auditService?: AuditService;
   readinessProbe?: ReadinessProbe;
   secureCookie?: boolean;
+  mesSyncApiKey?: string;
 };
 
 const organizationActor = async (
@@ -213,6 +215,13 @@ const defaultReadinessProbe: ReadinessProbe = async () => ({
   message: "数据库就绪检查尚未配置",
 });
 
+/** MES 只读拉取用的共享 key：未配置或短于 32 位时接口关闭。 */
+const mesSyncKeyMatches = (request: Request, key: string) => {
+  const token = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization")?.trim() ?? "")?.[1];
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return Boolean(token) && timingSafeEqual(digest(token ?? ""), digest(key));
+};
+
 const sessionCookieName = "skill_matrix_session";
 
 const readSessionToken = (request: Request): string | undefined => {
@@ -248,6 +257,7 @@ export const createApp = ({
   auditService,
   readinessProbe = defaultReadinessProbe,
   secureCookie = false,
+  mesSyncApiKey,
 }: AppDependencies = {}) =>
   new Elysia()
     .use(
@@ -1603,6 +1613,27 @@ export const createApp = ({
           skillId: t.Optional(t.String({ format: "uuid" })),
         }),
         response: { 200: t.Any(), ...organizationErrorResponses },
+      },
+    )
+    .get(
+      "/api/mes/v1/skill-matrix",
+      async ({ request, set }) => {
+        if (!mesSyncApiKey || mesSyncApiKey.length < 32 || !skillService) {
+          set.status = 503;
+          return failure("MES_SYNC_DISABLED", "MES 同步接口未启用");
+        }
+        if (!mesSyncKeyMatches(request, mesSyncApiKey)) {
+          set.status = 401;
+          return failure("UNAUTHORIZED", "MES 同步凭据无效");
+        }
+        return success(await skillService.factoryMatrix());
+      },
+      {
+        detail: {
+          summary: "MES 只读拉取全厂技能矩阵（Bearer MES_SYNC_API_KEY）",
+          tags: ["MES"],
+        },
+        response: { 200: t.Any(), 401: errorResponse, 503: errorResponse },
       },
     )
     .get(

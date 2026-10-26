@@ -101,6 +101,7 @@ const app = createApp({
   auditService,
   readinessProbe: database.readinessProbe,
   secureCookie: config.appUrl.startsWith("https://"),
+  ...(config.mesSyncApiKey ? { mesSyncApiKey: config.mesSyncApiKey } : {}),
 }).listen({
   hostname: config.host,
   port: config.port,
